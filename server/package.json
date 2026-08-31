@@ -1,5 +1,6 @@
 {
   "name": "@pithagoras/server",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -20,6 +21,6 @@
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.9.3"
   }
 }

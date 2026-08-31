@@ -52,6 +52,37 @@
     color-scheme: light;
   }
 
+  /* Same palette as the desktop's Cyberpunk 2077 theming (terminal, starship, fastfetch). */
+  [data-theme="cyberpunk"] {
+    --canvas: 13 2 33;
+    --surface: 24 8 51;
+    --raised: 36 14 71;
+    --line: 58 24 107;
+
+    --fg: 124 252 255;
+    --fg-muted: 150 140 190;
+    --fg-subtle: 110 95 150;
+    --fg-faint: 75 0 130;
+
+    --accent: 234 0 217;
+    /* Magenta has no green channel, so it reads darker than its raw RGB
+       suggests — needs light text, not dark, unlike the other two themes. */
+    --accent-fg: 245 245 247;
+    --ok: 0 229 160;
+    --warn: 252 238 10;
+    --danger: 255 0 60;
+
+    color-scheme: dark;
+  }
+
+  /* Same font as the desktop's terminal/starship — renders only where the
+     browser itself has it installed, falls back to the ordinary UI font
+     everywhere else. */
+  [data-theme="cyberpunk"] {
+    font-family:
+      "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
   html {
     background-color: rgb(var(--canvas));
   }
@@ -59,6 +90,24 @@
   body {
     @apply bg-canvas text-fg antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Faint CRT scanlines over the whole app — sits below dialogs (z-50/60) so
+     they stay crisp, above the ordinary page so the texture reads everywhere
+     else. Decorative only. */
+  [data-theme="cyberpunk"] body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    pointer-events: none;
+    background-image: repeating-linear-gradient(
+      to bottom,
+      rgb(0 0 0 / 0.15) 0px,
+      rgb(0 0 0 / 0.15) 1px,
+      transparent 1px,
+      transparent 3px
+    );
   }
 
   /* Only where a theme is actually being chosen — never mid-interaction. */
@@ -93,6 +142,27 @@
   :focus-visible {
     outline: 2px solid rgb(var(--accent) / 0.55);
     outline-offset: 2px;
+  }
+
+  /* Neon accents: a soft magenta halo on focus and on every element already
+     styled with the app's accent ring (primary buttons, active pills, badges
+     — see `ring-accent/25` across components). Uses `filter`, not another
+     `box-shadow`, so it layers on top of each element's own ring/shadow
+     instead of replacing it. */
+  [data-theme="cyberpunk"] :focus-visible {
+    box-shadow: 0 0 0 5px rgb(var(--accent) / 0.18);
+  }
+  [data-theme="cyberpunk"] [class*="ring-accent"] {
+    filter: drop-shadow(0 0 6px rgb(var(--accent) / 0.45));
+  }
+  [data-theme="cyberpunk"] ::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--accent) / 0.3);
+  }
+  [data-theme="cyberpunk"] ::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(var(--accent) / 0.55);
+  }
+  [data-theme="cyberpunk"] * {
+    scrollbar-color: rgb(var(--accent) / 0.3) transparent;
   }
 }
 

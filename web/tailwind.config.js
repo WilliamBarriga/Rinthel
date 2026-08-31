@@ -48,6 +48,19 @@ export default {
         warn: token("warn"),
         danger: token("danger"),
       },
+      fontFamily: {
+        // Same font as the desktop's terminal/starship. Renders when the
+        // browser itself has it installed (it does on Tarkark's machine),
+        // falls back to the standard monospace stack everywhere else.
+        mono: [
+          '"JetBrainsMono Nerd Font"',
+          '"JetBrains Mono"',
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "monospace",
+        ],
+      },
       borderColor: { DEFAULT: token("line") },
       borderRadius: { xl: "0.75rem", "2xl": "1rem" },
       boxShadow: {

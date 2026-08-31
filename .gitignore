@@ -9,3 +9,18 @@ data/
 # VitePress build output and cache
 docs/.vitepress/dist
 docs/.vitepress/cache
+
+# Stray top-level symlinks into node_modules left by installs in web/
+/web/@streamdown
+/web/@vitejs
+/web/@xterm
+/web/autoprefixer
+/web/postcss
+/web/react
+/web/react-dom
+/web/react-icons
+/web/react-router-dom
+/web/streamdown
+/web/tailwindcss
+/web/typescript
+/web/vite

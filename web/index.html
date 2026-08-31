@@ -4,9 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/logo-192.png" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- ?v=2 busts the browser's favicon cache, which ignores normal page
+         reloads — bump it again if the icon is ever replaced in the future. -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=2" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/logo-192.png?v=2" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
     <title>Pithagoras</title>
     <!--
       Runs before anything paints. Without it the page renders in the default
@@ -16,6 +18,10 @@
       (function () {
         try {
           var t = localStorage.getItem("pithagoras.theme") || "system";
+          if (t === "cyberpunk" || t === "light") {
+            document.documentElement.dataset.theme = t;
+            return;
+          }
           var dark =
             t === "dark" ||
             (t === "system" && !matchMedia("(prefers-color-scheme: light)").matches);

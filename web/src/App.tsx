@@ -226,12 +226,19 @@ function Shell({
         workspaces={workspaces}
         executor={executor}
         activeId={sessionId ?? null}
+        activeWorkspace={active?.workspace}
         view={view}
         hasBrowser={hasBrowser}
         onNavigate={(to) => navigate(`/${to}`)}
         onSelect={(id) => navigate(`/s/${id}`)}
         onCreate={async (workspacePath) => {
           const s = await api.createSession(workspacePath);
+          await refreshSessions();
+          navigate(`/s/${s.id}`);
+        }}
+        onCreateSameWorkspace={async () => {
+          if (!active?.workspace) return;
+          const s = await api.createSession(active.workspace);
           await refreshSessions();
           navigate(`/s/${s.id}`);
         }}

@@ -18,7 +18,8 @@ export function TerminalPanel({ sessionId }: { sessionId: string }) {
     if (!host.current) return;
     const term = new Terminal({
       fontSize: 12,
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      fontFamily:
+        '"JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
       // Reads against the portal's own surfaces rather than shipping a second
       // colour scheme that only matches in one theme.
       theme: { background: "#0b0b0d", foreground: "#d4d4d8" },

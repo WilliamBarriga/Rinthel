@@ -1,5 +1,6 @@
 {
   "name": "@pithagoras/web",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -18,13 +19,13 @@
   "devDependencies": {
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^4.7.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "vite": "^6.4.3"
   }
 }

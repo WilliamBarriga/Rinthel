@@ -1,9 +1,10 @@
-import { LuMonitor, LuMoon, LuSun } from "react-icons/lu";
+import { LuMonitor, LuMoon, LuSun, LuZap } from "react-icons/lu";
 import { useTheme, type Theme } from "../theme";
 
 const OPTIONS: { value: Theme; icon: typeof LuSun; label: string }[] = [
   { value: "light", icon: LuSun, label: "Light" },
   { value: "dark", icon: LuMoon, label: "Dark" },
+  { value: "cyberpunk", icon: LuZap, label: "Cyberpunk" },
   { value: "system", icon: LuMonitor, label: "Match system" },
 ];
 

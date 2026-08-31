@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
 
 /**
- * Light, dark, or whatever the machine is set to.
+ * Light, dark, cyberpunk, or whatever the machine is set to.
  *
  * "system" is the default and a real option rather than a one-off starting
  * guess: someone whose desktop flips at sunset expects this to follow, and a
- * portal that decided once at first load would not.
+ * portal that decided once at first load would not. "cyberpunk" is a fixed
+ * palette pick, so it is exempt from that — it never resolves to anything
+ * else.
  */
-export type Theme = "light" | "dark" | "system";
+export type Theme = "light" | "dark" | "cyberpunk" | "system";
+type Resolved = Exclude<Theme, "system">;
 
 const KEY = "pithagoras.theme";
 const media = () => window.matchMedia("(prefers-color-scheme: light)");
 
-export const resolve = (theme: Theme): "light" | "dark" =>
+export const resolve = (theme: Theme): Resolved =>
   theme === "system" ? (media().matches ? "light" : "dark") : theme;
 
 function apply(theme: Theme) {
@@ -24,10 +27,12 @@ function apply(theme: Theme) {
   window.setTimeout(() => root.classList.remove("theme-switching"), 200);
 }
 
+const THEMES: Theme[] = ["light", "dark", "cyberpunk", "system"];
+
 function stored(): Theme {
   try {
     const value = localStorage.getItem(KEY);
-    return value === "light" || value === "dark" || value === "system" ? value : "system";
+    return THEMES.includes(value as Theme) ? (value as Theme) : "system";
   } catch {
     return "system";
   }

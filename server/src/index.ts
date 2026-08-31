@@ -333,10 +333,13 @@ app.post("/api/sessions", (req, res) => {
   if (!existsSync(resolved)) return res.status(400).json({ error: "workspace does not exist" });
 
   const id = nanoid(12);
+  const folderName = path.basename(resolved);
+  const uniqueId = nanoid(6);
+  const autoTitle = `${folderName} - ${uniqueId}`;
   createSession({
     id,
-    // Default the session name to the workspace folder name.
-    title: (typeof title === "string" && title.trim()) || path.basename(resolved),
+    // Use explicit title if provided, else generate {folder} - {unique-id}
+    title: (typeof title === "string" && title.trim()) ? title.trim().slice(0, 100) : autoTitle,
     workspace: resolved,
     executor: EXECUTOR_KIND,
   });

@@ -51,10 +51,12 @@ export function Sidebar({
   workspaces,
   executor,
   activeId,
+  activeWorkspace,
   view,
   hasBrowser,
   onSelect,
   onCreate,
+  onCreateSameWorkspace,
   onDelete,
   onRename,
   onPin,
@@ -66,12 +68,15 @@ export function Sidebar({
   workspaces: Workspace[];
   executor: string;
   activeId: string | null;
+  /** The workspace of the currently active session, if any. */
+  activeWorkspace?: string;
   /** Which top-level destination is showing, so the nav can mark it. */
   view: "chat" | "sessions" | "agent" | "routines" | "browser" | "audit";
   /** Whether the optional browser service is there at all. */
   hasBrowser: boolean;
   onSelect: (id: string) => void;
   onCreate: (workspacePath: string) => Promise<void>;
+  onCreateSameWorkspace?: () => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onRename: (id: string, title: string) => Promise<void>;
   onPin: (id: string, pinned: boolean) => Promise<void>;
@@ -84,6 +89,7 @@ export function Sidebar({
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sameWorkspaceBusy, setSameWorkspaceBusy] = useState(false);
 
   const makingNew = choice === NEW;
   const slug = slugify(name);
@@ -133,7 +139,7 @@ export function Sidebar({
           className="h-6 w-6 shrink-0 object-contain"
           draggable={false}
         />
-        <h1 className="text-sm font-semibold tracking-tight text-fg">Pithagoras</h1>
+        <h1 className="text-sm font-semibold tracking-tight text-fg">Rinthel.Ai</h1>
         <span
           className="ml-auto text-[10px] uppercase tracking-wider text-fg-faint"
           title="How sessions are executed"
@@ -144,6 +150,26 @@ export function Sidebar({
 
       {/* Destinations, above the session lists. */}
       <nav className="px-2 pb-2">
+        {activeWorkspace && onCreateSameWorkspace && (
+          <button
+            onClick={async () => {
+              setSameWorkspaceBusy(true);
+              try {
+                await onCreateSameWorkspace();
+              } finally {
+                setSameWorkspaceBusy(false);
+              }
+            }}
+            disabled={sameWorkspaceBusy}
+            className="group relative flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition text-fg-muted hover:bg-fg/5 hover:text-fg disabled:opacity-40 mb-1"
+            title="New session in this workspace"
+          >
+            <span className="shrink-0 text-fg-faint group-hover:text-fg-subtle">
+              <LuPlus className="h-4 w-4" />
+            </span>
+            {sameWorkspaceBusy ? "Creating…" : "New session here"}
+          </button>
+        )}
         <NavItem icon={<LuPlus />} label="New" onClick={() => setCreating((v) => !v)} active={creating} />
         <NavItem
           icon={<LuMessagesSquare />}

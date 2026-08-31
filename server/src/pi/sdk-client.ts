@@ -618,4 +618,8 @@ export class SdkPiClient extends EventEmitter implements PiClient {
     if (target && target.endsWith(".jsonl")) return this.session.exportToJsonl(target);
     return await this.session.exportToHtml(target);
   }
+
+  setSessionName(name: string): void {
+    this.session.setSessionName(name);
+  }
 }

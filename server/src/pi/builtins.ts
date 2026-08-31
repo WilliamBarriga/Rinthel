@@ -1,4 +1,5 @@
 import type { PiClient, PiCommand } from "./types.js";
+import { updateSession } from "../db.js";
 
 /**
  * pi's built-in slash commands are implemented by whichever mode is running,
@@ -22,7 +23,7 @@ const PORTAL_SUPPORTED: Record<string, "server" | "client"> = {
   model: "client",
   settings: "client",
   new: "client",
-  name: "client",
+  name: "server",
 };
 
 /** Used only if the SDK's internal module moves; keeps `/` working regardless. */
@@ -80,6 +81,23 @@ export async function runBuiltin(name: string, args: string, client: PiClient): 
     case "compact":
       await client.compact();
       return "Context compacted.";
+
+    case "name": {
+      const title = (args ?? "").trim();
+      if (!title) throw new Error("Title required. Usage: /name <título>");
+      if (title.length > 100) throw new Error(`Title too long (max 100 characters)`);
+
+      const sessionId = client.portalSessionId;
+      if (!sessionId) throw new Error("No active session");
+
+      // Update Pithagoras DB title
+      updateSession(sessionId, { title });
+
+      // Update pi's JSONL so /resume in TUI shows the name
+      client.setSessionName(title);
+
+      return `Session renamed to "${title}"`;
+    }
 
     case "reload":
       await client.reload();

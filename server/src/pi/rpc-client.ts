@@ -193,6 +193,12 @@ export class PiRpcClient extends EventEmitter implements PiClient {
     return true;
   }
 
+  setSessionName(_name: string): void {
+    // RPC mode: the DB title is updated by builtins.ts; JSONL rename
+    // requires pi's own session object which we don't have access to.
+    // The DB update is enough for the portal UI.
+  }
+
   get running(): boolean {
     return !this.closed;
   }

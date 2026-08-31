@@ -4,6 +4,15 @@ services:
     container_name: pithagoras
     restart: unless-stopped
     network_mode: host
+    # Corre como el mismo uid/gid que tarkark en el host (el usuario "node"
+    # de la imagen base ya es 1000:1000) para que las carpetas y archivos
+    # que pi crea bajo /workspaces y /data queden con dueño tarkark en vez
+    # de root, y sean editables comodamente desde fuera del contenedor.
+    user: "1000:1000"
+    # gid del grupo "docker" en el host, para que el uid 1000 pueda hablar
+    # con /var/run/docker.sock cuando EXECUTOR=container.
+    group_add:
+      - "984"
     volumes:
       - portal-data:/data
       # Certificates, when you have them. Empty by default.
@@ -12,6 +21,25 @@ services:
       - ${WORKSPACES_DIR:-/root/repos}:/workspaces
       # Only needed when EXECUTOR=container.
       - /var/run/docker.sock:/var/run/docker.sock
+      # understory-bridge: local pi extension (not an npm/git package) that
+      # gives pi its memory tools via MCP. Same source/node_modules as the
+      # host's pi install, mounted read-only so both stay in sync.
+      - /home/tarkark/.pi/agent/extensions/understory-bridge:/data/home/.pi/agent/extensions/understory-bridge:ro
+      # AUTH_TOKEN for understory's /mcp — the extension hardcodes this path
+      # relative to $HOME (which is /data/home in this container).
+      - /home/tarkark/understory-poc/.env:/data/home/understory-poc/.env:ro
+      # Selected host pi packages, mounted read-only at the exact path pi
+      # expects for their source string (npm:<name> / git:<host>/<path>),
+      # so pi finds them already "installed" and skips fetching. Declared
+      # in the container's own settings.json `packages` array separately —
+      # this mount alone isn't enough for pi to load them. The whole
+      # npm/node_modules tree is mounted (not just pi-web-access/) because
+      # all "npm:" installs share one flat node_modules — pi-web-access's
+      # own deps (linkedom, etc.) live as siblings, not nested inside it.
+      # This makes the other npm: packages' source readable too, but only
+      # the ones listed in settings.json `packages` actually get loaded.
+      - /home/tarkark/.pi/agent/npm/node_modules:/data/home/.pi/agent/npm/node_modules:ro
+      - /home/tarkark/.pi/agent/git/github.com/harms-haus/pi-processes:/data/home/.pi/agent/git/github.com/harms-haus/pi-processes:ro
     environment:
       # With host networking the portal binds PORT directly on the host.
       PORT: ${PORT:-4100}

@@ -37,6 +37,8 @@ export interface PiClient extends EventEmitter {
    * new one being started. Undefined for executors that cannot report it.
    */
   readonly sessionFile?: string;
+  /** The portal's session id, set when the SDK client is created. */
+  readonly portalSessionId?: string;
 
   prompt(message: string): Promise<void>;
   abort(): Promise<void>;
@@ -64,6 +66,8 @@ export interface PiClient extends EventEmitter {
   reload(): Promise<void>;
   /** Write the session to disk; returns the file path. */
   exportSession(target?: string): Promise<string>;
+  /** Set a display name for the session (updates JSONL + emits event). */
+  setSessionName(name: string): void;
 
   /** Answer an extension dialog. Returns false if the request is unknown/expired. */
   respondUi(id: string, response: { cancelled?: boolean; value?: unknown }): boolean;
