@@ -5,6 +5,7 @@ import {
   LuClock,
   LuGlobe,
   LuMessagesSquare,
+  LuPanelLeftClose,
   LuPin,
   LuPinOff,
   LuPlus,
@@ -54,6 +55,8 @@ export function Sidebar({
   activeWorkspace,
   view,
   hasBrowser,
+  sidebarOpen,
+  onToggle,
   onSelect,
   onCreate,
   onCreateSameWorkspace,
@@ -74,6 +77,8 @@ export function Sidebar({
   view: "chat" | "sessions" | "agent" | "routines" | "browser" | "audit";
   /** Whether the optional browser service is there at all. */
   hasBrowser: boolean;
+  sidebarOpen: boolean;
+  onToggle: () => void;
   onSelect: (id: string) => void;
   onCreate: (workspacePath: string) => Promise<void>;
   onCreateSameWorkspace?: () => Promise<void>;
@@ -131,8 +136,8 @@ export function Sidebar({
   );
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-surface">
-      <div className="flex items-center gap-2 px-3 pb-3 pt-4">
+    <aside className={`flex ${sidebarOpen ? 'w-64' : 'w-0'} shrink-0 flex-col border-r border-line bg-surface transition-all duration-200 overflow-hidden`}>
+      <div className="flex items-center gap-1 px-3 pb-3 pt-4">
         <img
           src="/logo-192.png"
           alt=""
@@ -141,11 +146,18 @@ export function Sidebar({
         />
         <h1 className="text-sm font-semibold tracking-tight text-fg">Rinthel.Ai</h1>
         <span
-          className="ml-auto text-[10px] uppercase tracking-wider text-fg-faint"
+          className="text-[10px] uppercase tracking-wider text-fg-faint"
           title="How sessions are executed"
         >
           {executor}
         </span>
+        <button
+          onClick={onToggle}
+          className="ml-auto rounded p-1 text-fg-faint hover:bg-fg/5 hover:text-fg"
+          title="Cerrar barra lateral"
+        >
+          <LuPanelLeftClose className="h-4 w-4" />
+        </button>
       </div>
 
       {/* Destinations, above the session lists. */}

@@ -111,11 +111,19 @@ app.get("/api/settings", (_req, res) => {
 });
 
 app.put("/api/settings", async (req, res) => {
-  const { provider, model, thinkingLevel } = req.body ?? {};
+  const { provider, model, thinkingLevel, soundEnabled, soundType } = req.body ?? {};
+  const allowedSounds = ["default", "chime", "pop", "futuristic", "interface-zoom", "none"];
+
+  if (soundType !== undefined && !allowedSounds.includes(soundType)) {
+    return res.status(400).json({ error: "soundType must be one of: default, chime, pop, futuristic, interface-zoom, none" });
+  }
+
   const patch: Record<string, string> = {};
   if (typeof provider === "string") patch.provider = provider.trim();
   if (typeof model === "string") patch.model = model.trim();
   if (typeof thinkingLevel === "string") patch.thinkingLevel = thinkingLevel.trim();
+  if (typeof soundEnabled === "boolean") patch.soundEnabled = soundEnabled ? "true" : "false";
+  if (typeof soundType === "string") patch.soundType = soundType;
   // Checked before anything is written. Rejecting half way through left the
   // provider changed on a request that answered 400, which is a worse outcome
   // than either accepting or refusing the lot. Rejected rather than clamped

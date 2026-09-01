@@ -578,6 +578,8 @@ export interface GlobalSettings {
   provider: string;
   model: string;
   thinkingLevel: string;
+  soundEnabled: boolean;
+  soundType: string;
 }
 
 /**
@@ -593,17 +595,33 @@ const SETTING_DEFAULTS = (): GlobalSettings => ({
   model: process.env.PI_MODEL || piSetting("defaultModel") || "",
   thinkingLevel:
     process.env.PI_THINKING_LEVEL || piSetting("defaultThinkingLevel") || "medium",
+  soundEnabled: true,
+  soundType: "default",
 });
 
-/** Only what the portal was explicitly told; absent keys fall through. */
+/**
+ * Only what the portal was explicitly told; absent keys fall through.
+ *
+ * NOTE: `stored` is intentionally raw — values come from SQLite as strings
+ * (except `soundEnabled` which is coerced to boolean).  Use `getSettings()`
+ * for a fully normalised `GlobalSettings` object where every field has the
+ * correct type and defaults are resolved.
+ */
 export function getStoredSettings(): Partial<GlobalSettings> {
   const rows = getDb().prepare("SELECT key, value FROM settings").all() as {
     key: string;
     value: string;
   }[];
-  return Object.fromEntries(
+  const raw = Object.fromEntries(
     rows.filter((r) => r.value).map((r) => [r.key, r.value])
-  ) as Partial<GlobalSettings>;
+  ) as Record<string, unknown>;
+  return {
+    ...raw,
+    soundEnabled:
+      raw.soundEnabled !== undefined
+        ? (raw.soundEnabled as string) !== "false"
+        : undefined,
+  } as Partial<GlobalSettings>;
 }
 
 /** What pi is actually launched with: stored, else env, else pi's file. */
@@ -614,6 +632,11 @@ export function getSettings(): GlobalSettings {
     provider: stored.provider || defaults.provider,
     model: stored.model || defaults.model,
     thinkingLevel: stored.thinkingLevel || defaults.thinkingLevel,
+    soundEnabled:
+      stored.soundEnabled === undefined
+        ? defaults.soundEnabled
+        : (stored.soundEnabled as unknown as string) !== "false",
+    soundType: stored.soundType || defaults.soundType,
   };
 }
 
@@ -629,7 +652,13 @@ export function setSettings(patch: Partial<GlobalSettings>): GlobalSettings {
   );
   const clear = getDb().prepare("DELETE FROM settings WHERE key = ?");
   for (const [k, v] of Object.entries(patch)) {
-    if (typeof v !== "string") continue;
+    if (typeof v !== "string") {
+      console.warn(
+        `[db] setSettings: ${k} has type ${typeof v}, expected string — skipping. ` +
+          "Convert to string before calling setSettings().",
+      );
+      continue;
+    }
     if (v.trim()) upsert.run(k, v.trim());
     else clear.run(k);
   }

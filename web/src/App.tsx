@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LuPanelLeft, LuPlus } from "react-icons/lu";
 import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { api, type PortalEvent, type Session, type SessionStatus, type Workspace } from "./api";
+import { SettingsProvider, useSettings } from "./SettingsContext";
 import { Sidebar } from "./components/Sidebar";
 import { Chat } from "./components/Chat";
 import { Login } from "./components/Login";
@@ -12,6 +14,7 @@ import { RoutinesPage } from "./components/RoutinesPage";
 import { AuditPage } from "./components/AuditPanel";
 import { BrowserPage } from "./components/BrowserPage";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
+import { useNotificationSound, type SoundType } from "./use-notification-sound";
 
 // Legacy routes ("session", "global") still resolve — old links stay valid.
 type Tab = "general" | "extensions" | "advanced";
@@ -46,20 +49,22 @@ export default function App() {
   // Every meaningful view has a URL: a session, and its settings tabs. Deep
   // links and the back button work, and the server's SPA fallback serves them.
   return (
-    <Routes>
-      <Route path="/" element={<Shell />} />
-      <Route path="/sessions" element={<Shell view="sessions" />} />
-      <Route path="/agent" element={<Shell view="agent" />} />
-      <Route path="/routines" element={<Shell view="routines" />} />
-      <Route path="/browser" element={<Shell view="browser" />} />
-      <Route path="/audit" element={<Shell view="audit" />} />
-      <Route path="/s/:sessionId" element={<Shell />} />
-      <Route path="/s/:sessionId/settings" element={<Shell settings />} />
-      <Route path="/s/:sessionId/settings/:tab" element={<Shell settings />} />
-      <Route path="/settings" element={<Shell settings />} />
-      <Route path="/settings/:tab" element={<Shell settings />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <SettingsProvider>
+      <Routes>
+        <Route path="/" element={<Shell />} />
+        <Route path="/sessions" element={<Shell view="sessions" />} />
+        <Route path="/agent" element={<Shell view="agent" />} />
+        <Route path="/routines" element={<Shell view="routines" />} />
+        <Route path="/browser" element={<Shell view="browser" />} />
+        <Route path="/audit" element={<Shell view="audit" />} />
+        <Route path="/s/:sessionId" element={<Shell />} />
+        <Route path="/s/:sessionId/settings" element={<Shell settings />} />
+        <Route path="/s/:sessionId/settings/:tab" element={<Shell settings />} />
+        <Route path="/settings" element={<Shell settings />} />
+        <Route path="/settings/:tab" element={<Shell settings />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </SettingsProvider>
   );
 }
 
@@ -72,6 +77,7 @@ function Shell({
 }) {
   const { sessionId, tab } = useParams<{ sessionId?: string; tab?: string }>();
   const navigate = useNavigate();
+  const { data: settingsData } = useSettings();
 
   const [sessions, setSessions] = useState<Session[]>([]);
   // The task list deliberately excludes agent and routine sessions, but their
@@ -89,6 +95,14 @@ function Shell({
   const [loadingBefore, setLoadingBefore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uiQueue, setUiQueue] = useState<UiRequest[]>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    const saved = localStorage.getItem("rinthel-sidebar-open");
+    return saved === null ? true : saved === "true";
+  });
+  useEffect(() => {
+    localStorage.setItem("rinthel-sidebar-open", String(sidebarOpen));
+  }, [sidebarOpen]);
+  const [sameWorkspaceBusy, setSameWorkspaceBusy] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
   const refreshSessions = useCallback(async () => {
@@ -170,6 +184,10 @@ function Shell({
           const id = (ev.payload as { id: string }).id;
           setUiQueue((q) => q.filter((x) => x.id !== id));
         }
+        // Play notification sound when the agent finishes a task
+        if (ev.type === "agent_settled") {
+          playSoundRef.current();
+        }
       };
       es.addEventListener("caught-up", () => {
         // Only now do we know where the replayed window starts, and therefore
@@ -219,6 +237,23 @@ function Shell({
 
   const active = listed ?? (other?.id === sessionId ? other : null);
 
+  const onCreateSameWorkspace = async () => {
+    if (!active?.workspace) return;
+    const s = await api.createSession(active.workspace);
+    await refreshSessions();
+    navigate(`/s/${s.id}`);
+  };
+
+  // --- Notification sound ---
+  const stored = settingsData?.stored ?? {};
+  const soundEnabled = stored.soundEnabled ?? true;
+  const soundType = (stored.soundType as SoundType) ?? "default";
+  const playSound = useNotificationSound(soundEnabled, soundType);
+  const playSoundRef = useRef(playSound);
+  useEffect(() => {
+    playSoundRef.current = playSound;
+  }, [playSound]);
+
   return (
     <div className="flex h-screen bg-canvas">
       <Sidebar
@@ -229,6 +264,8 @@ function Shell({
         activeWorkspace={active?.workspace}
         view={view}
         hasBrowser={hasBrowser}
+        sidebarOpen={sidebarOpen}
+        onToggle={() => setSidebarOpen((v) => !v)}
         onNavigate={(to) => navigate(`/${to}`)}
         onSelect={(id) => navigate(`/s/${id}`)}
         onCreate={async (workspacePath) => {
@@ -236,12 +273,7 @@ function Shell({
           await refreshSessions();
           navigate(`/s/${s.id}`);
         }}
-        onCreateSameWorkspace={async () => {
-          if (!active?.workspace) return;
-          const s = await api.createSession(active.workspace);
-          await refreshSessions();
-          navigate(`/s/${s.id}`);
-        }}
+        onCreateSameWorkspace={onCreateSameWorkspace}
         onDelete={async (id) => {
           await api.deleteSession(id);
           const list = await refreshSessions();
@@ -347,7 +379,38 @@ function Shell({
         <ConfigModal
           initialTab={LEGACY_TABS[tab ?? ""] ?? (tab as Tab) ?? "general"}
           onClose={() => navigate(active ? `/s/${active.id}` : "/")}
+          settingsData={settingsData}
         />
+      )}
+
+      {!sidebarOpen && (
+        <div className="fixed left-0 top-0 z-50 flex flex-col items-start pt-2 pl-0.5">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="rounded-r-lg border border-line bg-surface p-1.5 text-fg-muted shadow hover:text-fg"
+            title="Abrir barra lateral"
+          >
+            <LuPanelLeft className="h-4 w-4" />
+          </button>
+          {active?.workspace && onCreateSameWorkspace && (
+            <button
+              onClick={async () => {
+                if (sameWorkspaceBusy) return;
+                setSameWorkspaceBusy(true);
+                try {
+                  await onCreateSameWorkspace();
+                } finally {
+                  setSameWorkspaceBusy(false);
+                }
+              }}
+              disabled={sameWorkspaceBusy}
+              className="mt-1 rounded-r-lg border border-line bg-surface px-2.5 py-1.5 text-left text-sm text-fg-muted shadow hover:bg-fg/5 hover:text-fg disabled:opacity-40"
+              title="New session in this workspace"
+            >
+              <LuPlus className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

@@ -599,6 +599,8 @@ export interface GlobalSettings {
   provider: string;
   model: string;
   thinkingLevel: string;
+  soundEnabled: boolean;
+  soundType: string;
 }
 
 export interface PiCommand {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Dispatch, SetStateAction, useEffect, useState, type ReactNode } from "react";
 import {
   LuBlocks,
   LuCheck,
@@ -19,6 +19,8 @@ import {
   LuUsers,
 } from "react-icons/lu";
 import { api, type ExtensionInfo, type GlobalSettings, type ReportTarget, type ReportTo } from "../api";
+import { useSettings, type SettingsData } from "../SettingsContext";
+import { useNotificationSound, type SoundType } from "../use-notification-sound";
 import { ChannelsPanel } from "./ChannelsPanel";
 import { SkillsPanel } from "./SkillsPanel";
 import { McpPanel } from "./McpPanel";
@@ -84,9 +86,11 @@ const TABS: { id: Tab; label: string; icon: ReactNode; hint: string }[] = [
 export function ConfigModal({
   onClose,
   initialTab = "general",
+  settingsData,
 }: {
   onClose: () => void;
   initialTab?: Tab;
+  settingsData?: SettingsData | null;
 }) {
   const [nav, setNav] = useState<Nav>({ kind: "tab", id: initialTab });
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +123,10 @@ export function ConfigModal({
   const configurable = extensions.filter((e) => e.settings.length > 0);
   const activeExt =
     nav.kind === "ext" ? extensions.find((e) => e.spec === nav.spec) : undefined;
+
+  // Use settings from context if available, otherwise GeneralPanel loads its own
+  const sharedSettings = settingsData ?? null;
+  const { updateStored: contextUpdateStored } = useSettings();
 
   return (
     <Modal
@@ -167,7 +175,9 @@ export function ConfigModal({
         </div>
       )}
 
-      {nav.kind === "tab" && nav.id === "general" && <GeneralPanel onError={setError} />}
+      {nav.kind === "tab" && nav.id === "general" && (
+        <GeneralPanel onError={setError} sharedSettings={sharedSettings} onUpdateContext={contextUpdateStored} />
+      )}
       {nav.kind === "tab" && nav.id === "channels" && <ChannelsPanel onError={setError} />}
       {nav.kind === "tab" && nav.id === "people" && <PeoplePanel onError={setError} />}
       {nav.kind === "tab" && nav.id === "add-ons" && <PortalExtensions onError={setError} />}
@@ -356,7 +366,15 @@ function ReportDefault({ onError }: { onError: (e: string) => void }) {
   );
 }
 
-function GeneralPanel({ onError }: { onError: (e: string) => void }) {
+function GeneralPanel({
+  onError,
+  sharedSettings,
+  onUpdateContext,
+}: {
+  onError: (e: string) => void;
+  sharedSettings: SettingsData | null;
+  onUpdateContext: (partial: Partial<GlobalSettings>) => void;
+}) {
   /** Only the explicit overrides — an empty field means "inherit". */
   const [stored, setStored] = useState<Partial<GlobalSettings> | null>(null);
   const [defaults, setDefaults] = useState<GlobalSettings | null>(null);
@@ -385,9 +403,21 @@ function GeneralPanel({ onError }: { onError: (e: string) => void }) {
       })
       .catch((e) => onError((e as Error).message));
 
+  // Use shared settings from context if available, otherwise load independently
   useEffect(() => {
-    load();
-  }, []);
+    if (sharedSettings) {
+      setStored(sharedSettings.stored);
+      setDefaults(sharedSettings.defaults);
+      setKeepRecent(sharedSettings.compaction.keepRecentTokens);
+      setMeta({
+        executor: sharedSettings.executor,
+        workspaceRoot: sharedSettings.workspaceRoot,
+        piSettingsPath: sharedSettings.piSettingsPath,
+      });
+    } else {
+      load();
+    }
+  }, [sharedSettings]);
 
   /**
    * Saved on release, on its own.
@@ -420,6 +450,8 @@ function GeneralPanel({ onError }: { onError: (e: string) => void }) {
         provider: stored.provider ?? "",
         model: stored.model ?? "",
         thinkingLevel: stored.thinkingLevel ?? "",
+        soundEnabled: stored.soundEnabled ?? true,
+        soundType: stored.soundType ?? "default",
       });
       await load();
       setSaved(true);
@@ -526,6 +558,11 @@ function GeneralPanel({ onError }: { onError: (e: string) => void }) {
 
       <ReportDefault onError={onError} />
 
+      {/* --- Sound notification section --- */}
+      <Section title="Sonido de notificación" hint="Suena cuando el agente termina una tarea">
+        <SoundSettings stored={stored} setStored={setStored} onError={onError} onUpdateContext={onUpdateContext} />
+      </Section>
+
       <Section title="Deployment">
         <dl className="rounded-xl border border-line bg-raised/40 p-3 text-sm">
           <div className="flex items-center gap-2 py-0.5">
@@ -551,6 +588,115 @@ function GeneralPanel({ onError }: { onError: (e: string) => void }) {
         </dl>
       </Section>
     </>
+  );
+}
+
+// --- sound settings subcomponent ---
+
+function SoundSettings({
+  stored,
+  setStored,
+  onError,
+  onUpdateContext,
+}: {
+  stored: Partial<GlobalSettings>;
+  setStored: Dispatch<SetStateAction<Partial<GlobalSettings> | null>>;
+  onError: (e: string) => void;
+  onUpdateContext: (partial: Partial<GlobalSettings>) => void;
+}) {
+  const enabled = stored.soundEnabled ?? true;
+  const type = (stored.soundType as SoundType) ?? "default";
+  const [previewType, setPreviewType] = useState<SoundType>("default");
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const playSound = useNotificationSound(enabled, type);
+  const playPreview = useNotificationSound(true, previewType);
+
+  const saveSoundSettings = async () => {
+    setBusy(true);
+    try {
+      await api.saveSettings({
+        provider: stored.provider ?? "",
+        model: stored.model ?? "",
+        thinkingLevel: stored.thinkingLevel ?? "",
+        soundEnabled: stored.soundEnabled ?? true,
+        soundType: stored.soundType ?? "default",
+      });
+      // Actualizar estado local y contexto sin fetch extra.
+      setStored({ ...stored, soundEnabled: stored.soundEnabled ?? true, soundType: stored.soundType ?? "default" });
+      onUpdateContext({ soundEnabled: stored.soundEnabled ?? true, soundType: stored.soundType ?? "default" });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Toggle */}
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setStored({ ...stored, soundEnabled: e.target.checked })}
+          className="accent-accent"
+        />
+        <span className="text-sm text-fg-muted">Reproducir sonido al completar tarea</span>
+      </label>
+
+      {/* Selector de tipo */}
+      <div>
+        <span className="text-xs text-fg-muted">Tipo de sonido</span>
+        <select
+          value={type}
+          onChange={(e) => setStored({ ...stored, soundType: e.target.value })}
+          className={`${inputCls} mt-1`}
+        >
+          <option value="default">Ding-dong (por defecto)</option>
+          <option value="chime">Campana suave</option>
+          <option value="pop">Click corto</option>
+          <option value="futuristic">Sonido futurista</option>
+          <option value="interface-zoom">Zoom de interfaz</option>
+          <option value="none">Silencio</option>
+        </select>
+      </div>
+
+      {/* Preview: escucha cómo sonará ANTES de guardar */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => {
+            setPreviewType(type);
+            playPreview();
+          }}
+          className={btnCls}
+        >
+          🔊 Escuchar preview
+        </button>
+        <span className="text-[10px] text-fg-faint">Escucha cómo sonará con la selección actual</span>
+      </div>
+
+      {/* Botón de confirmación */}
+      <button
+        onClick={saveSoundSettings}
+        disabled={busy}
+        className={`${primaryCls} w-full justify-center`}
+      >
+        {busy ? (
+          <>
+            <LuRefreshCw className="h-4 w-4 animate-spin" /> Guardando…
+          </>
+        ) : saved ? (
+          <>
+            <LuCheck className="h-4 w-4" /> ¡Guardado!
+          </>
+        ) : (
+          "Confirmar y guardar sonido"
+        )}
+      </button>
+    </div>
   );
 }
 
