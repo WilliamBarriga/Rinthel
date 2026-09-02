@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 export type Theme = "light" | "dark" | "cyberpunk" | "system";
 type Resolved = Exclude<Theme, "system">;
 
-const KEY = "pithagoras.theme";
+const KEY = "rinthel.theme";
 const media = () => window.matchMedia("(prefers-color-scheme: light)");
 
 export const resolve = (theme: Theme): Resolved =>

@@ -155,6 +155,25 @@
   [data-theme="cyberpunk"] [class*="ring-accent"] {
     filter: drop-shadow(0 0 6px rgb(var(--accent) / 0.45));
   }
+
+  /* Sidebar icons: glow halo on active nav items, subtle pulse on hover.
+     Works in all three themes — dark (cyan), light (teal), cyberpunk (magenta). */
+  .sidebar-nav [class*="text-accent"] svg {
+    filter: drop-shadow(0 0 4px rgb(var(--accent) / 0.5));
+  }
+  .sidebar-nav button:hover span.shrink-0 svg {
+    filter: drop-shadow(0 0 3px rgb(var(--accent) / 0.35));
+  }
+
+  /* Cyberpunk: icons always wear the accent (magenta), not the default fg.
+     Active ones get a stronger halo; hover gives a brief bright flash. */
+  [data-theme="cyberpunk"] .sidebar-nav span.shrink-0 svg {
+    color: rgb(var(--accent));
+  }
+  [data-theme="cyberpunk"] .sidebar-nav button:hover span.shrink-0 svg {
+    filter: drop-shadow(0 0 8px rgb(var(--accent) / 0.6));
+    transition: filter 150ms ease;
+  }
   [data-theme="cyberpunk"] ::-webkit-scrollbar-thumb {
     background-color: rgb(var(--accent) / 0.3);
   }

@@ -161,7 +161,7 @@ export function Sidebar({
       </div>
 
       {/* Destinations, above the session lists. */}
-      <nav className="px-2 pb-2">
+      <nav className="sidebar-nav px-2 pb-2">
         {activeWorkspace && onCreateSameWorkspace && (
           <button
             onClick={async () => {
@@ -342,11 +342,17 @@ function NavItem({
       }`}
     >
       <span
-        className={`absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-accent transition-opacity ${
+        className={`absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-accent transition-opacity ${
           active ? "opacity-100" : "opacity-0"
         }`}
       />
-      <span className={`shrink-0 transition-colors ${active ? "text-accent" : "text-fg-faint group-hover:text-fg-subtle"}`}>
+      <span
+        className={`shrink-0 transition-all duration-200 ${
+          active
+            ? "text-accent"
+            : "text-fg-faint group-hover:text-fg-subtle group-hover:scale-110"
+        }`}
+      >
         {icon}
       </span>
       {label}

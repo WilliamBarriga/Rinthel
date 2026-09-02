@@ -39,7 +39,7 @@ const cacheModels = (models: PiModel[]) => {
   }
 };
 
-const RECENTS_KEY = "pithagoras.recentModels";
+const RECENTS_KEY = "rinthel.recentModels";
 const MAX_RECENTS = 4;
 
 function readRecents(): string[] {

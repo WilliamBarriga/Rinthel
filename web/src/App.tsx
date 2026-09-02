@@ -244,6 +244,18 @@ function Shell({
     navigate(`/s/${s.id}`);
   };
 
+  // --- Keyboard shortcut: Ctrl+Shift+N → New session in current workspace ---
+  useEffect(() => {
+    const handleNewSession = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === "N") {
+        e.preventDefault();
+        onCreateSameWorkspace();
+      }
+    };
+    document.addEventListener("keydown", handleNewSession);
+    return () => document.removeEventListener("keydown", handleNewSession);
+  }, [active?.workspace]);
+
   // --- Notification sound ---
   const stored = settingsData?.stored ?? {};
   const soundEnabled = stored.soundEnabled ?? true;
