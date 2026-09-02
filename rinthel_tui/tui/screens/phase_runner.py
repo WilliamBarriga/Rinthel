@@ -13,7 +13,8 @@ from textual.screen import Screen
 from textual.widgets import RichLog, Static
 
 from rinthel_tui.config import CONFIG, RinthelConfig
-from rinthel_tui.lifecycle.phases import PhaseError, PhaseReport
+from rinthel_tui.lifecycle.phases import PhaseReport
+from rinthel_tui.lifecycle.runner import PhaseFailed, run_phase_list
 from rinthel_tui.lifecycle.specs import PhaseSpec
 from rinthel_tui.theme import palette
 from rinthel_tui.tui.effects.base import TransitionEffect
@@ -84,16 +85,19 @@ class PhaseSequenceScreen(Screen):
 
     async def _run_spec(self, spec: PhaseSpec, report: PhaseReport) -> bool:
         """Corre una fase y refleja el resultado en el checklist. Devuelve
-        False si la fase falló (la secuencia debe cortarse ahí)."""
+        False si la fase falló (la secuencia debe cortarse ahí). El corte
+        en sí (catch de PhaseError, mensaje) vive en
+        ``lifecycle.runner.run_phase_list`` — misma lógica que usa
+        ``scripts/test_phases.py`` sin TUI, para no divergir entre los dos."""
         assert self.checklist is not None and self.log_widget is not None
-        self.checklist.set_status(spec.label, "running")
         try:
-            await spec.run(self.cfg, report)
-        except PhaseError as exc:
-            self.checklist.set_status(spec.label, "error")
-            self.log_widget.write(f"[{palette.HOT}]✖ secuencia cortada: {exc}[/]")
+            await run_phase_list(
+                self.cfg, [spec], report,
+                on_phase=lambda s, status: self.checklist.set_status(s.label, status),
+            )
+        except PhaseFailed as exc:
+            self.log_widget.write(f"[{palette.HOT}]✖ secuencia cortada: {exc.cause}[/]")
             return False
-        self.checklist.set_status(spec.label, "done")
         return True
 
     async def _run_closing(self, closing: ClosingSequence | None) -> None:

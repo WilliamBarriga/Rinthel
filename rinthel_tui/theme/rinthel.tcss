@@ -42,10 +42,25 @@ Screen {
     content-align: center middle;
 }
 
-/* ── Menú ─────────────────────────────────────────────────── */
+/* ── Menú (caja centrada) ─────────────────────────────────── */
+
+#menu-box {
+    align: center middle;
+    width: 60;
+    height: auto;
+    border: round $accent;
+    padding: 1 2;
+    margin: 2 0;
+}
+
+.menu-title {
+    text-align: center;
+    width: 100%;
+    color: $accent;
+    margin-bottom: 1;
+}
 
 #menu-options {
-    height: 1fr;
     border: none;
 }
 
@@ -53,6 +68,24 @@ Screen {
     height: 1;
     dock: bottom;
     color: $dim;
+}
+
+/* Separadores temáticos — opciones disabled del menú */
+#menu-options .option-list--option-disabled {
+    color: $dim;
+}
+
+/* Focus highlight — opción seleccionada (clase oficial Textual) */
+#menu-options .option-list--option-highlighted {
+    background: $accent;
+    color: $background;
+    text-style: bold;
+}
+
+/* Hover — opción con mouse encima (clase oficial Textual) */
+#menu-options .option-list--option-hover {
+    background: $electric-dim;
+    color: $primary;
 }
 
 .service-badge {

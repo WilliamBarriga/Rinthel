@@ -66,7 +66,10 @@ async def _run_trace(cfg: RinthelConfig, prompt: str, out_file: Path, report: Ph
 
 
 async def capture_profile(cfg: RinthelConfig, report: PhaseReport) -> None:
-    system_text = f"{_ANCESTOR_AGENTS.read_text()}\n\n{_ROOT_AGENTS.read_text()}"
+    try:
+        system_text = f"{_ANCESTOR_AGENTS.read_text()}\n\n{_ROOT_AGENTS.read_text()}"
+    except FileNotFoundError as exc:
+        raise PhaseError(f"falta {exc.filename} — no se puede armar el contexto del perfil") from exc
 
     cfg.moe_trace_out_dir.mkdir(parents=True, exist_ok=True)
     code_csv = cfg.moe_trace_out_dir / "qwen3.6-code.csv"

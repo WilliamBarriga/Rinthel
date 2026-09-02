@@ -21,5 +21,11 @@ CYBERPUNK_THEME = Theme(
         "border": palette.FG,
         "caution": palette.CAUTION,
         "dim": palette.DIM,
+        # Extended palette — variables CSS reutilizables por tui screens
+        "accent-dim": palette.ACCENT_DIM,
+        "cool-dim": palette.COOL_DIM,
+        "hot-dim": palette.HOT_DIM,
+        "electric-dim": palette.ELECTRIC_DIM,
+        "steel-dim": palette.STEEL_DIM,
     },
 )

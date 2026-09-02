@@ -88,6 +88,8 @@ async def _http_ok(url: str, timeout: float = 2.0) -> bool:
 async def phase_check_docker(cfg: RinthelConfig, report: PhaseReport) -> None:
     proc = await asyncio.create_subprocess_exec(
         "systemctl", "is-active", "--quiet", "docker",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
     )
     rc = await proc.wait()
     if rc != 0:
@@ -101,6 +103,9 @@ async def phase_check_docker(cfg: RinthelConfig, report: PhaseReport) -> None:
 # conflicto con --load-mode none de otros perfiles: el binario solo respeta
 # el último flag de carga en la línea de comandos, que ya era --mlock).
 async def phase_spawn_llama_server(cfg: RinthelConfig, report: PhaseReport) -> None:
+    if await _port_in_use(cfg.port):
+        report.warn(f"Ya hay algo escuchando en :{cfg.port} — no relanzo llama-server")
+        return
     log_file = open(cfg.log, "ab")
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -109,8 +114,8 @@ async def phase_spawn_llama_server(cfg: RinthelConfig, report: PhaseReport) -> N
             "--port", str(cfg.port),
             "--n-cpu-moe", "60", "--threads-batch", "7", "--threads", "8",
             "--ubatch-size", "512", "--batch-size", "512", "--parallel", "1",
-            "--temp", "0.7", "--top-p", "0.8", "--top-k", "20", "--min-p", "0.1",
-            "--repeat-penalty", "1.05",
+            # "--temp", "0.7", "--top-p", "0.8", "--top-k", "20", "--min-p", "0.1",
+            # "--repeat-penalty", "1.05",
             "--cache-reuse", "256", "--cache-ram", "-1", "--load-mode", "mlock",
             "--spec-type", "draft-mtp", "--spec-draft-n-max", "2",
             stdout=log_file,
@@ -119,7 +124,16 @@ async def phase_spawn_llama_server(cfg: RinthelConfig, report: PhaseReport) -> N
         )
     finally:
         log_file.close()
-    report.success(f"llama-server lanzado en background (PID {proc.pid}) — log: {cfg.log}")
+    # Sin esto, un binario/flag roto que crashea al instante (ej. un typo en
+    # un flag: pasó de verdad) queda reportado como "lanzado" — y la fase
+    # siguiente solo se entera 90s después con un timeout genérico.
+    try:
+        rc = await asyncio.wait_for(proc.wait(), timeout=1.5)
+    except asyncio.TimeoutError:
+        report.success(f"llama-server lanzado en background (PID {proc.pid}) — log: {cfg.log}")
+    else:
+        report.error(f"llama-server murió al instante (rc {rc}) — revisa {cfg.log}")
+        raise PhaseError(f"llama-server exited immediately (rc {rc})")
 
 
 async def phase_wait_llama_ready(cfg: RinthelConfig, report: PhaseReport, timeout: int = 90) -> None:
@@ -136,16 +150,27 @@ async def phase_wait_llama_ready(cfg: RinthelConfig, report: PhaseReport, timeou
 
 
 async def phase_kill_llama_server(cfg: RinthelConfig, report: PhaseReport) -> None:
-    proc = await asyncio.create_subprocess_exec(
-        "pkill", "-f", f"llama-server.*--port {cfg.port}",
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    rc = await proc.wait()
-    if rc == 0:
-        report.success(f"llama-server parado en :{cfg.port}")
-    else:
+    # `pkill -f` matcheaba contra la línea de comandos exacta con la que
+    # phase_spawn_llama_server lanza el proceso — cualquier llama-server
+    # levantado a mano o por una versión vieja del script (flags distintos)
+    # no matcheaba y el phase reportaba "no había nada" con el server bien
+    # arriba. Detectamos/matamos por el puerto (mismo chequeo que
+    # phase_wait_llama_ready/phase_wait_port_free), que es lo que de verdad
+    # nos importa: quién sea que esté escuchando en :cfg.port.
+    if not await _port_in_use(cfg.port):
         report.warn(f"No había llama-server corriendo en :{cfg.port}")
+        return
+    await _run(["fuser", "-k", "-TERM", f"{cfg.port}/tcp"], report)
+    for _ in range(10):
+        if not await _port_in_use(cfg.port):
+            report.success(f"llama-server parado en :{cfg.port}")
+            return
+        await asyncio.sleep(1)
+    await _run(["fuser", "-k", "-KILL", f"{cfg.port}/tcp"], report)
+    if await _port_in_use(cfg.port):
+        report.warn(f"AVISO: :{cfg.port} sigue ocupado tras intentar matar el proceso")
+    else:
+        report.success(f"llama-server parado en :{cfg.port} (SIGKILL)")
 
 
 # ── UNDERSTORY / PITHAGORAS (shutdown) ───────────────────────
@@ -155,7 +180,10 @@ async def _stop_service(directory: Path, label: str, report: PhaseReport) -> Non
     if not directory.is_dir():
         report.warn(f"{directory} no encontrado — omitido")
         return
-    await _docker_compose(["down"], directory, report)
+    rc = await _docker_compose(["down"], directory, report)
+    if rc != 0:
+        report.error(f"{label}: docker compose down falló (rc {rc})")
+        raise PhaseError(f"{label} down failed (rc {rc})")
     report.success(f"{label} parado")
 
 
@@ -167,10 +195,18 @@ async def phase_stop_pithagoras(cfg: RinthelConfig, report: PhaseReport) -> None
     await _stop_service(cfg.pithagoras_dir, "Pithagoras", report)
 
 
-async def phase_wait_port_free(cfg: RinthelConfig, report: PhaseReport, port: int | None = None) -> None:
+async def phase_wait_port_free(
+    cfg: RinthelConfig, report: PhaseReport, port: int | None = None, timeout: int = 30
+) -> None:
     target = port if port is not None else cfg.port
+    waited = 0
     while await _port_in_use(target):
+        if waited >= timeout:
+            report.warn(f"AVISO: :{target} sigue ocupado tras {timeout}s — continuando de todos modos")
+            return
         await asyncio.sleep(1)
+        waited += 1
+    report.success(f"Puerto :{target} libre")
 
 
 # ── UNDERSTORY / PITHAGORAS (boot) ────────────────────────────
@@ -180,8 +216,12 @@ async def phase_up_understory(cfg: RinthelConfig, report: PhaseReport) -> None:
     if not cfg.understory_dir.is_dir():
         report.warn(f"{cfg.understory_dir} no encontrado — omitido")
         return
-    await _docker_compose(["up", "-d"], cfg.understory_dir, report)
+    rc = await _docker_compose(["up", "-d"], cfg.understory_dir, report)
     await _docker_compose(["logs", "--tail", "5", "understory"], cfg.understory_dir, report)
+    if rc != 0:
+        report.error(f"Understory: docker compose up falló (rc {rc})")
+        raise PhaseError(f"understory up failed (rc {rc})")
+    report.success("Understory levantado")
 
 
 # Sin --no-cache: levanta con la imagen actual (ruta rápida, execute).
@@ -195,6 +235,13 @@ async def phase_build_up_pithagoras(cfg: RinthelConfig, report: PhaseReport, no_
     extra_env = {"PORT": str(cfg.pithagoras_port)}
     if no_cache:
         report.warn("Reconstruyendo imagen pithagoras…")
-        await _docker_compose(["build", "--no-cache", "portal"], cfg.pithagoras_dir, report, extra_env)
-    await _docker_compose(["up", "-d"], cfg.pithagoras_dir, report, extra_env)
+        rc = await _docker_compose(["build", "--no-cache", "portal"], cfg.pithagoras_dir, report, extra_env)
+        if rc != 0:
+            report.error(f"Pithagoras: docker compose build falló (rc {rc})")
+            raise PhaseError(f"pithagoras build failed (rc {rc})")
+    rc = await _docker_compose(["up", "-d"], cfg.pithagoras_dir, report, extra_env)
     await _docker_compose(["logs", "--tail", "5", "portal"], cfg.pithagoras_dir, report, extra_env)
+    if rc != 0:
+        report.error(f"Pithagoras: docker compose up falló (rc {rc})")
+        raise PhaseError(f"pithagoras up failed (rc {rc})")
+    report.success("Pithagoras levantado")

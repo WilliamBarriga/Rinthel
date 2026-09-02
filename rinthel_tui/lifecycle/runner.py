@@ -10,11 +10,16 @@ depender de que la anterior haya funcionado (ej. no tiene sentido esperar
 a que llama-server responda si nunca se lo pudo lanzar).
 """
 
-from typing import Sequence
+from typing import Callable, Sequence
 
 from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle.phases import PhaseError, PhaseReport
 from rinthel_tui.lifecycle.specs import PhaseSpec
+
+# status: "running" | "done" | "error" — avisa a quien llama antes/después de
+# cada fase para que pueda reflejarlo en un checklist (PhaseSequenceScreen)
+# sin que este módulo sepa nada de Textual.
+PhaseCallback = Callable[[PhaseSpec, str], None]
 
 
 class PhaseFailed(Exception):
@@ -26,9 +31,20 @@ class PhaseFailed(Exception):
         self.cause = cause
 
 
-async def run_phase_list(cfg: RinthelConfig, specs: Sequence[PhaseSpec], report: PhaseReport) -> None:
+async def run_phase_list(
+    cfg: RinthelConfig,
+    specs: Sequence[PhaseSpec],
+    report: PhaseReport,
+    on_phase: PhaseCallback | None = None,
+) -> None:
     for spec in specs:
+        if on_phase:
+            on_phase(spec, "running")
         try:
             await spec.run(cfg, report)
         except PhaseError as exc:
+            if on_phase:
+                on_phase(spec, "error")
             raise PhaseFailed(spec.label, exc) from exc
+        if on_phase:
+            on_phase(spec, "done")

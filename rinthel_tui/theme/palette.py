@@ -27,3 +27,4 @@ HOT_DIM = "#660018"
 ELECTRIC_DIM = "#4C0066"
 STEEL = "#6E5F96"  # lavender-gray — static, neutral
 STEEL_DIM = "#3A186B"
+ACCENT_DIM = "#660066"  # 50% ACCENT

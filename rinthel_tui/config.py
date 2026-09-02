@@ -67,3 +67,15 @@ def default_config() -> RinthelConfig:
 
 
 CONFIG = default_config()
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    val = os.environ.get(name, "").strip().lower()
+    if not val:
+        return default
+    return val in ("1", "on", "true", "yes")
+
+
+# Toggle global de efectos visuales (glow, glitch, ripple, etc.) — apagable
+# para terminales lentos o CI. Leído una vez al importar, como CONFIG.
+EFFECTS_ENABLED = _bool_env("RINTHEL_EFFECTS", True)

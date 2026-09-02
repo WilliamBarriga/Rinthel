@@ -1,38 +1,27 @@
-"""Reproductor de animaciones cuadro-a-cuadro en formato "--- Frame N ---".
-
-Reemplaza play_frames (clifx/lib/ascii.sh). Sin _crop_frame: Textual ya
-recorta/centra el contenido del widget según su tamaño, no hace falta
-recortar el texto a mano por viewport.
+"""Reproductor de animaciones cuadro-a-cuadro sobre una lista de frames ya
+renderizados (str o Rich renderable) — reemplaza play_frames (clifx/lib/
+ascii.sh). Sin _crop_frame: Textual ya recorta/centra el contenido del
+widget según su tamaño, no hace falta recortar el texto a mano por
+viewport.
 """
 
-from pathlib import Path
 from typing import Callable
 
+from rich.console import RenderableType
 from textual.timer import Timer
 from textual.widgets import Static
 
 
-def parse_frames(path: Path) -> list[str]:
-    frames: list[str] = []
-    current: list[str] = []
-    for line in path.read_text().splitlines():
-        if line.startswith("--- Frame"):
-            if current:
-                frames.append("\n".join(current))
-            current = []
-            continue
-        current.append(line)
-    if current:
-        frames.append("\n".join(current))
-    return frames
-
-
 class IntroAnimation(Static):
-    """Usage: IntroAnimation(path, fps=15, loops=1, on_finish=callback)."""
+    """Usage: IntroAnimation(frames, fps=15, loops=1, on_finish=callback).
+
+    `frames` es la secuencia ya construida (p.ej. banner.compose_frames()):
+    este widget solo hace de reproductor, no sabe nada de banners.
+    """
 
     def __init__(
         self,
-        path: Path,
+        frames: list[RenderableType],
         *,
         fps: float = 15.0,
         loops: int = 1,
@@ -40,7 +29,7 @@ class IntroAnimation(Static):
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
-        self._frames = parse_frames(path)
+        self._frames = frames
         self._fps = fps
         self._loops = loops
         self._on_finish = on_finish
