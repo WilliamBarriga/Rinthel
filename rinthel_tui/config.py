@@ -55,7 +55,7 @@ def default_config() -> RinthelConfig:
         bin=_p("~/codacus/llama.cpp/build-cuda/bin/llama-server"),
         model=_p("~/llama.cpp/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"),
         port=8080,
-        log=_p("~/CodeBase/.pi_profiles/logs/use-local-qwen3.6-tarkark-experimental.log"),
+        log=_p("~/Rinthel-general/logs/llama-server.log"),
         moe_trace_build=_p("~/codacus/llama.cpp/build-cuda/bin/llama-moe-trace"),
         moe_trace_out_dir=_p("~/codacus/profiles"),
         moe_cache_profile=moe_cache_profile,
