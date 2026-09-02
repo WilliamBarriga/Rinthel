@@ -9,6 +9,9 @@ services:
     # que pi crea bajo /workspaces y /data queden con dueño tarkark en vez
     # de root, y sean editables comodamente desde fuera del contenedor.
     user: "1000:1000"
+    cap_add:
+      - SYS_PTRACE
+      - CHOWN
     # gid del grupo "docker" en el host, para que el uid 1000 pueda hablar
     # con /var/run/docker.sock cuando EXECUTOR=container.
     group_add:
@@ -21,13 +24,6 @@ services:
       - ${WORKSPACES_DIR:-/root/repos}:/workspaces
       # Only needed when EXECUTOR=container.
       - /var/run/docker.sock:/var/run/docker.sock
-      # understory-bridge: local pi extension (not an npm/git package) that
-      # gives pi its memory tools via MCP. Same source/node_modules as the
-      # host's pi install, mounted read-only so both stay in sync.
-      - /home/tarkark/.pi/agent/extensions/understory-bridge:/data/home/.pi/agent/extensions/understory-bridge:ro
-      # AUTH_TOKEN for understory's /mcp — the extension hardcodes this path
-      # relative to $HOME (which is /data/home in this container).
-      - /home/tarkark/understory-poc/.env:/data/home/understory-poc/.env:ro
       # Selected host pi packages, mounted read-only at the exact path pi
       # expects for their source string (npm:<name> / git:<host>/<path>),
       # so pi finds them already "installed" and skips fetching. Declared
@@ -63,6 +59,9 @@ services:
       # box's own address works from inside the container unchanged.
       LLAMA_BASE_URL: ${LLAMA_BASE_URL:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Bearer token for understory's /mcp, read by pi-mcp-adapter via
+      # mcp.json's bearerTokenEnv (see /data/home/.pi/agent/mcp.json).
+      UNDERSTORY_TOKEN: ${UNDERSTORY_TOKEN:?set UNDERSTORY_TOKEN in .env}
 
 volumes:
   portal-data:
