@@ -1,0 +1,174 @@
+/* rinthel.tcss — el archivo que se edita el 95% de las veces.
+   Bordes, colores por widget, espaciado. Reemplaza a nc_divider/nc_banner/
+   nc_footer/nc_panel/nc_rule (cajas ASCII dibujadas a mano con printf). */
+
+Screen {
+    background: $background;
+    color: $primary;
+}
+
+.nc-panel {
+    border: round $primary;
+    color: $accent;
+    padding: 0 2;
+}
+
+.nc-divider {
+    border: double $primary;
+}
+
+.nc-dim {
+    color: $dim;
+}
+
+.nc-warn {
+    color: $warning;
+}
+
+.nc-success {
+    color: $success;
+}
+
+.nc-hot {
+    color: $error;
+}
+
+.nc-caution {
+    color: $caution;
+}
+
+.swatch {
+    width: 10;
+    content-align: center middle;
+}
+
+/* ── Menú ─────────────────────────────────────────────────── */
+
+#menu-options {
+    height: 1fr;
+    border: none;
+}
+
+#menu-footer {
+    height: 1;
+    dock: bottom;
+    color: $dim;
+}
+
+.service-badge {
+    width: auto;
+    margin: 0 2;
+}
+
+.service-badge.-online {
+    color: $success;
+}
+
+.service-badge.-offline {
+    color: $error;
+}
+
+/* ── Splash ───────────────────────────────────────────────── */
+
+#splash {
+    align: center middle;
+    height: 1fr;
+}
+
+.splash-title {
+    color: $accent;
+    text-align: center;
+    width: 100%;
+}
+
+.splash-prompt {
+    color: $dim;
+    text-align: center;
+    width: 100%;
+}
+
+/* ── Checklist de fases ───────────────────────────────────── */
+
+PhaseChecklist {
+    height: auto;
+    padding: 1 2;
+}
+
+.phase-row {
+    height: 1;
+}
+
+.phase-pending {
+    color: $dim;
+}
+
+.phase-running {
+    color: $primary;
+}
+
+.phase-done {
+    color: $success;
+}
+
+.phase-warn {
+    color: $caution;
+}
+
+.phase-error {
+    color: $error;
+}
+
+/* ── Paneles de log ───────────────────────────────────────── */
+
+#phase-log,
+#tail-log,
+#capture-log {
+    border: round $primary;
+    height: 1fr;
+    padding: 0 1;
+}
+
+/* ── Efectos de texto (tui/effects/flicker.py) ───────────── */
+
+.-reverse {
+    background: $primary;
+    color: $background;
+}
+
+/* ── Farewell ─────────────────────────────────────────────── */
+
+#farewell {
+    align: center middle;
+    height: 1fr;
+}
+
+/* ── Monitor ──────────────────────────────────────────────── */
+
+#monitor-badges {
+    height: 1;
+    padding: 0 1;
+}
+
+#monitor-badges .service-badge {
+    margin: 0 3 0 0;
+}
+
+#monitor-docker {
+    height: 8;
+    border: round $primary;
+}
+
+#monitor-resources {
+    height: 6;
+}
+
+.monitor-panel {
+    width: 1fr;
+    padding: 0 1;
+}
+
+#monitor-log {
+    border: round $primary;
+    height: 1fr;
+    padding: 0 1;
+}

@@ -1,0 +1,15 @@
+[project]
+name = "rinthel-tui"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = ["textual>=0.80", "pyfiglet>=1.0.4", "psutil>=5.9"]
+
+[project.scripts]
+rinthel = "rinthel_tui.app:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["rinthel_tui*"]
