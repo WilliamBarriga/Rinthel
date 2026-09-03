@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Lanza RinthelApp (rinthel_tui) usando el venv de dev de este repo.
+# Ejecutar SIEMPRE desde (o con cwd dentro de) la raíz del repo: DIR se
+# resuelve relativo a este script, pero .venv se busca ahí mismo — no
+# funciona symlinkeado/copiado a otro lugar. Config vía .env, ver README.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON="$DIR/.venv/bin/python"
 if [[ ! -x "$PYTHON" ]]; then
