@@ -9,6 +9,25 @@ COPY server server
 COPY web web
 RUN npm run build
 
+# Python 3.14.7 — latest stable, compiled from source so it survives rebuilds,
+# in its own stage so build-essential and the -dev headers never land in the
+# final image. Installed to its own prefix (not /usr/local directly) so the
+# COPY below can't collide with anything node:22-slim itself keeps there.
+FROM node:22-slim AS python-build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential ca-certificates zlib1g-dev libncurses5-dev libgdbm-dev \
+      libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget \
+      libbz2-dev liblzma-dev tk-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && wget -qO Python-3.14.7.tgz https://www.python.org/ftp/python/3.14.7/Python-3.14.7.tgz \
+    && tar -xzf Python-3.14.7.tgz \
+    && cd Python-3.14.7 \
+    && ./configure --enable-optimizations --prefix=/usr/local/python3.14 \
+    && make -j$(nproc) \
+    && make install \
+    && cd .. \
+    && rm -rf Python-3.14.7 Python-3.14.7.tgz
+
 FROM node:22-slim
 WORKDIR /app
 
@@ -19,6 +38,34 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git openssh-client ca-certificates curl wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Python 3.14.7, built in the python-build stage above. Only its installed
+# prefix is copied in — build-essential and the -dev headers stay out of this
+# image. The -dev packages' shared libs still need their runtime counterparts
+# here explicitly: those live in /usr/lib, not /usr/local, so copying the
+# prefix alone doesn't bring them along.
+COPY --from=python-build /usr/local/python3.14 /usr/local/python3.14
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      zlib1g libtinfo6 libncursesw6 libgdbm6 libnss3 libssl3 libreadline8 \
+      libffi8 libsqlite3-0 libbz2-1.0 liblzma5 tk \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/local/python3.14/bin/python3.14 /usr/local/bin/python3 \
+    && ln -sf /usr/local/python3.14/bin/python3.14 /usr/local/bin/python3.14 \
+    && ln -sf /usr/local/python3.14/bin/pip3.14 /usr/local/bin/pip3 \
+    && python3 --version
+
+# Utility tools — prebuilt .deb binaries for ripgrep and fd, apt for the rest.
+# ripgrep (fast search), fd-find (modern find), jq (JSON parser),
+# sqlite3 (database CLI), nmap (network scanning).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      sqlite3 nmap jq \
+    && wget -qO /tmp/ripgrep.deb https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep_15.2.0-1_amd64.deb \
+    && wget -qO /tmp/fd.deb https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-musl_10.5.0_amd64.deb \
+    && dpkg -i /tmp/ripgrep.deb /tmp/fd.deb \
+    && apt-get install -f -y \
+    && rm -f /tmp/ripgrep.deb /tmp/fd.deb \
+    && rm -rf /var/lib/apt/lists/* \
+    && jq --version && rg --version | head -1 && fd --version && sqlite3 --version && nmap --version | head -1
 
 # uv, so the agent can run Python tooling — a large share of MCP servers are
 # Python and are launched with uvx. Static musl binaries, no Python needed to

@@ -4,18 +4,22 @@ services:
     container_name: pithagoras
     restart: unless-stopped
     network_mode: host
-    # Corre como el mismo uid/gid que tarkark en el host (el usuario "node"
-    # de la imagen base ya es 1000:1000) para que las carpetas y archivos
-    # que pi crea bajo /workspaces y /data queden con dueño tarkark en vez
+    # Corre como el mismo uid/gid que el usuario del host (el usuario "node"
+    # de la imagen base ya es 1000:1000, el default más común en una
+    # instalación Ubuntu de un solo usuario) para que las carpetas y archivos
+    # que pi crea bajo /workspaces y /data queden con el dueño correcto en vez
     # de root, y sean editables comodamente desde fuera del contenedor.
-    user: "1000:1000"
+    # Override con PUID/PGID en .env si tu uid/gid no es 1000:1000.
+    user: "${PUID:-1000}:${PGID:-1000}"
     cap_add:
       - SYS_PTRACE
       - CHOWN
-    # gid del grupo "docker" en el host, para que el uid 1000 pueda hablar
-    # con /var/run/docker.sock cuando EXECUTOR=container.
+    # gid del grupo "docker" en el host, para que el usuario de arriba pueda
+    # hablar con /var/run/docker.sock cuando EXECUTOR=container. El GID de
+    # "docker" varía por máquina — DOCKER_GID lo genera el instalador con
+    # `getent group docker | cut -d: -f3`.
     group_add:
-      - "984"
+      - "${DOCKER_GID:-984}"
     volumes:
       - portal-data:/data
       # Certificates, when you have them. Empty by default.
@@ -34,8 +38,11 @@ services:
       # own deps (linkedom, etc.) live as siblings, not nested inside it.
       # This makes the other npm: packages' source readable too, but only
       # the ones listed in settings.json `packages` actually get loaded.
-      - /home/tarkark/.pi/agent/npm/node_modules:/data/home/.pi/agent/npm/node_modules:ro
-      - /home/tarkark/.pi/agent/git/github.com/harms-haus/pi-processes:/data/home/.pi/agent/git/github.com/harms-haus/pi-processes:ro
+      # PI_AGENT_DIR must be an absolute path ($HOME/.pi/agent) — Compose
+      # does not expand "~". If unset, Docker silently mounts an empty dir
+      # here instead of failing, so pi loses these packages with no error.
+      - ${PI_AGENT_DIR}/npm/node_modules:/data/home/.pi/agent/npm/node_modules:ro
+      - ${PI_AGENT_DIR}/git/github.com/harms-haus/pi-processes:/data/home/.pi/agent/git/github.com/harms-haus/pi-processes:ro
     environment:
       # With host networking the portal binds PORT directly on the host.
       PORT: ${PORT:-4100}
@@ -63,5 +70,31 @@ services:
       # mcp.json's bearerTokenEnv (see /data/home/.pi/agent/mcp.json).
       UNDERSTORY_TOKEN: ${UNDERSTORY_TOKEN:?set UNDERSTORY_TOKEN in .env}
 
+  tailscale:
+    # Opcional — excluido de `docker compose up -d` por default (solo se
+    # levanta con `docker compose --profile vpn up -d`). Sin esto,
+    # TS_AUTHKEY:? bloquea TODO el stack (incluido portal) si no se setea,
+    # aunque no se quiera VPN.
+    profiles: ["vpn"]
+    image: tailscale/tailscale:latest
+    container_name: pithagoras-tailscale
+    restart: unless-stopped
+    network_mode: host          # mismo modelo que "portal" — sin esto el
+                                 # tráfico no llega al puerto 4100 del host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ts-state:/var/lib/tailscale
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY in .env}
+      TS_HOSTNAME: pithagoras
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_EXTRA_ARGS: --advertise-tags=tag:pithagoras --accept-dns=true
+      TS_USERSPACE: "false"
+
 volumes:
   portal-data:
+  ts-state:
