@@ -1,6 +1,7 @@
 """Menú principal — reemplaza _menu_run_tui/_menu_run_plain (rinthel-boot.sh).
 
-Fase 5 agrega [6] MONITOR y renumera EXIT a [7].
+Fase 5 agrega [6] MONITOR y renumera EXIT a [7]. [0] INSTALL agrega el setup
+inicial de infra (CUDA/modelo/Pithagoras/Understory) para una máquina nueva.
 """
 
 from textual.app import ComposeResult
@@ -33,6 +34,7 @@ _DIVIDER_3 = Option("◈───▲───∷", disabled=True)
 # (divisores incluidos), así que despachar por event.option_index es frágil
 # ante cualquier reordenamiento. Despachamos por option_id en su lugar.
 _OPTIONS = (
+    Option("[0] INSTALL     -- Setup inicial (CUDA/modelo/Pithagoras/Understory)", id="install"),
     Option("[1] BOOT        -- Levantar todo (up)", id="boot"),
     Option("[2] RELOAD      -- Apagar + reiniciar completo", id="reload"),
     _DIVIDER_1,
@@ -45,6 +47,10 @@ _OPTIONS = (
     Option("[7] EXIT        -- Cerrar terminal", id="exit"),
 )
 
+_INSTALL_CLOSING = ClosingSequence(
+    effect_factory=lambda: ChromaticAberrationEffect("SETUP LISTO", 1),
+    banner="SETUP LISTO — elegí [1] BOOT para levantar todo",
+)
 _BOOT_CLOSING = ClosingSequence(
     effect_factory=lambda: ChromaticAberrationEffect("SYSTEM ONLINE", 1),
     banner="TODO EN LINEA — Understory + Pithagoras activos",
@@ -94,7 +100,12 @@ class MenuScreen(Screen):
         self.run_worker(self._handle_selection(event.option_id), exclusive=True)
 
     async def _handle_selection(self, option_id: str | None) -> None:
-        if option_id == "boot":
+        if option_id == "install":
+            await self.app.push_screen_wait(SignalNoiseEffect(1, 3, 20))
+            self.app.push_screen(
+                PhaseRunnerScreen("INSTALL — SETUP INICIAL", specs.INSTALL_PHASES, closing=_INSTALL_CLOSING)
+            )
+        elif option_id == "boot":
             await self.app.push_screen_wait(SignalNoiseEffect(1, 3, 20))
             self.app.push_screen(PhaseRunnerScreen("EXECUTE — FAST BOOT", specs.BOOT_PHASES, closing=_BOOT_CLOSING))
         elif option_id == "reload":

@@ -1,0 +1,23 @@
+services:
+  understory:
+    image: ghcr.io/thecodacus/understory:latest
+    network_mode: host   # el llama-server local solo escucha en 127.0.0.1;
+                          # host.docker.internal no lo alcanza. `ports:` se
+                          # omite (no aplica bajo host networking).
+    volumes:
+      - ./bundle:/bundle
+    environment:
+      BUNDLE_ROOT: /bundle
+      LLM_API_BASE_URL: http://127.0.0.1:8080/v1
+      LLM_API_KEY: not-needed      # el server local no exige auth
+      LLM_API_FORMAT: openai
+      LLM_MODEL: ""                # vacío a propósito -> auto-discovery,
+                                    # sigue lo que esté cargado en :8080
+      GIT_AUTOCOMMIT: "false"
+      AUTH_TOKEN: ${AUTH_TOKEN}    # protege /mcp y /api ahora que queda
+                                    # corriendo persistente (network_mode:
+                                    # host lo expone en toda la red local)
+      DREAM_INTERVAL: "75m"        # consolidación autónoma (huérfanos,
+                                    # duplicados, conceptos gordos); primera
+                                    # corrida 1h15 después de este boot
+    restart: unless-stopped

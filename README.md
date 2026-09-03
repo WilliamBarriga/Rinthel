@@ -7,6 +7,28 @@ Reemplaza los scripts bash previos (`rinthel-up.sh` / `rinthel-down.sh` /
 `rinthel-reload.sh`) con fases `async` explícitas — ver
 `rinthel_tui/lifecycle/`.
 
+## Instalación rápida (máquina nueva)
+
+Un solo comando, sin más dependencia previa que poder instalar Python:
+
+```bash
+git clone <url-de-este-repo> && cd Rinthel-general && ./install.sh
+```
+
+`install.sh` detecta (o instala, vía PPA `deadsnakes` si hace falta) Python
+3.13+, crea el venv y arranca la TUI. Desde ahí, **`[0] INSTALL`** en el menú
+hace el resto: detecta GPU/CUDA/cmake/docker, clona y compila `llama.cpp` con
+CUDA (arquitectura `native`, no una fija), descarga el modelo GGUF, y clona +
+configura Pithagoras y Understory. Reglas:
+
+- `NVIDIA driver` + `CUDA toolkit` deben estar instalados de antes —
+  `[0] INSTALL` los detecta pero no los instala.
+- Es re-ejecutable: cada fase es idempotente, omite lo que ya existe.
+- Tailscale/VPN queda **fuera de esto y siempre opcional** — nunca bloquea el
+  resto del stack.
+- `INSTALL` configura, no bootea — al terminar, usá `[1] BOOT` para levantar
+  todo.
+
 ## Requisitos
 
 - Python 3.13+
@@ -52,7 +74,7 @@ rinthel
 ```
 
 Ambos arrancan la misma `RinthelApp`: `SplashScreen` → `MenuScreen`, con las
-opciones BOOT / RELOAD / TERMINATE / LOGS / CAPTURE / MONITOR.
+opciones INSTALL / BOOT / RELOAD / TERMINATE / LOGS / CAPTURE / MONITOR.
 
 ## Configuración
 
@@ -83,6 +105,17 @@ llama-server falla de verdad.
 
 `RINTHEL_EFFECTS=false` apaga los efectos visuales (glow/glitch/ripple) —
 útil en terminales lentos o corriendo en CI.
+
+Vars específicas de `[0] INSTALL` (todas opcionales, ver `.env.example`):
+
+- `RINTHEL_LLAMACPP_REPO_URL` / `RINTHEL_LLAMACPP_REPO_DIR` — de dónde se
+  clona `llama.cpp` (branch `perf`) y dónde.
+- `RINTHEL_MODEL_DOWNLOAD_URL` — de dónde se descarga el modelo GGUF si
+  `RINTHEL_MODEL_PATH` todavía no existe.
+- `RINTHEL_PITHAGORAS_REPO_URL` — de dónde se clona Pithagoras (branch
+  `rinthel-pithagoras`).
+- `RINTHEL_WORKSPACES_DIR` — carpeta que Pithagoras monta en `/workspaces`
+  (default `$HOME`).
 
 ## Troubleshooting
 

@@ -79,6 +79,14 @@ class RinthelConfig:
     pithagoras_dir: Path
     pithagoras_port: int
 
+    # ── INSTALL (bootstrap de infra en máquina nueva) ─────
+    llamacpp_repo_dir: Path
+    llamacpp_repo_url: str
+    model_download_url: str
+    pithagoras_repo_url: str
+    workspaces_dir: Path
+    pi_agent_dir: Path
+
     # ── LLAMA-SERVER (flags de inferencia) ────────
     # Valores por defecto idénticos a los hardcodeados originalmente en
     # phases.py. Dataclass exige que estos campos (con default) vayan
@@ -144,6 +152,19 @@ def default_config() -> RinthelConfig:
         understory_port=_int_env("RINTHEL_UNDERSTORY_PORT", 3800),
         pithagoras_dir=_path_env("RINTHEL_PITHAGORAS_DIR", "~/pithagoras"),
         pithagoras_port=_int_env("RINTHEL_PITHAGORAS_PORT", 4100),
+        llamacpp_repo_dir=_path_env("RINTHEL_LLAMACPP_REPO_DIR", "~/codacus/llama.cpp"),
+        llamacpp_repo_url=_str_env(
+            "RINTHEL_LLAMACPP_REPO_URL", "https://github.com/thecodacus/llama.cpp.git"
+        ),
+        model_download_url=_str_env(
+            "RINTHEL_MODEL_DOWNLOAD_URL",
+            "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        ),
+        pithagoras_repo_url=_str_env(
+            "RINTHEL_PITHAGORAS_REPO_URL", "https://github.com/WilliamBarriga/pithagoras.git"
+        ),
+        workspaces_dir=_path_env("RINTHEL_WORKSPACES_DIR", "~"),
+        pi_agent_dir=_path_env("RINTHEL_PI_AGENT_DIR", "~/.pi/agent"),
         ngl=_str_env("RINTHEL_NGL", "all"),
         context_window=_int_env("RINTHEL_CONTEXT_WINDOW", 112000),
         flash_attention=_bool_env("RINTHEL_FLASH_ATTENTION", True),

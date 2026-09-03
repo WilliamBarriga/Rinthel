@@ -9,9 +9,11 @@ Uso:
 
 Fases individuales: check_docker, spawn_llama, wait_llama, kill_llama,
   stop_understory, stop_pithagoras, wait_port_free, up_understory,
-  build_up_pithagoras, capture_profile
+  build_up_pithagoras, capture_profile, install_preflight,
+  install_clone_llamacpp, install_build_llamacpp, install_download_model,
+  install_setup_pithagoras, install_setup_understory
 Listas declarativas (mismo orden que rinthel-up/down/reload.sh):
-  boot, down, reload_shutdown, reload_boot, reload_rebuild
+  boot, down, reload_shutdown, reload_boot, reload_rebuild, install
 """
 
 import argparse
@@ -22,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from rinthel_tui.config import CONFIG
-from rinthel_tui.lifecycle import phases, specs
+from rinthel_tui.lifecycle import install, phases, specs
 from rinthel_tui.lifecycle.capture_profile import capture_profile as _capture_profile
 from rinthel_tui.lifecycle.runner import PhaseFailed, run_phase_list
 
@@ -54,6 +56,12 @@ PHASE_FNS = {
         cfg, report, no_cache=args.no_cache
     ),
     "capture_profile": lambda cfg, report, args: _capture_profile(cfg, report),
+    "install_preflight": lambda cfg, report, args: install.phase_install_preflight(cfg, report),
+    "install_clone_llamacpp": lambda cfg, report, args: install.phase_install_clone_llamacpp(cfg, report),
+    "install_build_llamacpp": lambda cfg, report, args: install.phase_install_build_llamacpp(cfg, report),
+    "install_download_model": lambda cfg, report, args: install.phase_install_download_model(cfg, report),
+    "install_setup_pithagoras": lambda cfg, report, args: install.phase_install_setup_pithagoras(cfg, report),
+    "install_setup_understory": lambda cfg, report, args: install.phase_install_setup_understory(cfg, report),
 }
 
 SPEC_LISTS = {
@@ -62,6 +70,7 @@ SPEC_LISTS = {
     "reload_shutdown": specs.RELOAD_SHUTDOWN_PHASES,
     "reload_boot": specs.RELOAD_BOOT_PHASES,
     "reload_rebuild": specs.RELOAD_REBUILD_PHASES,
+    "install": specs.INSTALL_PHASES,
 }
 
 

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine
 
 from rinthel_tui.config import RinthelConfig
-from rinthel_tui.lifecycle import phases
+from rinthel_tui.lifecycle import install, phases
 from rinthel_tui.lifecycle.phases import PhaseReport
 
 PhaseFn = Callable[..., Coroutine[Any, Any, None]]
@@ -21,6 +21,17 @@ class PhaseSpec:
     async def run(self, cfg: RinthelConfig, report: PhaseReport) -> None:
         await self.fn(cfg, report, **self.kwargs)
 
+
+# ── INSTALL (bootstrap de infra en máquina nueva) ─────────────
+# Configura, no bootea — termina indicando que uses [1] BOOT.
+INSTALL_PHASES: list[PhaseSpec] = [
+    PhaseSpec("◈ [1/6] PREFLIGHT — GPU/CUDA/cmake/docker", install.phase_install_preflight),
+    PhaseSpec("◈ [2/6] LLAMA.CPP — clone", install.phase_install_clone_llamacpp),
+    PhaseSpec("◈ [3/6] LLAMA.CPP — build CUDA (native)", install.phase_install_build_llamacpp),
+    PhaseSpec("◈ [4/6] MODELO GGUF — descarga", install.phase_install_download_model),
+    PhaseSpec("◈ [5/6] PITHAGORAS — clone + configurar", install.phase_install_setup_pithagoras),
+    PhaseSpec("◈ [6/6] UNDERSTORY — scaffold + configurar", install.phase_install_setup_understory),
+]
 
 # ── BOOT (rinthel-up.sh) ──────────────────────────────────────
 BOOT_PHASES: list[PhaseSpec] = [
