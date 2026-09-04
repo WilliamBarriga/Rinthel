@@ -1,10 +1,9 @@
 # Rinthel TUI
 
 TUI (Textual) para gestionar el ciclo de vida de la infraestructura local de
-Rinthel: un `llama-server` (Qwen3.6-35B-A3B, CUDA) más los stacks Docker de
-**Understory** (capa de memoria MCP) y **Pithagoras** (portal de tareas).
-Reemplaza los scripts bash previos (`rinthel-up.sh` / `rinthel-down.sh` /
-`rinthel-reload.sh`) con fases `async` explícitas — ver
+Rinthel: un `llama-server` (CUDA) sirviendo **Qwen3.6-35B-A3B-MTP** más los stacks Docker
+de **Understory** (capa de memoria MCP) y **Pithagoras** (portal de tareas).
+El ciclo de vida se maneja en fases `async` explícitas — ver
 `rinthel_tui/lifecycle/`.
 
 ## Instalación rápida (máquina nueva)
@@ -24,17 +23,23 @@ configura Pithagoras y Understory. Reglas:
 - `NVIDIA driver` + `CUDA toolkit` deben estar instalados de antes —
   `[0] INSTALL` los detecta pero no los instala.
 - Es re-ejecutable: cada fase es idempotente, omite lo que ya existe.
-- Tailscale/VPN queda **fuera de esto y siempre opcional** — nunca bloquea el
-  resto del stack.
 - `INSTALL` configura, no bootea — al terminar, usá `[1] BOOT` para levantar
   todo.
+
+## Requisitos de hardware
+
+- GPU NVIDIA con al menos **8 GB de VRAM** (para el offload CUDA de
+  `llama-server`; el resto de las capas del modelo corre en CPU vía
+  `--n-cpu-moe`, ajustable en `.env`).
+- Al menos **32 GB de RAM**.
 
 ## Requisitos
 
 - Python 3.13+
 - Un build de `llama.cpp` con soporte CUDA (`llama-server`, y opcionalmente
   `llama-moe-trace` para capturar perfiles de ruteo MoE)
-- El modelo GGUF que vayas a servir
+- El modelo GGUF — por defecto **Qwen3.6-35B-A3B-MTP** en cuantización
+  `Q4_K_XL` (ver `.env.example` para otros modelos)
 - Docker + `docker compose` si vas a levantar Understory/Pithagoras
 - Los repos de Understory y Pithagoras clonados en algún lado (paths
   configurables, ver [Configuración](#configuración))
@@ -79,10 +84,9 @@ opciones INSTALL / BOOT / RELOAD / TERMINATE / LOGS / CAPTURE / MONITOR.
 ## Configuración
 
 Todos los paths, puertos y flags de inferencia de `llama-server` tienen un
-default embebido en `rinthel_tui/config.py::default_config()` — pensados
-para la máquina donde nació este repo. Para correrlo en otra máquina, copiá
-`.env.example` a `.env` en la raíz del repo y descomentá/ajustá lo que
-necesites:
+default embebido en `rinthel_tui/config.py::default_config()`. Para
+ajustarlos a tu máquina, copiá `.env.example` a `.env` en la raíz del repo y
+descomentá/ajustá lo que necesites:
 
 ```bash
 cp .env.example .env
@@ -90,8 +94,7 @@ cp .env.example .env
 
 `.env` se carga automáticamente al importar `rinthel_tui.config` (vía
 `python-dotenv`, buscando hacia arriba desde el cwd) y nunca se commitea
-(está en `.gitignore`). Sin `.env`, el comportamiento es idéntico al
-hardcodeado originalmente.
+(está en `.gitignore`). Sin `.env`, se usan los defaults embebidos.
 
 Variables disponibles: paths de binario/modelo/logs, puertos de
 llama-server/Understory/Pithagoras, y todos los flags de inferencia
@@ -149,3 +152,23 @@ la infraestructura real, sin pasar por Textual — útil para probar cambios en
 
 No es un test suite de `pytest` (opera contra Docker/GPU reales, no hay
 mocks) — es intencional que viva en `scripts/`, no en `tests/`.
+
+## Créditos
+
+Tres piezas de infraestructura que `[0] INSTALL` levanta son de
+[thecodacus](https://github.com/thecodacus):
+
+- **Understory** (capa de memoria MCP) — corre desde la imagen publicada
+  [`ghcr.io/thecodacus/understory`](https://github.com/thecodacus/understory),
+  no se clona ni se compila desde fuente, ver
+  `phase_install_setup_understory` en `rinthel_tui/lifecycle/install.py`.
+- **Pithagoras** (portal de tareas) — se usa vía
+  [`WilliamBarriga/pithagoras`](https://github.com/WilliamBarriga/pithagoras),
+  fork basado en el original de thecodacus.
+- El fork custom de **`llama.cpp`** (branch `perf`, default
+  `RINTHEL_LLAMACPP_REPO_URL=https://github.com/thecodacus/llama.cpp.git`)
+  que se clona y compila con soporte CUDA.
+
+## Licencia
+
+MIT — ver [`LICENSE`](LICENSE).
