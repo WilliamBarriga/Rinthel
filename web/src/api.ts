@@ -164,6 +164,27 @@ export const api = {
       body: JSON.stringify({ id, ...payload }),
     }),
 
+  // Voice: neither leg is JSON both ways, so these bypass json() rather than
+  // force a Blob through it.
+  transcribeVoice: async (blob: Blob): Promise<{ text: string; lang: "es" | "en" }> => {
+    const res = await fetch("/api/voice/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": blob.type || "audio/webm" },
+      body: blob,
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+    return res.json();
+  },
+  speak: async (text: string, lang?: string): Promise<Blob> => {
+    const res = await fetch("/api/voice/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, lang }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+    return res.blob();
+  },
+
   mcp: () => json<McpConfigView>("/api/mcp"),
   saveMcpServer: (name: string, entry: McpServerEntry, from?: string) =>
     json<{ ok: true }>(`/api/mcp/servers/${encodeURIComponent(name)}`, {
@@ -601,6 +622,7 @@ export interface GlobalSettings {
   thinkingLevel: string;
   soundEnabled: boolean;
   soundType: string;
+  voiceEnabled: boolean;
 }
 
 export interface PiCommand {

@@ -580,6 +580,7 @@ export interface GlobalSettings {
   thinkingLevel: string;
   soundEnabled: boolean;
   soundType: string;
+  voiceEnabled: boolean;
 }
 
 /**
@@ -597,6 +598,7 @@ const SETTING_DEFAULTS = (): GlobalSettings => ({
     process.env.PI_THINKING_LEVEL || piSetting("defaultThinkingLevel") || "medium",
   soundEnabled: true,
   soundType: "default",
+  voiceEnabled: false,
 });
 
 /**
@@ -621,6 +623,10 @@ export function getStoredSettings(): Partial<GlobalSettings> {
       raw.soundEnabled !== undefined
         ? (raw.soundEnabled as string) !== "false"
         : undefined,
+    voiceEnabled:
+      raw.voiceEnabled !== undefined
+        ? (raw.voiceEnabled as string) !== "false"
+        : undefined,
   } as Partial<GlobalSettings>;
 }
 
@@ -637,6 +643,10 @@ export function getSettings(): GlobalSettings {
         ? defaults.soundEnabled
         : (stored.soundEnabled as unknown as string) !== "false",
     soundType: stored.soundType || defaults.soundType,
+    voiceEnabled:
+      stored.voiceEnabled === undefined
+        ? defaults.voiceEnabled
+        : (stored.voiceEnabled as unknown as string) !== "false",
   };
 }
 

@@ -35,6 +35,7 @@ import { mcpRouter } from "./api/mcp.js";
 import { peopleRouter } from "./api/people.js";
 import { browserRouter } from "./api/browser.js";
 import { terminalRouter } from "./api/terminal.js";
+import { voiceRouter } from "./api/voice.js";
 import { attachBrowserUpgrade, mountBrowserProxy } from "./browser-proxy.js";
 import { watchBrowserFrames } from "./extensions/browser-frames.js";
 import { startLlamaProxy } from "./llama-progress.js";
@@ -111,7 +112,7 @@ app.get("/api/settings", (_req, res) => {
 });
 
 app.put("/api/settings", async (req, res) => {
-  const { provider, model, thinkingLevel, soundEnabled, soundType } = req.body ?? {};
+  const { provider, model, thinkingLevel, soundEnabled, soundType, voiceEnabled } = req.body ?? {};
   const allowedSounds = ["default", "chime", "pop", "futuristic", "interface-zoom", "none"];
 
   if (soundType !== undefined && !allowedSounds.includes(soundType)) {
@@ -124,6 +125,7 @@ app.put("/api/settings", async (req, res) => {
   if (typeof thinkingLevel === "string") patch.thinkingLevel = thinkingLevel.trim();
   if (typeof soundEnabled === "boolean") patch.soundEnabled = soundEnabled ? "true" : "false";
   if (typeof soundType === "string") patch.soundType = soundType;
+  if (typeof voiceEnabled === "boolean") patch.voiceEnabled = voiceEnabled ? "true" : "false";
   // Checked before anything is written. Rejecting half way through left the
   // provider changed on a request that answered 400, which is a worse outcome
   // than either accepting or refusing the lot. Rejected rather than clamped
@@ -571,6 +573,7 @@ app.use("/api", skillsRouter());
 app.use("/api", mcpRouter());
 app.use("/api", peopleRouter());
 app.use("/api", browserRouter());
+app.use("/api", voiceRouter());
 app.use("/api", terminalRouter());
 // Before the SPA fallback, which answers everything that is not /api.
 mountBrowserProxy(app);
