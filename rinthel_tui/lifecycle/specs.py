@@ -38,6 +38,10 @@ BOOT_PHASES: list[PhaseSpec] = [
     PhaseSpec("◈ DOCKER", phases.phase_check_docker),
     PhaseSpec("◈ LLAMA-SERVER", phases.phase_spawn_llama_server),
     PhaseSpec("◈ ESPERANDO LLAMA-SERVER", phases.phase_wait_llama_ready),
+    PhaseSpec("◈ WHISPER — STT", phases.phase_spawn_whisper_server),
+    PhaseSpec("◈ ESPERANDO WHISPER", phases.phase_wait_whisper_ready),
+    PhaseSpec("◈ TTS — PIPER", phases.phase_spawn_tts_server),
+    PhaseSpec("◈ ESPERANDO TTS", phases.phase_wait_tts_ready),
     PhaseSpec("◈ UNDERSTORY  --  MCP MEMORY LAYER", phases.phase_up_understory),
     PhaseSpec("◈ PITHAGORAS  --  PI TASK PORTAL", phases.phase_build_up_pithagoras),
 ]
@@ -45,28 +49,36 @@ BOOT_PHASES: list[PhaseSpec] = [
 # ── DOWN (rinthel-down.sh) ────────────────────────────────────
 DOWN_PHASES: list[PhaseSpec] = [
     PhaseSpec("◈ LLAMA-SERVER  --  Qwen3.6-35B-A3B-MTP", phases.phase_kill_llama_server),
+    PhaseSpec("◈ WHISPER — STT", phases.phase_kill_whisper_server),
+    PhaseSpec("◈ TTS — PIPER", phases.phase_kill_tts_server),
     PhaseSpec("◈ UNDERSTORY  --  MCP MEMORY LAYER", phases.phase_stop_understory),
     PhaseSpec("◈ PITHAGORAS  --  PI TASK PORTAL", phases.phase_stop_pithagoras),
 ]
 
-# ── RELOAD (rinthel-reload.sh) — 9 fases en 3 tandas ──────────
+# ── RELOAD (rinthel-reload.sh) — 15 fases en 3 tandas ─────────
 RELOAD_SHUTDOWN_PHASES: list[PhaseSpec] = [
-    PhaseSpec("◈ [1/9] LLAMA-SERVER — parar", phases.phase_kill_llama_server),
-    PhaseSpec("◈ [2/9] UNDERSTORY — parar", phases.phase_stop_understory),
-    PhaseSpec("◈ [3/9] PITHAGORAS — parar", phases.phase_stop_pithagoras),
-    PhaseSpec("◈ [4/9] PUERTO :8080 LIBRE", phases.phase_wait_port_free),
+    PhaseSpec("◈ [1/15] LLAMA-SERVER — parar", phases.phase_kill_llama_server),
+    PhaseSpec("◈ [2/15] WHISPER — parar", phases.phase_kill_whisper_server),
+    PhaseSpec("◈ [3/15] TTS — parar", phases.phase_kill_tts_server),
+    PhaseSpec("◈ [4/15] UNDERSTORY — parar", phases.phase_stop_understory),
+    PhaseSpec("◈ [5/15] PITHAGORAS — parar", phases.phase_stop_pithagoras),
+    PhaseSpec("◈ [6/15] PUERTO :8080 LIBRE", phases.phase_wait_port_free),
 ]
 
 RELOAD_BOOT_PHASES: list[PhaseSpec] = [
-    PhaseSpec("◈ [5/9] DOCKER", phases.phase_check_docker),
-    PhaseSpec("◈ [6/9] LLAMA-SERVER — lanzar", phases.phase_spawn_llama_server),
-    PhaseSpec("◈ [7/9] ESPERANDO LLAMA-SERVER", phases.phase_wait_llama_ready),
+    PhaseSpec("◈ [7/15] DOCKER", phases.phase_check_docker),
+    PhaseSpec("◈ [8/15] LLAMA-SERVER — lanzar", phases.phase_spawn_llama_server),
+    PhaseSpec("◈ [9/15] ESPERANDO LLAMA-SERVER", phases.phase_wait_llama_ready),
+    PhaseSpec("◈ [10/15] WHISPER — lanzar", phases.phase_spawn_whisper_server),
+    PhaseSpec("◈ [11/15] ESPERANDO WHISPER", phases.phase_wait_whisper_ready),
+    PhaseSpec("◈ [12/15] TTS — lanzar", phases.phase_spawn_tts_server),
+    PhaseSpec("◈ [13/15] ESPERANDO TTS", phases.phase_wait_tts_ready),
 ]
 
 RELOAD_REBUILD_PHASES: list[PhaseSpec] = [
-    PhaseSpec("◈ [8/9] UNDERSTORY — up", phases.phase_up_understory),
+    PhaseSpec("◈ [14/15] UNDERSTORY — up", phases.phase_up_understory),
     PhaseSpec(
-        "◈ [9/9] PITHAGORAS — rebuild + up",
+        "◈ [15/15] PITHAGORAS — rebuild + up",
         phases.phase_build_up_pithagoras,
         kwargs={"no_cache": True},
     ),

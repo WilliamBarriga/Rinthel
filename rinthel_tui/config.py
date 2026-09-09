@@ -14,7 +14,7 @@ idénticos al comportamiento anterior.
 
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -111,6 +111,29 @@ class RinthelConfig:
     load_mode: str = "mlock"             # --load-mode
     spec_type: str = "draft-mtp"         # --spec-type
     spec_draft_n_max: int = 2            # --spec-draft-n-max
+    moe_cache_slots: int = 0             # --moe-cache-slots (0 = flag no se pasa, cache off)
+    sched_async_cpu: bool = True         # False → --no-sched-async-cpu
+
+    # ── WHISPER (STT, CPU-only) ───────────────────
+    whisper_bin: Path = field(default_factory=lambda: _p("~/codacus/whisper.cpp/build/bin/whisper-server"))
+    whisper_model: Path = field(default_factory=lambda: _p("~/codacus/whisper.cpp/models/ggml-base.bin"))
+    whisper_port: int = 8090
+    whisper_log: Path = field(default_factory=lambda: _p("~/Rinthel-general/logs/whisper-server.log"))
+    whisper_threads: int = 4
+
+    # ── TTS (Piper, CPU-only) ─────────────────────
+    tts_bin: Path = field(default_factory=lambda: _p("~/codacus/piper/piper/piper"))
+    tts_server_script: Path = field(
+        default_factory=lambda: _p("~/Rinthel-general/services/tts-piper/server.py")
+    )
+    tts_voice_es: Path = field(
+        default_factory=lambda: _p("~/codacus/piper/voices/es_AR-daniela-high.onnx")
+    )
+    tts_voice_en: Path = field(
+        default_factory=lambda: _p("~/codacus/piper/voices/en_US-hfc_female-medium.onnx")
+    )
+    tts_port: int = 8091
+    tts_log: Path = field(default_factory=lambda: _p("~/Rinthel-general/logs/tts-piper.log"))
 
     def apply_env(self) -> None:
         """Aplica llama_env al entorno del proceso (llamar una vez al arrancar)."""
@@ -185,6 +208,29 @@ def default_config() -> RinthelConfig:
         load_mode=_str_env("RINTHEL_LOAD_MODE", "mlock"),
         spec_type=_str_env("RINTHEL_SPEC_TYPE", "draft-mtp"),
         spec_draft_n_max=_int_env("RINTHEL_SPEC_DRAFT_N_MAX", 2),
+        moe_cache_slots=_int_env("RINTHEL_MOE_CACHE_SLOTS", 0),
+        sched_async_cpu=_bool_env("RINTHEL_SCHED_ASYNC_CPU", True),
+        whisper_bin=_path_env(
+            "RINTHEL_WHISPER_BIN", "~/codacus/whisper.cpp/build/bin/whisper-server"
+        ),
+        whisper_model=_path_env(
+            "RINTHEL_WHISPER_MODEL", "~/codacus/whisper.cpp/models/ggml-base.bin"
+        ),
+        whisper_port=_int_env("RINTHEL_WHISPER_PORT", 8090),
+        whisper_log=_path_env("RINTHEL_WHISPER_LOG", "~/Rinthel-general/logs/whisper-server.log"),
+        whisper_threads=_int_env("RINTHEL_WHISPER_THREADS", 4),
+        tts_bin=_path_env("RINTHEL_TTS_BIN", "~/codacus/piper/piper/piper"),
+        tts_server_script=_path_env(
+            "RINTHEL_TTS_SERVER_SCRIPT", "~/Rinthel-general/services/tts-piper/server.py"
+        ),
+        tts_voice_es=_path_env(
+            "RINTHEL_TTS_VOICE_ES", "~/codacus/piper/voices/es_AR-daniela-high.onnx"
+        ),
+        tts_voice_en=_path_env(
+            "RINTHEL_TTS_VOICE_EN", "~/codacus/piper/voices/en_US-hfc_female-medium.onnx"
+        ),
+        tts_port=_int_env("RINTHEL_TTS_PORT", 8091),
+        tts_log=_path_env("RINTHEL_TTS_LOG", "~/Rinthel-general/logs/tts-piper.log"),
     )
 
 

@@ -10,6 +10,7 @@ puede continuar. ``lifecycle/runner.py`` decide qué hacer con eso.
 import asyncio
 import os
 import socket
+import sys
 from pathlib import Path
 from typing import Protocol, Sequence
 
@@ -107,30 +108,37 @@ async def phase_spawn_llama_server(cfg: RinthelConfig, report: PhaseReport) -> N
         report.warn(f"Ya hay algo escuchando en :{cfg.port} — no relanzo llama-server")
         return
     log_file = open(cfg.log, "ab")
+    argv = [
+        str(cfg.bin), "-m", str(cfg.model),
+        "-ngl", cfg.ngl,
+        "-c", str(cfg.context_window),
+        "-fa", "on" if cfg.flash_attention else "off",
+        "-fit", "on" if cfg.flash_inference else "off",
+        "--port", str(cfg.port),
+        "--n-cpu-moe", str(cfg.n_cpu_moe),
+        "--threads-batch", str(cfg.threads_batch),
+        "--threads", str(cfg.threads),
+        "--ubatch-size", str(cfg.ubatch_size),
+        "--batch-size", str(cfg.batch_size),
+        "--parallel", str(cfg.parallel),
+        "--temp", str(cfg.temperature),
+        "--top-p", str(cfg.top_p),
+        "--top-k", str(cfg.top_k),
+        "--min-p", str(cfg.min_p),
+        "--repeat-penalty", str(cfg.repeat_penalty),
+        "--cache-reuse", str(cfg.cache_reuse),
+        "--cache-ram", str(cfg.cache_ram),
+        "--load-mode", cfg.load_mode,
+        "--spec-type", cfg.spec_type,
+        "--spec-draft-n-max", str(cfg.spec_draft_n_max),
+    ]
+    if cfg.moe_cache_slots > 0:
+        argv += ["--moe-cache-profile", str(cfg.moe_cache_profile), "--moe-cache-slots", str(cfg.moe_cache_slots)]
+    if not cfg.sched_async_cpu:
+        argv += ["--no-sched-async-cpu"]
     try:
         proc = await asyncio.create_subprocess_exec(
-            str(cfg.bin), "-m", str(cfg.model),
-            "-ngl", cfg.ngl,
-            "-c", str(cfg.context_window),
-            "-fa", "on" if cfg.flash_attention else "off",
-            "-fit", "on" if cfg.flash_inference else "off",
-            "--port", str(cfg.port),
-            "--n-cpu-moe", str(cfg.n_cpu_moe),
-            "--threads-batch", str(cfg.threads_batch),
-            "--threads", str(cfg.threads),
-            "--ubatch-size", str(cfg.ubatch_size),
-            "--batch-size", str(cfg.batch_size),
-            "--parallel", str(cfg.parallel),
-            "--temp", str(cfg.temperature),
-            "--top-p", str(cfg.top_p),
-            "--top-k", str(cfg.top_k),
-            "--min-p", str(cfg.min_p),
-            "--repeat-penalty", str(cfg.repeat_penalty),
-            "--cache-reuse", str(cfg.cache_reuse),
-            "--cache-ram", str(cfg.cache_ram),
-            "--load-mode", cfg.load_mode,
-            "--spec-type", cfg.spec_type,
-            "--spec-draft-n-max", str(cfg.spec_draft_n_max),
+            *argv,
             stdout=log_file,
             stderr=asyncio.subprocess.STDOUT,
             start_new_session=True,  # equivalente a nohup + disown
@@ -184,6 +192,140 @@ async def phase_kill_llama_server(cfg: RinthelConfig, report: PhaseReport) -> No
         report.warn(f"AVISO: :{cfg.port} sigue ocupado tras intentar matar el proceso")
     else:
         report.success(f"llama-server parado en :{cfg.port} (SIGKILL)")
+
+
+# ── WHISPER (STT, CPU-only) ──────────────────────────────────
+
+
+async def phase_spawn_whisper_server(cfg: RinthelConfig, report: PhaseReport) -> None:
+    if await _port_in_use(cfg.whisper_port):
+        report.warn(f"Ya hay algo escuchando en :{cfg.whisper_port} — no relanzo whisper-server")
+        return
+    cfg.whisper_log.parent.mkdir(parents=True, exist_ok=True)
+    log_file = open(cfg.whisper_log, "ab")
+    argv = [
+        str(cfg.whisper_bin),
+        "--host", "127.0.0.1",
+        "--port", str(cfg.whisper_port),
+        "-m", str(cfg.whisper_model),
+        "-t", str(cfg.whisper_threads),
+        "-l", "auto",
+        # El browser graba en audio/webm;codecs=opus — el decoder interno de
+        # whisper.cpp no lo entiende ("failed to decode audio data").
+        # --convert shellea a ffmpeg (debe estar en PATH del host) para pasar
+        # cualquier formato a WAV 16kHz antes de transcribir.
+        "--convert",
+        "--tmp-dir", str(cfg.whisper_log.parent),
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=log_file,
+            stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,  # equivalente a nohup + disown
+        )
+    finally:
+        log_file.close()
+    try:
+        rc = await asyncio.wait_for(proc.wait(), timeout=1.5)
+    except asyncio.TimeoutError:
+        report.success(f"whisper-server lanzado en background (PID {proc.pid}) — log: {cfg.whisper_log}")
+    else:
+        report.error(f"whisper-server murió al instante (rc {rc}) — revisa {cfg.whisper_log}")
+        raise PhaseError(f"whisper-server exited immediately (rc {rc})")
+
+
+async def phase_wait_whisper_ready(cfg: RinthelConfig, report: PhaseReport, timeout: int = 90) -> None:
+    url = f"http://127.0.0.1:{cfg.whisper_port}/"
+    waited = 0
+    while not await _http_ok(url):
+        if waited >= timeout:
+            report.warn(f"AVISO: nada respondiendo en :{cfg.whisper_port} tras {timeout}s")
+            return
+        await asyncio.sleep(2)
+        waited += 2
+    report.success(f"whisper-server respondiendo en :{cfg.whisper_port}")
+
+
+async def phase_kill_whisper_server(cfg: RinthelConfig, report: PhaseReport) -> None:
+    if not await _port_in_use(cfg.whisper_port):
+        report.warn(f"No había whisper-server corriendo en :{cfg.whisper_port}")
+        return
+    await _run(["fuser", "-k", "-TERM", f"{cfg.whisper_port}/tcp"], report)
+    for _ in range(10):
+        if not await _port_in_use(cfg.whisper_port):
+            report.success(f"whisper-server parado en :{cfg.whisper_port}")
+            return
+        await asyncio.sleep(1)
+    await _run(["fuser", "-k", "-KILL", f"{cfg.whisper_port}/tcp"], report)
+    if await _port_in_use(cfg.whisper_port):
+        report.warn(f"AVISO: :{cfg.whisper_port} sigue ocupado tras intentar matar el proceso")
+    else:
+        report.success(f"whisper-server parado en :{cfg.whisper_port} (SIGKILL)")
+
+
+# ── TTS (Piper, CPU-only) ─────────────────────────────────────
+
+
+async def phase_spawn_tts_server(cfg: RinthelConfig, report: PhaseReport) -> None:
+    if await _port_in_use(cfg.tts_port):
+        report.warn(f"Ya hay algo escuchando en :{cfg.tts_port} — no relanzo tts-piper")
+        return
+    cfg.tts_log.parent.mkdir(parents=True, exist_ok=True)
+    log_file = open(cfg.tts_log, "ab")
+    argv = [
+        sys.executable, str(cfg.tts_server_script),
+        "--host", "127.0.0.1",
+        "--port", str(cfg.tts_port),
+        "--piper-bin", str(cfg.tts_bin),
+        "--voice-es", str(cfg.tts_voice_es),
+        "--voice-en", str(cfg.tts_voice_en),
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=log_file,
+            stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,  # equivalente a nohup + disown
+        )
+    finally:
+        log_file.close()
+    try:
+        rc = await asyncio.wait_for(proc.wait(), timeout=1.5)
+    except asyncio.TimeoutError:
+        report.success(f"tts-piper lanzado en background (PID {proc.pid}) — log: {cfg.tts_log}")
+    else:
+        report.error(f"tts-piper murió al instante (rc {rc}) — revisa {cfg.tts_log}")
+        raise PhaseError(f"tts-piper exited immediately (rc {rc})")
+
+
+async def phase_wait_tts_ready(cfg: RinthelConfig, report: PhaseReport, timeout: int = 30) -> None:
+    url = f"http://127.0.0.1:{cfg.tts_port}/"
+    waited = 0
+    while not await _http_ok(url):
+        if waited >= timeout:
+            report.warn(f"AVISO: nada respondiendo en :{cfg.tts_port} tras {timeout}s")
+            return
+        await asyncio.sleep(1)
+        waited += 1
+    report.success(f"tts-piper respondiendo en :{cfg.tts_port}")
+
+
+async def phase_kill_tts_server(cfg: RinthelConfig, report: PhaseReport) -> None:
+    if not await _port_in_use(cfg.tts_port):
+        report.warn(f"No había tts-piper corriendo en :{cfg.tts_port}")
+        return
+    await _run(["fuser", "-k", "-TERM", f"{cfg.tts_port}/tcp"], report)
+    for _ in range(10):
+        if not await _port_in_use(cfg.tts_port):
+            report.success(f"tts-piper parado en :{cfg.tts_port}")
+            return
+        await asyncio.sleep(1)
+    await _run(["fuser", "-k", "-KILL", f"{cfg.tts_port}/tcp"], report)
+    if await _port_in_use(cfg.tts_port):
+        report.warn(f"AVISO: :{cfg.tts_port} sigue ocupado tras intentar matar el proceso")
+    else:
+        report.success(f"tts-piper parado en :{cfg.tts_port} (SIGKILL)")
 
 
 # ── UNDERSTORY / PITHAGORAS (shutdown) ───────────────────────
