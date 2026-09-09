@@ -7,18 +7,19 @@ Screen {
     color: $primary;
 }
 
+SplashScreen, FarewellScreen, MenuScreen {
+    align: center middle;
+}
+
 .nc-panel {
     border: round $primary;
     color: $accent;
     padding: 0 2;
 }
 
-.nc-divider {
-    border: double $primary;
-}
-
 .nc-dim {
     color: $dim;
+    margin-top: 1;
 }
 
 .nc-warn {
@@ -68,6 +69,14 @@ Screen {
     height: 1;
     dock: bottom;
     color: $dim;
+    margin-top: 1;
+}
+
+.tagline {
+    text-align: center;
+    width: 100%;
+    color: $dim;
+    margin-bottom: 1;
 }
 
 /* Separadores temáticos — opciones disabled del menú */
@@ -102,11 +111,6 @@ Screen {
 }
 
 /* ── Splash ───────────────────────────────────────────────── */
-
-#splash {
-    align: center middle;
-    height: 1fr;
-}
 
 .splash-title {
     color: $accent;
@@ -151,14 +155,22 @@ PhaseChecklist {
     color: $error;
 }
 
-/* ── Paneles de log ───────────────────────────────────────── */
+/* ── Paneles con borde — vocabulario genérico reusado por cualquier
+   screen vía classes="panel" + border_title (reemplaza el header manual
+   Static(classes="nc-divider") que tenía cada screen antes) ─────────── */
 
-#phase-log,
-#tail-log,
-#capture-log {
+.panel {
     border: round $primary;
-    height: 1fr;
     padding: 0 1;
+    margin-top: 1;
+}
+
+#tail-log, #phase-log, #capture-log, #monitor-log {
+    height: 1fr;
+}
+
+#monitor-docker {
+    height: 8;
 }
 
 /* ── Efectos de texto (tui/effects/flicker.py) ───────────── */
@@ -166,13 +178,6 @@ PhaseChecklist {
 .-reverse {
     background: $primary;
     color: $background;
-}
-
-/* ── Farewell ─────────────────────────────────────────────── */
-
-#farewell {
-    align: center middle;
-    height: 1fr;
 }
 
 /* ── Monitor ──────────────────────────────────────────────── */
@@ -186,22 +191,10 @@ PhaseChecklist {
     margin: 0 3 0 0;
 }
 
-#monitor-docker {
-    height: 8;
-    border: round $primary;
-}
-
 #monitor-resources {
     height: 6;
 }
 
 .monitor-panel {
     width: 1fr;
-    padding: 0 1;
-}
-
-#monitor-log {
-    border: round $primary;
-    height: 1fr;
-    padding: 0 1;
 }

@@ -27,10 +27,10 @@ class CaptureScreen(Screen):
         self._done = False
 
     def compose(self) -> ComposeResult:
-        yield Static("◈ MOE PROFILE CAPTURE — Qwen3.6-35B-A3B", classes="nc-divider")
         self.status_widget = Static("○ capturando perfil de expertos…", classes="phase-row phase-running")
         yield self.status_widget
-        self.log_widget = RichLog(markup=True, id="capture-log")
+        self.log_widget = RichLog(markup=True, id="capture-log", classes="panel")
+        self.log_widget.border_title = "◈ MOE PROFILE CAPTURE — Qwen3.6-35B-A3B"
         yield self.log_widget
 
     def on_mount(self) -> None:

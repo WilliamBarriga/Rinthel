@@ -1,12 +1,29 @@
-# Rinthel TUI
+<div align="center">
+
+```
+    ____  _____   __________  __________       ___    ____
+   / __ \/  _/ | / /_  __/ / / / ____/ /      /   |  /  _/
+  / /_/ // //  |/ / / / / /_/ / __/ / /      / /| |  / /
+ / _, _// // /|  / / / / __  / /___/ /___   / ___ |_/ /
+/_/ |_/___/_/ |_/ /_/ /_/ /_/_____/_____/  /_/  |_/___/
+```
+
+*"All those moments will be lost in time, like tears in the rain.*
+*Time to die."*
+
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-BF00FF?style=flat-square)](https://www.python.org/)
+[![Textual](https://img.shields.io/badge/TUI-textual-FCEE0A?style=flat-square)](https://github.com/Textualize/textual)
+[![License: MIT](https://img.shields.io/badge/license-MIT-7CFCFF?style=flat-square)](LICENSE)
+
+</div>
 
 TUI (Textual) para gestionar el ciclo de vida de la infraestructura local de
-Rinthel: un `llama-server` (CUDA) sirviendo **Qwen3.6-35B-A3B-MTP** más los stacks Docker
-de **Understory** (capa de memoria MCP) y **Pithagoras** (portal de tareas).
-El ciclo de vida se maneja en fases `async` explícitas — ver
-`rinthel_tui/lifecycle/`.
+Rinthel: un `llama-server` (CUDA) sirviendo **Qwen3.6-35B-A3B-MTP** más los
+stacks Docker de **Understory** (capa de memoria MCP) y **Pithagoras**
+(portal de tareas). El ciclo de vida se maneja en fases `async` explícitas
+— ver `rinthel_tui/lifecycle/`.
 
-## Instalación rápida (máquina nueva)
+## `[0]` Instalación rápida (máquina nueva)
 
 Un solo comando, sin más dependencia previa que poder instalar Python:
 
@@ -16,9 +33,18 @@ git clone <url-de-este-repo> && cd Rinthel-general && ./install.sh
 
 `install.sh` detecta (o instala, vía PPA `deadsnakes` si hace falta) Python
 3.13+, crea el venv y arranca la TUI. Desde ahí, **`[0] INSTALL`** en el menú
-hace el resto: detecta GPU/CUDA/cmake/docker, clona y compila `llama.cpp` con
-CUDA (arquitectura `native`, no una fija), descarga el modelo GGUF, y clona +
-configura Pithagoras y Understory. Reglas:
+corre 6 fases:
+
+| Fase | Qué hace |
+|------|----------|
+| `1/6` PREFLIGHT | Detecta GPU/CUDA/cmake/docker |
+| `2/6` LLAMA.CPP | Clona el fork custom (branch `perf`) |
+| `3/6` LLAMA.CPP | Build CUDA, arquitectura `native` (no fija) |
+| `4/6` MODELO GGUF | Descarga el modelo configurado |
+| `5/6` PITHAGORAS | Clone + configuración |
+| `6/6` UNDERSTORY | Scaffold + configuración |
+
+Reglas:
 
 - `NVIDIA driver` + `CUDA toolkit` deben estar instalados de antes —
   `[0] INSTALL` los detecta pero no los instala.
@@ -78,8 +104,68 @@ específico):
 rinthel
 ```
 
-Ambos arrancan la misma `RinthelApp`: `SplashScreen` → `MenuScreen`, con las
-opciones INSTALL / BOOT / RELOAD / TERMINATE / LOGS / CAPTURE / MONITOR.
+Ambos arrancan la misma `RinthelApp`: `SplashScreen` (banner duotono
+componiéndose desde ruido, glitch reveal) → `MenuScreen`:
+
+```
+[0] INSTALL     -- Setup inicial (CUDA/modelo/Pithagoras/Understory)
+[1] BOOT        -- Levantar todo (up)
+[2] RELOAD      -- Apagar + reiniciar completo
+[3] TERMINATE   -- Shutdown total
+[4] LOGS        -- Ver llama-server en vivo
+[5] CAPTURE     -- Capturar perfil MoE (routing profile)
+[6] MONITOR     -- Estado de servicios/Docker/GPU/CPU
+[7] EXIT        -- Cerrar terminal
+```
+
+```
+SplashScreen (glitch reveal)
+       │
+       ▼
+   MenuScreen
+       │
+       ├── [0] INSTALL   ──▶ 6 fases: preflight → build → pithagoras → understory
+       ├── [1] BOOT       ──▶ docker → llama-server → understory → pithagoras
+       ├── [2] RELOAD     ──▶ 9 fases: shutdown completo → boot completo
+       └── [3] TERMINATE  ──▶ shutdown total
+```
+
+## Estructura del proyecto
+
+```
+rinthel_tui/
+├── app.py               # entry point — RinthelApp
+├── config.py             # RinthelConfig — defaults + carga de .env
+├── branding/              # banner ASCII duotono + animación de composición
+├── theme/
+│   ├── palette.py          # paleta canónica — fuente numérica única
+│   └── cyberpunk_theme.py
+├── tui/
+│   ├── screens/            # Splash, Menu, PhaseRunner, Logs, Monitor, Capture, Reload, Farewell
+│   ├── widgets/             # sparkline, service_badge, checklist
+│   └── effects/             # flicker, transitions, intro
+└── lifecycle/
+    ├── install.py           # fases [0] INSTALL
+    ├── phases.py            # fases BOOT/DOWN/RELOAD
+    ├── specs.py              # listas declarativas de fases
+    ├── runner.py             # ejecutor async con progreso por fase
+    └── capture_profile.py    # captura de perfiles de ruteo MoE
+```
+
+## Ecosistema — paleta compartida
+
+La paleta duotono (`theme/palette.py`) no es solo de este repo: el frontend
+web de Pithagoras (`web/src/index.css`) la implementa como
+`[data-theme="cyberpunk"]` con los mismos valores hex. Cambiar un color acá
+sin actualizar el otro lado los desincroniza visualmente.
+
+| Rol | Hex |
+|-----|-----|
+| Electric purple (marco, texto) | `#BF00FF` |
+| Neon yellow (cara iluminada) | `#FCEE0A` |
+| Electric cyan | `#7CFCFF` |
+| Neon magenta | `#EA00D9` |
+| Night city purple-black (fondo) | `#0D0221` |
 
 ## Configuración
 
@@ -122,20 +208,29 @@ Vars específicas de `[0] INSTALL` (todas opcionales, ver `.env.example`):
 
 ## Troubleshooting
 
-- **"error: no se encontró .venv/bin/python"** al correr `rinthel-boot.sh` —
-  no creaste el venv, o lo estás corriendo desde otro directorio. Creá el
-  venv en la raíz del repo (ver [Instalación](#instalación)).
-- **Puerto ocupado** — BOOT no relanza `llama-server` si ya hay algo
-  escuchando en `RINTHEL_PORT` (default `8080`); usa RELOAD o TERMINATE
-  primero, o cambiá el puerto en `.env`.
-- **"llama-server murió al instante"** — casi siempre un flag inválido o el
-  modelo/bin no existen de verdad; revisá el log en `RINTHEL_LOG_PATH`
-  (default `logs/llama-server.log`).
-- **Modelo/binario no encontrado** — la app avisa por stderr al arrancar
-  pero no bloquea el menú; ajustá `RINTHEL_LLAMA_BIN`/`RINTHEL_MODEL_PATH`
-  en `.env`.
-- **Docker daemon inactivo** — la fase de BOOT lo detecta y corta con
-  instrucciones (`sudo systemctl start docker`) antes de tocar nada más.
+> [!NOTE]
+> **"error: no se encontró .venv/bin/python"** al correr `rinthel-boot.sh` —
+> no creaste el venv, o lo estás corriendo desde otro directorio. Creá el
+> venv en la raíz del repo (ver [Instalación](#instalación)).
+
+> [!TIP]
+> **Puerto ocupado** — BOOT no relanza `llama-server` si ya hay algo
+> escuchando en `RINTHEL_PORT` (default `8080`); usa RELOAD o TERMINATE
+> primero, o cambiá el puerto en `.env`.
+
+> [!WARNING]
+> **"llama-server murió al instante"** — casi siempre un flag inválido o el
+> modelo/bin no existen de verdad; revisá el log en `RINTHEL_LOG_PATH`
+> (default `logs/llama-server.log`).
+
+> [!NOTE]
+> **Modelo/binario no encontrado** — la app avisa por stderr al arrancar
+> pero no bloquea el menú; ajustá `RINTHEL_LLAMA_BIN`/`RINTHEL_MODEL_PATH`
+> en `.env`.
+
+> [!IMPORTANT]
+> **Docker daemon inactivo** — la fase de BOOT lo detecta y corta con
+> instrucciones (`sudo systemctl start docker`) antes de tocar nada más.
 
 ## Desarrollo
 
@@ -172,3 +267,11 @@ Tres piezas de infraestructura que `[0] INSTALL` levanta son de
 ## Licencia
 
 MIT — ver [`LICENSE`](LICENSE).
+
+---
+
+<div align="center">
+
+*≖ω≖ — Rinthel, Night City 2077 | 道は目的地に在らず*
+
+</div>

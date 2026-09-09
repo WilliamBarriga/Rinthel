@@ -73,10 +73,10 @@ class PhaseSequenceScreen(Screen):
         self._done = False
 
     def compose(self) -> ComposeResult:
-        yield Static(self.session_title, classes="nc-divider")
         self.checklist = PhaseChecklist(self._labels, id="checklist")
         yield self.checklist
-        self.log_widget = RichLog(markup=True, id="phase-log")
+        self.log_widget = RichLog(markup=True, id="phase-log", classes="panel")
+        self.log_widget.border_title = self.session_title
         yield self.log_widget
         yield Static("Ctrl+C para cancelar · Esc para volver al terminar", classes="nc-dim")
 

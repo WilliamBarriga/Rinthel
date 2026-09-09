@@ -44,8 +44,6 @@ class MonitorScreen(Screen):
         self.ram_sparkline: Sparkline | None = None
 
     def compose(self) -> ComposeResult:
-        yield Static("◈ MONITOR — RINTHEL SYSTEM STATUS", classes="nc-divider")
-
         with Horizontal(id="monitor-badges"):
             yield ServiceBadge(
                 "Understory", f"http://localhost:{self.cfg.understory_port}", id="mon-badge-understory"
@@ -57,17 +55,18 @@ class MonitorScreen(Screen):
                 "llama-server", f"http://127.0.0.1:{self.cfg.port}/v1/models", id="mon-badge-llama"
             )
 
-        self.docker_table = DataTable(id="monitor-docker")
+        self.docker_table = DataTable(id="monitor-docker", classes="panel")
+        self.docker_table.border_title = "◈ DOCKER STATUS"
         self.docker_table.add_columns("Contenedor", "Estado", "Puertos", "Uptime")
         yield self.docker_table
 
         with Horizontal(id="monitor-resources"):
-            with Vertical(classes="monitor-panel"):
+            with Vertical(classes="monitor-panel panel"):
                 self.gpu_label = Static("GPU: —", classes="nc-caution")
                 yield self.gpu_label
                 self.gpu_sparkline = Sparkline(id="gpu-sparkline")
                 yield self.gpu_sparkline
-            with Vertical(classes="monitor-panel"):
+            with Vertical(classes="monitor-panel panel"):
                 self.cpu_label = Static("CPU/RAM: —", classes="nc-caution")
                 yield self.cpu_label
                 self.cpu_sparkline = Sparkline(id="cpu-sparkline")
@@ -75,7 +74,9 @@ class MonitorScreen(Screen):
                 self.ram_sparkline = Sparkline(id="ram-sparkline")
                 yield self.ram_sparkline
 
-        yield LogTail(self.cfg.log, lines=50, id="monitor-log")
+        log_tail = LogTail(self.cfg.log, lines=50, id="monitor-log", classes="panel")
+        log_tail.border_title = "◈ LLAMA-SERVER LOG"
+        yield log_tail
         yield Static("q / Esc para volver", classes="nc-dim")
 
     def on_mount(self) -> None:
