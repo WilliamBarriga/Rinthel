@@ -563,6 +563,14 @@ function GeneralPanel({
         <SoundSettings stored={stored} setStored={setStored} onError={onError} onUpdateContext={onUpdateContext} />
       </Section>
 
+      {/* --- Voice section --- */}
+      <Section
+        title="Voz"
+        hint="Un solo interruptor: habilita el micrófono y hace que Rinthel conteste hablado cuando la pregunta llegó por voz."
+      >
+        <VoiceSettings stored={stored} setStored={setStored} onError={onError} onUpdateContext={onUpdateContext} />
+      </Section>
+
       <Section title="Deployment">
         <dl className="rounded-xl border border-line bg-raised/40 p-3 text-sm">
           <div className="flex items-center gap-2 py-0.5">
@@ -694,6 +702,78 @@ function SoundSettings({
           </>
         ) : (
           "Confirmar y guardar sonido"
+        )}
+      </button>
+    </div>
+  );
+}
+
+// --- voice settings subcomponent ---
+
+function VoiceSettings({
+  stored,
+  setStored,
+  onError,
+  onUpdateContext,
+}: {
+  stored: Partial<GlobalSettings>;
+  setStored: Dispatch<SetStateAction<Partial<GlobalSettings> | null>>;
+  onError: (e: string) => void;
+  onUpdateContext: (partial: Partial<GlobalSettings>) => void;
+}) {
+  const enabled = stored.voiceEnabled ?? false;
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const saveVoiceSettings = async () => {
+    setBusy(true);
+    try {
+      await api.saveSettings({
+        provider: stored.provider ?? "",
+        model: stored.model ?? "",
+        thinkingLevel: stored.thinkingLevel ?? "",
+        voiceEnabled: stored.voiceEnabled ?? false,
+      });
+      setStored({ ...stored, voiceEnabled: stored.voiceEnabled ?? false });
+      onUpdateContext({ voiceEnabled: stored.voiceEnabled ?? false });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setStored({ ...stored, voiceEnabled: e.target.checked })}
+          className="accent-accent"
+        />
+        <span className="text-sm text-fg-muted">
+          Habilitar micrófono (STT) y respuesta hablada (TTS)
+        </span>
+      </label>
+
+      <button
+        onClick={saveVoiceSettings}
+        disabled={busy}
+        className={`${primaryCls} w-full justify-center`}
+      >
+        {busy ? (
+          <>
+            <LuRefreshCw className="h-4 w-4 animate-spin" /> Guardando…
+          </>
+        ) : saved ? (
+          <>
+            <LuCheck className="h-4 w-4" /> ¡Guardado!
+          </>
+        ) : (
+          "Confirmar y guardar voz"
         )}
       </button>
     </div>

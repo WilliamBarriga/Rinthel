@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Streamdown, type DiagramPlugin } from "streamdown";
-import { LuGlobe, LuSquareTerminal } from "react-icons/lu";
+import { LuGlobe, LuMic, LuMicOff, LuSquareTerminal } from "react-icons/lu";
 import { api, type PiCommand, type PortalEvent, type Session } from "../api";
 import { activity, buildTranscript, type Activity } from "../transcript";
 import { HAS_MERMAID, loadMermaidPlugin } from "../mermaid";
 import { useResolvedTheme } from "../theme";
+import { useVoiceRecorder } from "../use-voice-recorder";
+import { useTextToSpeech } from "../use-text-to-speech";
 import { ComposerBar } from "./ComposerBar";
 import { TerminalPanel } from "./TerminalPanel";
 
@@ -77,6 +79,7 @@ export function Chat({
   hasEarlier,
   loadingEarlier,
   onLoadEarlier,
+  voiceEnabled,
 }: {
   session: Session;
   events: PortalEvent[];
@@ -87,6 +90,8 @@ export function Chat({
   onAbort: () => Promise<void>;
   /** Builtins the portal itself services — /settings, /new, /name. */
   onClientCommand: (name: string, args: string) => void | Promise<void>;
+  /** Gates both sides of voice: the mic button and speaking replies back. */
+  voiceEnabled?: boolean;
 }) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -147,6 +152,37 @@ export function Chat({
   const bottomRef = useRef<HTMLDivElement>(null);
   const settled = useRef(false);
   const items = useMemo(() => buildTranscript(events), [events]);
+
+  // Voice: true only while the composer holds a transcript fresh from the mic,
+  // reset the moment the user types — that's the "did this question come from
+  // voice" signal the reply-speaking decision below reads.
+  const voiceOriginRef = useRef(false);
+  const voiceLangRef = useRef<"es" | "en">("es");
+  const pendingVoiceReplyRef = useRef(false);
+  const spokenIdRef = useRef<string | null>(null);
+  const { state: recState, toggle: toggleRecording } = useVoiceRecorder();
+  const { speak } = useTextToSpeech();
+
+  const handleMic = async () => {
+    const result = await toggleRecording();
+    if (result) {
+      setInput(result.text);
+      voiceOriginRef.current = true;
+      voiceLangRef.current = result.lang;
+    }
+  };
+
+  // Speaks the assistant's answer once it's done — only when the question that
+  // produced it came in by voice, and only once per answer.
+  useEffect(() => {
+    if (!pendingVoiceReplyRef.current) return;
+    const last = [...items].reverse().find((it) => it.kind === "assistant");
+    if (last && last.kind === "assistant" && last.done && last.id !== spokenIdRef.current) {
+      spokenIdRef.current = last.id;
+      pendingVoiceReplyRef.current = false;
+      speak(last.text, voiceLangRef.current);
+    }
+  }, [items, speak]);
 
 
   // Diagrams: the plugin is only fetched once a reply actually contains a
@@ -242,10 +278,13 @@ export function Chat({
       return;
     }
 
+    const wasVoice = voiceEnabled && voiceOriginRef.current;
     setSending(true);
     setInput("");
+    voiceOriginRef.current = false;
     try {
       await onSend(msg);
+      if (wasVoice) pendingVoiceReplyRef.current = true;
     } finally {
       setSending(false);
     }
@@ -455,7 +494,10 @@ export function Chat({
         )}
         <textarea
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            voiceOriginRef.current = false;
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -464,8 +506,35 @@ export function Chat({
           }}
           rows={2}
           placeholder={running ? "pi is working — send to queue a follow-up…" : "Describe the task…"}
-          className="w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
+          className={`w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent ${
+            voiceEnabled && window.isSecureContext ? "pr-10" : ""
+          }`}
         />
+          {voiceEnabled && window.isSecureContext && (
+            <button
+              type="button"
+              onClick={handleMic}
+              disabled={recState === "transcribing"}
+              title={
+                recState === "recording"
+                  ? "Detener grabación"
+                  : recState === "transcribing"
+                    ? "Transcribiendo…"
+                    : "Grabar mensaje de voz"
+              }
+              className={`absolute right-2 top-2 rounded-lg p-1.5 transition disabled:opacity-50 ${
+                recState === "recording"
+                  ? "animate-pulse bg-danger/15 text-danger"
+                  : "bg-fg/5 text-fg-muted hover:bg-fg/10 hover:text-fg"
+              }`}
+            >
+              {recState === "recording" ? (
+                <LuMicOff className="h-4 w-4" />
+              ) : (
+                <LuMic className="h-4 w-4" />
+              )}
+            </button>
+          )}
           <ComposerBar
             sessionId={session.id}
             session={session}

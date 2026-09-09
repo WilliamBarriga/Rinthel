@@ -261,6 +261,7 @@ function Shell({
   const soundEnabled = stored.soundEnabled ?? true;
   const soundType = (stored.soundType as SoundType) ?? "default";
   const playSound = useNotificationSound(soundEnabled, soundType);
+  const voiceEnabled = stored.voiceEnabled ?? false;
   const playSoundRef = useRef(playSound);
   useEffect(() => {
     playSoundRef.current = playSound;
@@ -337,6 +338,7 @@ function Shell({
           <Chat
             session={active}
             events={events}
+            voiceEnabled={voiceEnabled}
             hasEarlier={moreBefore}
             loadingEarlier={loadingBefore}
             onLoadEarlier={async () => {
