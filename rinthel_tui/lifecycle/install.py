@@ -1,12 +1,12 @@
 """Fases de INSTALL — bootstrap de infra en una máquina nueva: build CUDA de
 llama.cpp, descarga del modelo GGUF, scaffolding de Pithagoras/Understory.
 
-Mismo protocolo que ``phases.py`` (``async def phase_*(cfg, report) -> None``,
-``PhaseError``); reusa ``_run``/``_docker_compose``/``phase_check_docker`` de
-ahí por import, no duplica lógica de subprocess. INSTALL **configura**, no
-bootea — nunca hace ``docker compose up``; para eso está ``[1] BOOT``
-(``specs.BOOT_PHASES``). Cada fase es idempotente: reruns seguros, nunca pisa
-algo que ya funciona.
+Mismo protocolo que el resto de lifecycle/ (``async def phase_*(cfg, report)
+-> None``, ``PhaseError``); reusa ``_run`` (subprocess) de
+``managed_service.py`` y ``phase_check_docker`` de ``phases.py`` por import,
+no duplica lógica. INSTALL **configura**, no bootea — nunca hace ``docker
+compose up``; para eso está ``[1] BOOT`` (``specs.BOOT_PHASES``). Cada fase
+es idempotente: reruns seguros, nunca pisa algo que ya funciona.
 """
 
 import importlib.resources
@@ -16,12 +16,9 @@ import shutil
 from pathlib import Path
 
 from rinthel_tui.config import RinthelConfig
-from rinthel_tui.lifecycle.phases import (
-    PhaseError,
-    PhaseReport,
-    _run,
-    phase_check_docker,
-)
+from rinthel_tui.lifecycle.managed_service import _run
+from rinthel_tui.lifecycle.phases import phase_check_docker
+from rinthel_tui.lifecycle.types import PhaseError, PhaseReport
 
 # Hardcodeados igual que otros detalles de infra que no tiene sentido
 # overridear vía config (mismo criterio que el puerto de llama-server no
@@ -64,22 +61,22 @@ async def phase_install_preflight(cfg: RinthelConfig, report: PhaseReport) -> No
 
 
 async def phase_install_clone_llamacpp(cfg: RinthelConfig, report: PhaseReport) -> None:
-    if (cfg.llamacpp_repo_dir / ".git").exists():
-        report.warn(f"{cfg.llamacpp_repo_dir} ya existe — omito clone")
+    if (cfg.install.llamacpp_repo_dir / ".git").exists():
+        report.warn(f"{cfg.install.llamacpp_repo_dir} ya existe — omito clone")
         return
-    cfg.llamacpp_repo_dir.parent.mkdir(parents=True, exist_ok=True)
+    cfg.install.llamacpp_repo_dir.parent.mkdir(parents=True, exist_ok=True)
     rc = await _run(
-        ["git", "clone", "--branch", _LLAMACPP_BRANCH, cfg.llamacpp_repo_url, str(cfg.llamacpp_repo_dir)],
+        ["git", "clone", "--branch", _LLAMACPP_BRANCH, cfg.install.llamacpp_repo_url, str(cfg.install.llamacpp_repo_dir)],
         report,
     )
     if rc != 0:
         report.error(f"git clone falló (rc {rc})")
         raise PhaseError(f"llama.cpp clone failed (rc {rc})")
-    report.success(f"llama.cpp clonado en {cfg.llamacpp_repo_dir}")
+    report.success(f"llama.cpp clonado en {cfg.install.llamacpp_repo_dir}")
 
 
 async def phase_install_build_llamacpp(cfg: RinthelConfig, report: PhaseReport) -> None:
-    build_dir = cfg.llamacpp_repo_dir / "build-cuda"
+    build_dir = cfg.install.llamacpp_repo_dir / "build-cuda"
     if (build_dir / "bin" / "llama-server").exists():
         report.warn(f"{build_dir}/bin/llama-server ya existe — omito build")
         return
@@ -95,7 +92,7 @@ async def phase_install_build_llamacpp(cfg: RinthelConfig, report: PhaseReport) 
             "-DCMAKE_CUDA_ARCHITECTURES=native",
         ],
         report,
-        cwd=cfg.llamacpp_repo_dir,
+        cwd=cfg.install.llamacpp_repo_dir,
     )
     if rc != 0:
         report.error(f"cmake configure falló (rc {rc})")
@@ -108,7 +105,7 @@ async def phase_install_build_llamacpp(cfg: RinthelConfig, report: PhaseReport) 
             "--target", "llama-server", "llama-moe-trace",
         ],
         report,
-        cwd=cfg.llamacpp_repo_dir,
+        cwd=cfg.install.llamacpp_repo_dir,
     )
     if rc != 0:
         report.error(f"cmake build falló (rc {rc})")
@@ -117,19 +114,19 @@ async def phase_install_build_llamacpp(cfg: RinthelConfig, report: PhaseReport) 
 
 
 async def phase_install_download_model(cfg: RinthelConfig, report: PhaseReport) -> None:
-    if cfg.model.exists() and cfg.model.stat().st_size > 0:
-        report.warn(f"{cfg.model} ya existe — omito descarga")
+    if cfg.llama.model.exists() and cfg.llama.model.stat().st_size > 0:
+        report.warn(f"{cfg.llama.model} ya existe — omito descarga")
         return
-    cfg.model.parent.mkdir(parents=True, exist_ok=True)
-    report.warn(f"Descargando modelo (~22GB) a {cfg.model} — puede tardar bastante")
+    cfg.llama.model.parent.mkdir(parents=True, exist_ok=True)
+    report.warn(f"Descargando modelo (~22GB) a {cfg.llama.model} — puede tardar bastante")
     rc = await _run(
-        ["curl", "-L", "-C", "-", "-o", str(cfg.model), cfg.model_download_url],
+        ["curl", "-L", "-C", "-", "-o", str(cfg.llama.model), cfg.install.model_download_url],
         report,
     )
     if rc != 0:
         report.error(f"descarga falló (rc {rc})")
         raise PhaseError(f"model download failed (rc {rc})")
-    report.success(f"Modelo descargado en {cfg.model}")
+    report.success(f"Modelo descargado en {cfg.llama.model}")
 
 
 def _write_env_from_example(example: Path, target: Path, overrides: dict[str, str]) -> None:
@@ -153,25 +150,25 @@ def _write_env_from_example(example: Path, target: Path, overrides: dict[str, st
 
 
 async def phase_install_setup_pithagoras(cfg: RinthelConfig, report: PhaseReport) -> None:
-    if (cfg.pithagoras_dir / ".git").exists():
-        report.warn(f"{cfg.pithagoras_dir} ya existe — omito clone")
+    if (cfg.pithagoras.dir / ".git").exists():
+        report.warn(f"{cfg.pithagoras.dir} ya existe — omito clone")
     else:
-        cfg.pithagoras_dir.parent.mkdir(parents=True, exist_ok=True)
+        cfg.pithagoras.dir.parent.mkdir(parents=True, exist_ok=True)
         rc = await _run(
-            ["git", "clone", "--branch", _PITHAGORAS_BRANCH, cfg.pithagoras_repo_url, str(cfg.pithagoras_dir)],
+            ["git", "clone", "--branch", _PITHAGORAS_BRANCH, cfg.install.pithagoras_repo_url, str(cfg.pithagoras.dir)],
             report,
         )
         if rc != 0:
             report.error(f"git clone falló (rc {rc})")
             raise PhaseError(f"pithagoras clone failed (rc {rc})")
-        report.success(f"Pithagoras clonado en {cfg.pithagoras_dir}")
+        report.success(f"Pithagoras clonado en {cfg.pithagoras.dir}")
 
-    env_path = cfg.pithagoras_dir / ".env"
+    env_path = cfg.pithagoras.dir / ".env"
     if env_path.exists():
         report.warn(f"{env_path} ya existe — no lo piso")
         return
 
-    example_path = cfg.pithagoras_dir / ".env.example"
+    example_path = cfg.pithagoras.dir / ".env.example"
     if not example_path.exists():
         report.error(f"{example_path} no existe — no puedo generar .env")
         raise PhaseError("pithagoras .env.example missing")
@@ -182,13 +179,13 @@ async def phase_install_setup_pithagoras(cfg: RinthelConfig, report: PhaseReport
         "UNDERSTORY_TOKEN": secrets.token_hex(24),
         # No es un secreto — es la carpeta real que Pithagoras monta en
         # /workspaces (ver RinthelConfig.workspaces_dir).
-        "WORKSPACES_DIR": str(cfg.workspaces_dir),
+        "WORKSPACES_DIR": str(cfg.install.workspaces_dir),
         # Sin esto, Compose monta en silencio un directorio vacío
         # (dueño root) donde va node_modules de pi-web-access/pi-mcp-adapter
         # — la primera conversación falla con "npm install ... failed with
         # code 254" porque ese mount queda de solo lectura. Ver .env.example
         # de pithagoras.
-        "PI_AGENT_DIR": str(cfg.pi_agent_dir),
+        "PI_AGENT_DIR": str(cfg.install.pi_agent_dir),
     }
     _write_env_from_example(example_path, env_path, overrides)
     report.success(f"{env_path} generado")
@@ -206,9 +203,9 @@ def _read_understory_token(pithagoras_env: Path) -> str | None:
 async def phase_install_setup_understory(cfg: RinthelConfig, report: PhaseReport) -> None:
     """Sin clone — Understory corre desde la imagen publicada
     ``ghcr.io/thecodacus/understory:latest``, no desde fuente."""
-    cfg.understory_dir.mkdir(parents=True, exist_ok=True)
+    cfg.understory.dir.mkdir(parents=True, exist_ok=True)
 
-    compose_path = cfg.understory_dir / "docker-compose.yml"
+    compose_path = cfg.understory.dir / "docker-compose.yml"
     if compose_path.exists():
         report.warn(f"{compose_path} ya existe — omito")
     else:
@@ -219,21 +216,21 @@ async def phase_install_setup_understory(cfg: RinthelConfig, report: PhaseReport
         compose_path.write_text(template.read_text())
         report.success(f"{compose_path} escrito")
 
-    env_path = cfg.understory_dir / ".env"
+    env_path = cfg.understory.dir / ".env"
     if env_path.exists():
         report.warn(f"{env_path} ya existe — omito")
     else:
-        token = _read_understory_token(cfg.pithagoras_dir / ".env")
+        token = _read_understory_token(cfg.pithagoras.dir / ".env")
         if not token:
             report.error(
-                f"no encontré UNDERSTORY_TOKEN en {cfg.pithagoras_dir / '.env'} "
+                f"no encontré UNDERSTORY_TOKEN en {cfg.pithagoras.dir / '.env'} "
                 "— corré [5/6] PITHAGORAS antes que esta fase"
             )
             raise PhaseError("understory: UNDERSTORY_TOKEN not found")
         env_path.write_text(f"AUTH_TOKEN={token}\n")
         report.success(f"{env_path} generado")
 
-    bundle_dir = cfg.understory_dir / "bundle"
+    bundle_dir = cfg.understory.dir / "bundle"
     created = 0
     for sub in _UNDERSTORY_BUNDLE_DIRS:
         sub_dir = bundle_dir / sub

@@ -16,7 +16,7 @@ class LogsScreen(Screen):
         self.cfg = cfg or CONFIG
 
     def compose(self) -> ComposeResult:
-        tail = LogTail(self.cfg.log, id="tail-log", classes="panel")
+        tail = LogTail(self.cfg.llama.log, id="tail-log", classes="panel")
         tail.border_title = "◈ LLAMA-SERVER LOG — q para volver"
         yield tail
 

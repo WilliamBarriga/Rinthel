@@ -1,3 +1,5 @@
+import sys
+
 from textual.app import App
 
 from rinthel_tui import config
@@ -21,7 +23,11 @@ class RinthelApp(App):
 
 
 def main() -> None:
-    config.CONFIG.apply_env()
+    try:
+        config.CONFIG.apply_env()
+    except config.ConfigError as exc:
+        print(f"[rinthel] config inválida: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     RinthelApp().run()
 
 

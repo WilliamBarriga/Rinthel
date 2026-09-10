@@ -1,13 +1,19 @@
-"""Listas declarativas de fases — reemplaza los arrays RINTHEL_*_PHASES
-de rinthel-up.sh/rinthel-down.sh/rinthel-reload.sh.
+"""Listas declarativas de fases — reemplaza los arrays RINTHEL_*_PHASES de
+rinthel-up.sh/rinthel-down.sh/rinthel-reload.sh.
+
+BOOT/DOWN/RELOAD se arman iterando ``services.LOCAL_SERVICES``/
+``services.DOCKER_SERVICES`` — agregar o sacar un servicio ahí (más su
+instancia en ``services.py``) alcanza para que las 4 secuencias lo
+reflejen, renumeración de RELOAD incluida, sin tocar este archivo a mano.
 """
 
 from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine
 
 from rinthel_tui.config import RinthelConfig
-from rinthel_tui.lifecycle import install, phases
-from rinthel_tui.lifecycle.phases import PhaseReport
+from rinthel_tui.lifecycle import install, managed_service, phases, services
+from rinthel_tui.lifecycle.managed_service import DockerComposeService, LocalProcessService
+from rinthel_tui.lifecycle.types import PhaseReport
 
 PhaseFn = Callable[..., Coroutine[Any, Any, None]]
 
@@ -20,6 +26,56 @@ class PhaseSpec:
 
     async def run(self, cfg: RinthelConfig, report: PhaseReport) -> None:
         await self.fn(cfg, report, **self.kwargs)
+
+
+# ── builders de PhaseSpec por servicio — un solo lugar que sabe qué label
+# y qué kwargs le corresponden a cada tipo de fase ────────────────────────
+
+
+def _spawn_spec(service: LocalProcessService) -> PhaseSpec:
+    return PhaseSpec(f"◈ {service.menu_label}", managed_service.phase_spawn, {"service": service})
+
+
+def _wait_spec(service: LocalProcessService) -> PhaseSpec:
+    return PhaseSpec(
+        f"◈ ESPERANDO {service.wait_label}", managed_service.phase_wait_ready, {"service": service}
+    )
+
+
+def _kill_spec(service: LocalProcessService) -> PhaseSpec:
+    return PhaseSpec(f"◈ {service.kill_label}", managed_service.phase_kill, {"service": service})
+
+
+def _up_spec(service: DockerComposeService, *, no_cache: bool = False) -> PhaseSpec:
+    return PhaseSpec(
+        f"◈ {service.menu_label}",
+        managed_service.phase_up,
+        {"service": service, "no_cache": no_cache},
+    )
+
+
+def _wait_docker_spec(service: DockerComposeService) -> PhaseSpec:
+    return PhaseSpec(
+        f"◈ ESPERANDO {service.wait_label}",
+        managed_service.phase_wait_ready_docker,
+        {"service": service},
+    )
+
+
+def _down_spec(service: DockerComposeService) -> PhaseSpec:
+    return PhaseSpec(f"◈ {service.kill_label}", managed_service.phase_down, {"service": service})
+
+
+def _renumbered(specs: list[PhaseSpec], total: int, start: int) -> list[PhaseSpec]:
+    """RELOAD numera las fases de punta a punta ("[i/total]") a través de
+    sus 3 tandas — total/posición se calculan solos a partir de cuántos
+    servicios haya en LOCAL_SERVICES/DOCKER_SERVICES, así que agregar o
+    sacar uno no exige renumerar nada a mano."""
+    out = []
+    for i, spec in enumerate(specs):
+        label = spec.label.removeprefix("◈ ")
+        out.append(PhaseSpec(f"◈ [{start + i}/{total}] {label}", spec.fn, spec.kwargs))
+    return out
 
 
 # ── INSTALL (bootstrap de infra en máquina nueva) ─────────────
@@ -36,50 +92,42 @@ INSTALL_PHASES: list[PhaseSpec] = [
 # ── BOOT (rinthel-up.sh) ──────────────────────────────────────
 BOOT_PHASES: list[PhaseSpec] = [
     PhaseSpec("◈ DOCKER", phases.phase_check_docker),
-    PhaseSpec("◈ LLAMA-SERVER", phases.phase_spawn_llama_server),
-    PhaseSpec("◈ ESPERANDO LLAMA-SERVER", phases.phase_wait_llama_ready),
-    PhaseSpec("◈ WHISPER — STT", phases.phase_spawn_whisper_server),
-    PhaseSpec("◈ ESPERANDO WHISPER", phases.phase_wait_whisper_ready),
-    PhaseSpec("◈ TTS — PIPER", phases.phase_spawn_tts_server),
-    PhaseSpec("◈ ESPERANDO TTS", phases.phase_wait_tts_ready),
-    PhaseSpec("◈ UNDERSTORY  --  MCP MEMORY LAYER", phases.phase_up_understory),
-    PhaseSpec("◈ PITHAGORAS  --  PI TASK PORTAL", phases.phase_build_up_pithagoras),
+    *[spec for svc in services.LOCAL_SERVICES for spec in (_spawn_spec(svc), _wait_spec(svc))],
+    *[spec for svc in services.DOCKER_SERVICES for spec in (_up_spec(svc), _wait_docker_spec(svc))],
 ]
 
 # ── DOWN (rinthel-down.sh) ────────────────────────────────────
 DOWN_PHASES: list[PhaseSpec] = [
-    PhaseSpec("◈ LLAMA-SERVER  --  Qwen3.6-35B-A3B-MTP", phases.phase_kill_llama_server),
-    PhaseSpec("◈ WHISPER — STT", phases.phase_kill_whisper_server),
-    PhaseSpec("◈ TTS — PIPER", phases.phase_kill_tts_server),
-    PhaseSpec("◈ UNDERSTORY  --  MCP MEMORY LAYER", phases.phase_stop_understory),
-    PhaseSpec("◈ PITHAGORAS  --  PI TASK PORTAL", phases.phase_stop_pithagoras),
+    *[_kill_spec(svc) for svc in services.LOCAL_SERVICES],
+    *[_down_spec(svc) for svc in services.DOCKER_SERVICES],
 ]
 
-# ── RELOAD (rinthel-reload.sh) — 15 fases en 3 tandas ─────────
-RELOAD_SHUTDOWN_PHASES: list[PhaseSpec] = [
-    PhaseSpec("◈ [1/15] LLAMA-SERVER — parar", phases.phase_kill_llama_server),
-    PhaseSpec("◈ [2/15] WHISPER — parar", phases.phase_kill_whisper_server),
-    PhaseSpec("◈ [3/15] TTS — parar", phases.phase_kill_tts_server),
-    PhaseSpec("◈ [4/15] UNDERSTORY — parar", phases.phase_stop_understory),
-    PhaseSpec("◈ [5/15] PITHAGORAS — parar", phases.phase_stop_pithagoras),
-    PhaseSpec("◈ [6/15] PUERTO :8080 LIBRE", phases.phase_wait_port_free),
-]
-
-RELOAD_BOOT_PHASES: list[PhaseSpec] = [
-    PhaseSpec("◈ [7/15] DOCKER", phases.phase_check_docker),
-    PhaseSpec("◈ [8/15] LLAMA-SERVER — lanzar", phases.phase_spawn_llama_server),
-    PhaseSpec("◈ [9/15] ESPERANDO LLAMA-SERVER", phases.phase_wait_llama_ready),
-    PhaseSpec("◈ [10/15] WHISPER — lanzar", phases.phase_spawn_whisper_server),
-    PhaseSpec("◈ [11/15] ESPERANDO WHISPER", phases.phase_wait_whisper_ready),
-    PhaseSpec("◈ [12/15] TTS — lanzar", phases.phase_spawn_tts_server),
-    PhaseSpec("◈ [13/15] ESPERANDO TTS", phases.phase_wait_tts_ready),
-]
-
-RELOAD_REBUILD_PHASES: list[PhaseSpec] = [
-    PhaseSpec("◈ [14/15] UNDERSTORY — up", phases.phase_up_understory),
+# ── RELOAD (rinthel-reload.sh) — 3 tandas: shutdown → boot → rebuild+up ───
+_shutdown_raw = [
+    *[_kill_spec(svc) for svc in services.LOCAL_SERVICES],
+    *[_down_spec(svc) for svc in services.DOCKER_SERVICES],
     PhaseSpec(
-        "◈ [15/15] PITHAGORAS — rebuild + up",
-        phases.phase_build_up_pithagoras,
-        kwargs={"no_cache": True},
+        f"◈ PUERTO {services.LLAMA_SERVICE.wait_label} LIBRE",
+        managed_service.phase_wait_port_free,
+        {"port_of": services.LLAMA_SERVICE.port_of},
     ),
 ]
+_boot_raw = [
+    PhaseSpec("◈ DOCKER", phases.phase_check_docker),
+    *[spec for svc in services.LOCAL_SERVICES for spec in (_spawn_spec(svc), _wait_spec(svc))],
+]
+_rebuild_raw = [
+    spec
+    for svc in services.DOCKER_SERVICES
+    for spec in (_up_spec(svc, no_cache=True), _wait_docker_spec(svc))
+]
+
+_RELOAD_TOTAL = len(_shutdown_raw) + len(_boot_raw) + len(_rebuild_raw)
+
+RELOAD_SHUTDOWN_PHASES: list[PhaseSpec] = _renumbered(_shutdown_raw, _RELOAD_TOTAL, start=1)
+RELOAD_BOOT_PHASES: list[PhaseSpec] = _renumbered(
+    _boot_raw, _RELOAD_TOTAL, start=1 + len(_shutdown_raw)
+)
+RELOAD_REBUILD_PHASES: list[PhaseSpec] = _renumbered(
+    _rebuild_raw, _RELOAD_TOTAL, start=1 + len(_shutdown_raw) + len(_boot_raw)
+)

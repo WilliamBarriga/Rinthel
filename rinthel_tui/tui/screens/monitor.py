@@ -46,13 +46,13 @@ class MonitorScreen(Screen):
     def compose(self) -> ComposeResult:
         with Horizontal(id="monitor-badges"):
             yield ServiceBadge(
-                "Understory", f"http://localhost:{self.cfg.understory_port}", id="mon-badge-understory"
+                "Understory", f"http://localhost:{self.cfg.understory.port}", id="mon-badge-understory"
             )
             yield ServiceBadge(
-                "Pithagoras", f"http://localhost:{self.cfg.pithagoras_port}", id="mon-badge-pithagoras"
+                "Pithagoras", f"http://localhost:{self.cfg.pithagoras.port}", id="mon-badge-pithagoras"
             )
             yield ServiceBadge(
-                "llama-server", f"http://127.0.0.1:{self.cfg.port}/v1/models", id="mon-badge-llama"
+                "llama-server", f"http://127.0.0.1:{self.cfg.llama.port}/v1/models", id="mon-badge-llama"
             )
 
         self.docker_table = DataTable(id="monitor-docker", classes="panel")
@@ -74,7 +74,7 @@ class MonitorScreen(Screen):
                 self.ram_sparkline = Sparkline(id="ram-sparkline")
                 yield self.ram_sparkline
 
-        log_tail = LogTail(self.cfg.log, lines=50, id="monitor-log", classes="panel")
+        log_tail = LogTail(self.cfg.llama.log, lines=50, id="monitor-log", classes="panel")
         log_tail.border_title = "◈ LLAMA-SERVER LOG"
         yield log_tail
         yield Static("q / Esc para volver", classes="nc-dim")
@@ -88,7 +88,7 @@ class MonitorScreen(Screen):
         assert self.docker_table is not None
         while True:
             rows = []
-            for directory in (self.cfg.understory_dir, self.cfg.pithagoras_dir):
+            for directory in (self.cfg.understory.dir, self.cfg.pithagoras.dir):
                 rows.extend(await services.docker_compose_ps(directory))
             self.docker_table.clear()
             if rows:

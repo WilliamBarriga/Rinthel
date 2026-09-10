@@ -13,8 +13,8 @@ a que llama-server responda si nunca se lo pudo lanzar).
 from typing import Callable, Sequence
 
 from rinthel_tui.config import RinthelConfig
-from rinthel_tui.lifecycle.phases import PhaseError, PhaseReport
 from rinthel_tui.lifecycle.specs import PhaseSpec
+from rinthel_tui.lifecycle.types import PhaseError, PhaseReport
 
 # status: "running" | "done" | "error" — avisa a quien llama antes/después de
 # cada fase para que pueda reflejarlo en un checklist (PhaseSequenceScreen)

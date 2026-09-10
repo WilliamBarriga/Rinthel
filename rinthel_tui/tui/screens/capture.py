@@ -12,7 +12,7 @@ from textual.widgets import RichLog, Static
 
 from rinthel_tui.config import CONFIG, RinthelConfig
 from rinthel_tui.lifecycle.capture_profile import capture_profile
-from rinthel_tui.lifecycle.phases import PhaseError
+from rinthel_tui.lifecycle.types import PhaseError
 from rinthel_tui.tui.screens.phase_runner import ScreenPhaseReport
 
 
@@ -45,7 +45,7 @@ class CaptureScreen(Screen):
             self.status_widget.update(f"✖ falló: {exc}")
             self.status_widget.set_classes("phase-row phase-error")
         else:
-            self.status_widget.update(f"● perfil capturado — {self.cfg.moe_cache_profile}")
+            self.status_widget.update(f"● perfil capturado — {self.cfg.moe.cache_profile}")
             self.status_widget.set_classes("phase-row phase-done")
         self._done = True
 

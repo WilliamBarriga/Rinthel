@@ -13,7 +13,8 @@ import tempfile
 from pathlib import Path
 
 from rinthel_tui.config import RinthelConfig
-from rinthel_tui.lifecycle.phases import PhaseError, PhaseReport, _run
+from rinthel_tui.lifecycle.managed_service import _run
+from rinthel_tui.lifecycle.types import PhaseError, PhaseReport
 
 # Mismo contexto que carga `pi` de verdad (AGENTS.md ancestro + raíz del
 # workspace) + ChatML, no texto suelto — distribución de expertos más
@@ -52,7 +53,7 @@ async def _run_trace(cfg: RinthelConfig, prompt: str, out_file: Path, report: Ph
         env["MOE_TRACE_OUT"] = str(out_file)
         rc = await _run(
             [
-                str(cfg.moe_trace_build), "-m", str(cfg.model),
+                str(cfg.moe.trace_build), "-m", str(cfg.llama.model),
                 "-ngl", "99", "-ncmoe", "99", "-fa", "1", "-c", "40096", "-n", "512",
                 "-f", str(prompt_path),
             ],
@@ -71,9 +72,9 @@ async def capture_profile(cfg: RinthelConfig, report: PhaseReport) -> None:
     except FileNotFoundError as exc:
         raise PhaseError(f"falta {exc.filename} — no se puede armar el contexto del perfil") from exc
 
-    cfg.moe_trace_out_dir.mkdir(parents=True, exist_ok=True)
-    code_csv = cfg.moe_trace_out_dir / "qwen3.6-code.csv"
-    chat_csv = cfg.moe_trace_out_dir / "qwen3.6-chat.csv"
+    cfg.moe.trace_out_dir.mkdir(parents=True, exist_ok=True)
+    code_csv = cfg.moe.trace_out_dir / "qwen3.6-code.csv"
+    chat_csv = cfg.moe.trace_out_dir / "qwen3.6-chat.csv"
 
     report.info("Capturando perfil 'código'...")
     await _run_trace(cfg, _chatml_prompt(system_text, CODE_TASK), code_csv, report)
@@ -81,5 +82,5 @@ async def capture_profile(cfg: RinthelConfig, report: PhaseReport) -> None:
     report.info("Capturando perfil 'chat'...")
     await _run_trace(cfg, _chatml_prompt(system_text, CHAT_TASK), chat_csv, report)
 
-    cfg.moe_cache_profile.write_text(code_csv.read_text() + chat_csv.read_text())
-    report.success(f"Listo: {cfg.moe_cache_profile}")
+    cfg.moe.cache_profile.write_text(code_csv.read_text() + chat_csv.read_text())
+    report.success(f"Listo: {cfg.moe.cache_profile}")

@@ -7,6 +7,9 @@ requires-python = ">=3.13"
 dependencies = ["textual>=0.80", "pyfiglet>=1.0.4", "psutil>=5.9", "python-dotenv>=1.0"]
 classifiers = ["License :: OSI Approved :: MIT License"]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+
 [project.scripts]
 rinthel = "rinthel_tui.app:main"
 
@@ -19,3 +22,7 @@ include = ["rinthel_tui*"]
 
 [tool.setuptools.package-data]
 rinthel_tui = ["install/templates/*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -130,16 +130,16 @@ class MenuScreen(Screen):
             yield JackInOptionList(*_build_options(_DIVIDER_WIDTH_GUESS), id="menu-options")
             with Horizontal(id="menu-footer"):
                 yield ServiceBadge(
-                    "Understory", f"http://localhost:{CONFIG.understory_port}", id="badge-understory"
+                    "Understory", f"http://localhost:{CONFIG.understory.port}", id="badge-understory"
                 )
                 yield ServiceBadge(
-                    "Pithagoras", f"http://localhost:{CONFIG.pithagoras_port}", id="badge-pithagoras"
+                    "Pithagoras", f"http://localhost:{CONFIG.pithagoras.port}", id="badge-pithagoras"
                 )
                 yield ServiceBadge(
-                    "Whisper STT", f"http://localhost:{CONFIG.whisper_port}", id="badge-whisper"
+                    "Whisper STT", f"http://localhost:{CONFIG.whisper.port}", id="badge-whisper"
                 )
                 yield ServiceBadge(
-                    "TTS", f"http://localhost:{CONFIG.tts_port}", id="badge-tts"
+                    "TTS", f"http://localhost:{CONFIG.tts.port}", id="badge-tts"
                 )
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:

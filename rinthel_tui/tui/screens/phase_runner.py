@@ -13,9 +13,9 @@ from textual.screen import Screen
 from textual.widgets import RichLog, Static
 
 from rinthel_tui.config import CONFIG, RinthelConfig
-from rinthel_tui.lifecycle.phases import PhaseReport
 from rinthel_tui.lifecycle.runner import PhaseFailed, run_phase_list
 from rinthel_tui.lifecycle.specs import PhaseSpec
+from rinthel_tui.lifecycle.types import PhaseReport
 from rinthel_tui.theme import palette
 from rinthel_tui.tui.effects.base import TransitionEffect
 from rinthel_tui.tui.screens.farewell import FarewellScreen

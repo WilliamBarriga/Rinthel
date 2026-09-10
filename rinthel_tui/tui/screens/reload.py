@@ -1,6 +1,8 @@
 """Orquesta las 3 tandas de rinthel-reload.sh (shutdown → boot → rebuild+up)
-como una única sesión de checklist de 15 fases — igual que nc_tui_session_start
-recibiendo el array plano de labels en el bash original.
+como una única sesión de checklist — igual que nc_tui_session_start
+recibiendo el array plano de labels en el bash original. El total de fases
+lo calcula specs.py solo, a partir de cuántos servicios haya registrados en
+lifecycle/services.py.
 """
 
 from rinthel_tui.config import RinthelConfig
