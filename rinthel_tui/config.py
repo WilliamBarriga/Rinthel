@@ -189,42 +189,28 @@ MOE_FIELDS: list[Field] = [
 
 @dataclass(frozen=True)
 class WhisperConfig:
-    bin: Path
-    model: Path
+    dir: Path
     port: int
-    log: Path
-    threads: int
     enabled: bool
 
 
 WHISPER_FIELDS: list[Field] = [
-    Field("bin", "RINTHEL_WHISPER_BIN", Path, "~/codacus/whisper.cpp/build/bin/whisper-server", exists=True),
-    Field("model", "RINTHEL_WHISPER_MODEL", Path, "~/codacus/whisper.cpp/models/ggml-base.bin", exists=True),
+    Field("dir", "RINTHEL_WHISPER_DIR", Path, "~/Rinthel-general/services/whisper-stt", exists=True),
     Field("port", "RINTHEL_WHISPER_PORT", int, 8090, port=True),
-    Field("log", "RINTHEL_WHISPER_LOG", Path, "~/Rinthel-general/logs/whisper-server.log"),
-    Field("threads", "RINTHEL_WHISPER_THREADS", int, 4, positive=True),
     Field("enabled", "RINTHEL_WHISPER_ENABLED", bool, True),
 ]
 
 
 @dataclass(frozen=True)
 class TTSConfig:
-    bin: Path
-    server_script: Path
-    voice_es: Path
-    voice_en: Path
+    dir: Path
     port: int
-    log: Path
     enabled: bool
 
 
 TTS_FIELDS: list[Field] = [
-    Field("bin", "RINTHEL_TTS_BIN", Path, "~/codacus/piper/piper/piper", exists=True),
-    Field("server_script", "RINTHEL_TTS_SERVER_SCRIPT", Path, "~/Rinthel-general/services/tts-piper/server.py", exists=True),
-    Field("voice_es", "RINTHEL_TTS_VOICE_ES", Path, "~/codacus/piper/voices/es_AR-daniela-high.onnx", exists=True),
-    Field("voice_en", "RINTHEL_TTS_VOICE_EN", Path, "~/codacus/piper/voices/en_US-hfc_female-medium.onnx", exists=True),
+    Field("dir", "RINTHEL_TTS_DIR", Path, "~/Rinthel-general/services/tts-piper", exists=True),
     Field("port", "RINTHEL_TTS_PORT", int, 8091, port=True),
-    Field("log", "RINTHEL_TTS_LOG", Path, "~/Rinthel-general/logs/tts-piper.log"),
     Field("enabled", "RINTHEL_TTS_ENABLED", bool, True),
 ]
 

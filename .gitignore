@@ -220,10 +220,14 @@ __marimo__/
 # ── Rinthel-general (project-specific) ─────────────────────────
 logs/
 plans/
+.claude/
 
 # graphify — generated knowledge graph, regenerable, not source
 graphify-out/
 graphify-vault/
+
+# archify — generated diagram output, regenerable, not source
+archify-demo/
 
 # pi local state — ignore .pi/ except the graphify skill, which we want
 # tracked so a future session has it ready without reinstalling

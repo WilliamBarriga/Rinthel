@@ -1,5 +1,6 @@
 """Fases de INSTALL — bootstrap de infra en una máquina nueva: build CUDA de
-llama.cpp, descarga del modelo GGUF, scaffolding de Pithagoras/Understory.
+llama.cpp, descarga del modelo GGUF, scaffolding de Pithagoras/Understory,
+build de las imágenes docker de whisper-stt/tts-piper.
 
 Mismo protocolo que el resto de lifecycle/ (``async def phase_*(cfg, report)
 -> None``, ``PhaseError``); reusa ``_run`` (subprocess) de
@@ -176,6 +177,65 @@ async def phase_install_setup_pithagoras(cfg: RinthelConfig, report: PhaseReport
     report.success(f"{env_path} generado")
 
 
+async def _phase_install_setup_docker_service(
+    cfg: RinthelConfig,
+    report: PhaseReport,
+    *,
+    directory: Path,
+    display_name: str,
+    env_overrides: dict[str, str],
+) -> None:
+    """Patrón compartido por whisper-stt y tts-piper: a diferencia de
+    Understory/Pithagoras (que clonan algo externo a ``dir``), acá el
+    Dockerfile y el código ya viven versionados en el repo bajo
+    ``services/`` — no hay nada que clonar ni ningún template que escribir,
+    solo generar el ``.env`` propio del servicio y construir la imagen."""
+    if not (directory / "Dockerfile").exists():
+        report.error(f"{directory}/Dockerfile no existe — ¿RINTHEL_*_DIR mal configurado?")
+        raise PhaseError(f"{display_name}: Dockerfile not found in {directory}")
+
+    env_path = directory / ".env"
+    if env_path.exists():
+        report.warn(f"{env_path} ya existe — no lo piso")
+    else:
+        update_env_file(env_path, env_overrides)
+        report.success(f"{env_path} generado")
+
+    rc = await _run(["docker", "compose", "build"], report, cwd=directory)
+    if rc != 0:
+        report.error(f"{display_name}: docker compose build falló (rc {rc})")
+        raise PhaseError(f"{display_name.lower()} build failed (rc {rc})")
+    report.success(f"{display_name} — imagen construida")
+
+
+async def phase_install_setup_whisper(cfg: RinthelConfig, report: PhaseReport) -> None:
+    await _phase_install_setup_docker_service(
+        cfg, report,
+        directory=cfg.whisper.dir,
+        display_name="WHISPER",
+        env_overrides={
+            "AUTH_TOKEN": secrets.token_hex(32),
+            # Mejor esfuerzo: el único caller real hoy es el frontend de
+            # Pithagoras. Es un valor editable a mano en
+            # services/whisper-stt/.env, no vive en RinthelConfig.
+            "ALLOWED_ORIGIN": f"http://127.0.0.1:{cfg.pithagoras.port}",
+        },
+    )
+
+
+async def phase_install_setup_tts(cfg: RinthelConfig, report: PhaseReport) -> None:
+    await _phase_install_setup_docker_service(
+        cfg, report,
+        directory=cfg.tts.dir,
+        display_name="TTS",
+        env_overrides={
+            "AUTH_TOKEN": secrets.token_hex(32),
+            "ALLOWED_ORIGIN": f"http://127.0.0.1:{cfg.pithagoras.port}",
+            "MAX_TEXT_LENGTH": "2000",
+        },
+    )
+
+
 def _read_understory_token(pithagoras_env: Path) -> str | None:
     if not pithagoras_env.exists():
         return None
@@ -239,11 +299,6 @@ async def phase_install_setup_understory(cfg: RinthelConfig, report: PhaseReport
 # ── unidades instalables — un servicio con enabled=False no aparece en
 # [0] INSTALL (ver specs.install_phases), aunque su INSTALL_PHASES original
 # seguía siendo relevante para BOOT/DOWN/RELOAD vía enabled_of ────────────
-#
-# Whisper y TTS no tienen unidad acá — no tienen fase de instalación hoy
-# (sus binarios se compilan a mano fuera del repo, ver README); su
-# ``enabled`` solo afecta BOOT/DOWN/RELOAD (specs.boot_phases/down_phases),
-# no INSTALL.
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -275,4 +330,18 @@ UNDERSTORY_INSTALL = InstallUnit(
     steps=(("UNDERSTORY — scaffold + configurar", phase_install_setup_understory),),
 )
 
-INSTALL_UNITS: list[InstallUnit] = [LLAMA_INSTALL, PITHAGORAS_INSTALL, UNDERSTORY_INSTALL]
+WHISPER_INSTALL = InstallUnit(
+    label="WHISPER — STT",
+    enabled_of=lambda cfg: cfg.whisper.enabled,
+    steps=(("WHISPER — build imagen docker", phase_install_setup_whisper),),
+)
+
+TTS_INSTALL = InstallUnit(
+    label="TTS — PIPER",
+    enabled_of=lambda cfg: cfg.tts.enabled,
+    steps=(("TTS — build imagen docker", phase_install_setup_tts),),
+)
+
+INSTALL_UNITS: list[InstallUnit] = [
+    LLAMA_INSTALL, PITHAGORAS_INSTALL, UNDERSTORY_INSTALL, WHISPER_INSTALL, TTS_INSTALL,
+]

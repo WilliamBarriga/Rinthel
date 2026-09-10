@@ -1,23 +1,50 @@
 services:
   understory:
     image: ghcr.io/thecodacus/understory:latest
-    network_mode: host   # el llama-server local solo escucha en 127.0.0.1;
-                          # host.docker.internal no lo alcanza. `ports:` se
-                          # omite (no aplica bajo host networking).
+    ports:
+      - "127.0.0.1:3800:3800"   # solo loopback del host — el único cliente
+                                 # es Pithagoras, que corre host-networked y
+                                 # por eso ve este bind como un puerto local
+                                 # suyo, igual que bajo network_mode: host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reemplaza el network_mode:
+                                                # host que antes hacía falta
+                                                # solo para llegar al
+                                                # llama-server del host
     volumes:
       - ./bundle:/bundle
     environment:
       BUNDLE_ROOT: /bundle
-      LLM_API_BASE_URL: http://127.0.0.1:8080/v1
+      LLM_API_BASE_URL: http://host.docker.internal:8080/v1
       LLM_API_KEY: not-needed      # el server local no exige auth
       LLM_API_FORMAT: openai
-      LLM_MODEL: ""                # vacío a propósito -> auto-discovery,
-                                    # sigue lo que esté cargado en :8080
+      LLM_MODEL: "/home/tarkark/llama.cpp/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
+                                    # el vacío -> auto-discovery ("openai:auto")
+                                    # no alcanza para el endpoint de query del
+                                    # agente interno ("LLM_MODEL is required for
+                                    # this endpoint"); tiene que matchear el id
+                                    # exacto que devuelve GET :8080/v1/models
+                                    # (cambia si se carga otro GGUF)
       GIT_AUTOCOMMIT: "false"
-      AUTH_TOKEN: ${AUTH_TOKEN}    # protege /mcp y /api ahora que queda
-                                    # corriendo persistente (network_mode:
-                                    # host lo expone en toda la red local)
+      AUTH_TOKEN: ${AUTH_TOKEN}    # protege /mcp y /api — ya no queda
+                                    # expuesto a la LAN, solo a procesos del
+                                    # propio host (Pithagoras incluido)
       DREAM_INTERVAL: "75m"        # consolidación autónoma (huérfanos,
                                     # duplicados, conceptos gordos); primera
                                     # corrida 1h15 después de este boot
     restart: unless-stopped
+
+networks:
+  default:
+    name: understory_net
+    driver_opts:
+      com.docker.network.bridge.name: br-understory
+    ipam:
+      config:
+        - subnet: 172.30.99.0/24   # gateway fijo 172.30.99.1 — las reglas de
+                                    # iptables/route_localnet que le abren paso
+                                    # a llama-server (127.0.0.1:8080) apuntan a
+                                    # esta interfaz por nombre e IP; sin fijarla
+                                    # docker le asigna una red/gateway nuevos en
+                                    # cada "compose down && up" y las reglas
+                                    # quedan huérfanas

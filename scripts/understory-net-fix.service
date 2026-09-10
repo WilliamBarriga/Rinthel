@@ -1,0 +1,13 @@
+[Unit]
+Description=Understory -> llama-server loopback NAT fix (br-understory -> 127.0.0.1:8080)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/tarkark/Rinthel-general/scripts/understory-net-fix.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

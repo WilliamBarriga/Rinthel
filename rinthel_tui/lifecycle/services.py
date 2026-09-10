@@ -1,10 +1,9 @@
 """Instancias concretas de ``LocalProcessService``/``DockerComposeService``
-— un lugar único para agregar un servicio nuevo (llama/whisper/tts local, o
-Understory/Pithagoras vía docker compose) sin tocar ``managed_service.py``
-ni triplicar fases en ``phases.py`` como antes de este refactor.
+— un lugar único para agregar un servicio nuevo (llama-server local, o
+Understory/Pithagoras/whisper/tts vía docker compose) sin tocar
+``managed_service.py`` ni triplicar fases en ``phases.py`` como antes de
+este refactor.
 """
-
-import sys
 
 from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle.managed_service import DockerComposeService, LocalProcessService
@@ -49,34 +48,6 @@ def _llama_argv(cfg: RinthelConfig) -> list[str]:
     return argv
 
 
-def _whisper_argv(cfg: RinthelConfig) -> list[str]:
-    return [
-        str(cfg.whisper.bin),
-        "--host", "127.0.0.1",
-        "--port", str(cfg.whisper.port),
-        "-m", str(cfg.whisper.model),
-        "-t", str(cfg.whisper.threads),
-        "-l", "auto",
-        # El browser graba en audio/webm;codecs=opus — el decoder interno de
-        # whisper.cpp no lo entiende ("failed to decode audio data").
-        # --convert shellea a ffmpeg (debe estar en PATH del host) para pasar
-        # cualquier formato a WAV 16kHz antes de transcribir.
-        "--convert",
-        "--tmp-dir", str(cfg.whisper.log.parent),
-    ]
-
-
-def _tts_argv(cfg: RinthelConfig) -> list[str]:
-    return [
-        sys.executable, str(cfg.tts.server_script),
-        "--host", "127.0.0.1",
-        "--port", str(cfg.tts.port),
-        "--piper-bin", str(cfg.tts.bin),
-        "--voice-es", str(cfg.tts.voice_es),
-        "--voice-en", str(cfg.tts.voice_en),
-    ]
-
-
 # ── LocalProcessService ───────────────────────────────────────────────
 #
 # menu_label/wait_label/kill_label alimentan directamente los labels de
@@ -98,35 +69,6 @@ LLAMA_SERVICE = LocalProcessService(
     ready_poll_interval=2.0,
     on_timeout_hint="Levanta el modelo local antes de usar understory.",
 )
-
-WHISPER_SERVICE = LocalProcessService(
-    display_name="whisper-server",
-    menu_label="WHISPER — STT",
-    wait_label="WHISPER",
-    kill_label="WHISPER — STT",
-    build_argv=_whisper_argv,
-    port_of=lambda cfg: cfg.whisper.port,
-    log_of=lambda cfg: cfg.whisper.log,
-    enabled_of=lambda cfg: cfg.whisper.enabled,
-    ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.whisper.port}/",
-    default_ready_timeout=90,
-    ready_poll_interval=2.0,
-)
-
-TTS_SERVICE = LocalProcessService(
-    display_name="tts-piper",
-    menu_label="TTS — PIPER",
-    wait_label="TTS",
-    kill_label="TTS — PIPER",
-    build_argv=_tts_argv,
-    port_of=lambda cfg: cfg.tts.port,
-    log_of=lambda cfg: cfg.tts.log,
-    enabled_of=lambda cfg: cfg.tts.enabled,
-    ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.tts.port}/",
-    default_ready_timeout=30,
-    ready_poll_interval=1.0,
-)
-
 
 # ── DockerComposeService ──────────────────────────────────────────────
 
@@ -156,9 +98,41 @@ PITHAGORAS_SERVICE = DockerComposeService(
     ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.pithagoras.port}/",
 )
 
+# whisper-stt y tts-piper son código/Dockerfile propios versionados en
+# services/ (no un clone externo como Understory/Pithagoras) — no llevan
+# build_args porque la imagen se construye una sola vez en INSTALL, no en
+# cada RELOAD.
+WHISPER_SERVICE = DockerComposeService(
+    display_name="whisper-server",
+    menu_label="WHISPER — STT",
+    wait_label="WHISPER",
+    kill_label="WHISPER — STT",
+    dir_of=lambda cfg: cfg.whisper.dir,
+    port_of=lambda cfg: cfg.whisper.port,
+    enabled_of=lambda cfg: cfg.whisper.enabled,
+    compose_service_name="whisper-stt",
+    extra_env_of=lambda cfg: {"PORT": str(cfg.whisper.port)},
+    ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.whisper.port}/",
+    default_ready_timeout=90,
+)
+
+TTS_SERVICE = DockerComposeService(
+    display_name="tts-piper",
+    menu_label="TTS — PIPER",
+    wait_label="TTS",
+    kill_label="TTS — PIPER",
+    dir_of=lambda cfg: cfg.tts.dir,
+    port_of=lambda cfg: cfg.tts.port,
+    enabled_of=lambda cfg: cfg.tts.enabled,
+    compose_service_name="tts-piper",
+    extra_env_of=lambda cfg: {"PORT": str(cfg.tts.port)},
+    ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.tts.port}/",
+    default_ready_timeout=30,
+)
+
 
 # Orden de aparición en BOOT/DOWN/RELOAD — agregar o sacar un servicio de
 # estas listas alcanza para que las 4 secuencias lo reflejen (specs.py no
 # tiene ninguna referencia hardcodeada a un servicio puntual).
-LOCAL_SERVICES: list[LocalProcessService] = [LLAMA_SERVICE, WHISPER_SERVICE, TTS_SERVICE]
-DOCKER_SERVICES: list[DockerComposeService] = [UNDERSTORY_SERVICE, PITHAGORAS_SERVICE]
+LOCAL_SERVICES: list[LocalProcessService] = [LLAMA_SERVICE]
+DOCKER_SERVICES: list[DockerComposeService] = [UNDERSTORY_SERVICE, PITHAGORAS_SERVICE, WHISPER_SERVICE, TTS_SERVICE]

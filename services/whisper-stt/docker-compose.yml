@@ -1,0 +1,14 @@
+services:
+  whisper-stt:
+    build: .
+    ports:
+      - "127.0.0.1:${PORT}:8090"   # solo loopback del host — mismo criterio
+                                     # que understory/tts, nada expuesto a
+                                     # la LAN. whisper-server en sí ni
+                                     # siquiera llega a este nivel: corre en
+                                     # un puerto interno del contenedor, no
+                                     # publicado (ver entrypoint.sh).
+    environment:
+      AUTH_TOKEN: ${AUTH_TOKEN}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN}
+    restart: unless-stopped

@@ -48,6 +48,6 @@ def cfg(tmp_path):
     return dataclasses.replace(
         base,
         llama=dataclasses.replace(base.llama, log=tmp_path / "llama-server.log"),
-        whisper=dataclasses.replace(base.whisper, log=tmp_path / "whisper-server.log"),
-        tts=dataclasses.replace(base.tts, log=tmp_path / "tts-piper.log"),
+        whisper=dataclasses.replace(base.whisper, dir=tmp_path / "whisper-stt"),
+        tts=dataclasses.replace(base.tts, dir=tmp_path / "tts-piper"),
     )

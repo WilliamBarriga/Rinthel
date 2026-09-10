@@ -107,9 +107,7 @@ def test_validate_no_warnings_when_all_paths_exist(tmp_path):
     cfg = dataclasses.replace(
         base,
         llama=dataclasses.replace(base.llama, bin=existing, model=existing),
-        whisper=dataclasses.replace(base.whisper, bin=existing, model=existing),
-        tts=dataclasses.replace(
-            base.tts, bin=existing, server_script=existing, voice_es=existing, voice_en=existing
-        ),
+        whisper=dataclasses.replace(base.whisper, dir=tmp_path),
+        tts=dataclasses.replace(base.tts, dir=tmp_path),
     )
     assert cfg.validate() == []
