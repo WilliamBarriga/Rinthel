@@ -57,7 +57,7 @@ export function SessionsPage({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+      <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-6">
         <div className="mx-auto w-full max-w-3xl">
           <header className="rounded-2xl border border-line bg-gradient-to-br from-accent/10 via-transparent to-transparent px-5 py-5">
             <div className="flex items-start gap-3">
@@ -118,7 +118,7 @@ export function SessionsPage({
                     <p className="truncate font-mono text-[11px] text-fg-faint">{s.workspace}</p>
                   </div>
                   <span className="shrink-0 text-[11px] text-fg-faint">{when(s.updated_at)}</span>
-                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+                  <div className="flex shrink-0 items-center gap-0.5 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

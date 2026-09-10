@@ -2,8 +2,16 @@
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0a0a0c" />
+    <!-- Safari ignores the manifest for install behavior on older iOS — these
+         are what actually make "Add to Home Screen" launch without browser
+         chrome there. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Rinthel.Ai" />
+    <link rel="manifest" href="/manifest.json" />
     <!-- ?v=2 busts the browser's favicon cache, which ignores normal page
          reloads — bump it again if the icon is ever replaced in the future. -->
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=2" />

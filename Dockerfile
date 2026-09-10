@@ -9,25 +9,6 @@ COPY server server
 COPY web web
 RUN npm run build
 
-# Python 3.14.7 — latest stable, compiled from source so it survives rebuilds,
-# in its own stage so build-essential and the -dev headers never land in the
-# final image. Installed to its own prefix (not /usr/local directly) so the
-# COPY below can't collide with anything node:22-slim itself keeps there.
-FROM node:22-slim AS python-build
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential ca-certificates zlib1g-dev libncurses5-dev libgdbm-dev \
-      libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget \
-      libbz2-dev liblzma-dev tk-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && wget -qO Python-3.14.7.tgz https://www.python.org/ftp/python/3.14.7/Python-3.14.7.tgz \
-    && tar -xzf Python-3.14.7.tgz \
-    && cd Python-3.14.7 \
-    && ./configure --enable-optimizations --prefix=/usr/local/python3.14 \
-    && make -j$(nproc) \
-    && make install \
-    && cd .. \
-    && rm -rf Python-3.14.7 Python-3.14.7.tgz
-
 FROM node:22-slim
 WORKDIR /app
 
@@ -39,19 +20,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git openssh-client ca-certificates curl wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 3.14.7, built in the python-build stage above. Only its installed
-# prefix is copied in — build-essential and the -dev headers stay out of this
-# image. The -dev packages' shared libs still need their runtime counterparts
-# here explicitly: those live in /usr/lib, not /usr/local, so copying the
-# prefix alone doesn't bring them along.
-COPY --from=python-build /usr/local/python3.14 /usr/local/python3.14
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      zlib1g libtinfo6 libncursesw6 libgdbm6 libnss3 libssl3 libreadline8 \
-      libffi8 libsqlite3-0 libbz2-1.0 liblzma5 tk \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/local/python3.14/bin/python3.14 /usr/local/bin/python3 \
-    && ln -sf /usr/local/python3.14/bin/python3.14 /usr/local/bin/python3.14 \
-    && ln -sf /usr/local/python3.14/bin/pip3.14 /usr/local/bin/pip3 \
+# Python 3.14, via uv's prebuilt python-build-standalone binaries — seconds
+# instead of the ~10-15min a from-source compile took, and no build-essential
+# or -dev headers needed in this image. uv itself is copied in below (right
+# before its own comment); this stage just borrows the binary early.
+COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /usr/local/bin/
+RUN uv python install 3.14 --install-dir /usr/local/python-managed \
+    && ln -sf /usr/local/python-managed/cpython-3.14-linux-x86_64-gnu/bin/python3.14 /usr/local/bin/python3 \
+    && ln -sf /usr/local/python-managed/cpython-3.14-linux-x86_64-gnu/bin/python3.14 /usr/local/bin/python3.14 \
+    && ln -sf /usr/local/python-managed/cpython-3.14-linux-x86_64-gnu/bin/pip3.14 /usr/local/bin/pip3 \
     && python3 --version
 
 # Utility tools — prebuilt .deb binaries for ripgrep and fd, apt for the rest.

@@ -176,7 +176,7 @@ export function RoutinesPage({ onOpenSession }: { onOpenSession: (id: string) =>
 
   if (open) {
     return (
-      <div className="h-full overflow-y-auto px-4 py-6">
+      <div className="h-full overflow-y-auto px-3 py-4 sm:px-4 sm:py-6">
         <div className="mx-auto w-full max-w-3xl">
           <RoutineDetail
             routine={open}
@@ -191,7 +191,7 @@ export function RoutinesPage({ onOpenSession }: { onOpenSession: (id: string) =>
   }
 
   return (
-    <div className="h-full overflow-y-auto px-4 py-6">
+    <div className="h-full overflow-y-auto px-3 py-4 sm:px-4 sm:py-6">
       <div className="mx-auto w-full max-w-3xl">
         <header className="rounded-2xl border border-line bg-gradient-to-br from-accent/10 via-transparent to-transparent px-5 py-5">
           <div className="flex items-start gap-3">

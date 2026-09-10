@@ -269,12 +269,12 @@ export function ComposerBar({
 
   return (
     <div ref={ref} className="relative mt-1.5 flex items-center gap-1 text-xs">
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ml-auto flex max-w-full items-center gap-1 overflow-x-auto [&>*]:shrink-0">
         <button
           type="button"
           disabled={busy}
           onClick={() => setOpen(open === "model" ? null : "model")}
-          className={`max-w-[220px] truncate rounded-lg px-2 py-1 transition disabled:opacity-50 ${
+          className={`max-w-[120px] truncate rounded-lg px-2 py-1 transition disabled:opacity-50 sm:max-w-[220px] ${
             open === "model" ? "bg-fg/10 text-fg" : "text-fg-subtle hover:bg-fg/5 hover:text-fg-muted"
           }`}
           title={cfg.state.model.id}

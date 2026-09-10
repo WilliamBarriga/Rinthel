@@ -112,6 +112,17 @@ export function Chat({
   useEffect(() => localStorage.setItem("panelWidth", String(asideWidth)), [asideWidth]);
   useEffect(() => localStorage.setItem("panelSplit", String(split)), [split]);
 
+  // Below md there's no room for a side-by-side resizable panel — the
+  // browser/terminal pane takes over the whole screen instead. Tracked live
+  // (not just read once) so rotating the phone doesn't strand it mid-layout.
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 767px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const onChange = () => setIsMobile(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
   /**
    * Dragging, on pointer events rather than mouse ones.
    *
@@ -292,13 +303,13 @@ export function Chat({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="border-b border-line px-4 py-3">
+      <header className="border-b border-line px-3 py-3 sm:px-4">
         <div className="mx-auto flex w-full max-w-3xl items-center gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-medium text-fg">{session.title}</h2>
           <p className="truncate font-mono text-[11px] text-fg-faint">{session.workspace}</p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex max-w-full items-center gap-2 overflow-x-auto [&>*]:shrink-0">
           {session.status === "interrupted" && (
             <span className="rounded-md bg-warn/10 px-2 py-0.5 text-[11px] text-warn">
               interrupted — send a message to resume
@@ -344,7 +355,7 @@ export function Chat({
 
       <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+      <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-6">
         <div className="mx-auto w-full max-w-3xl space-y-3">
         {hasEarlier && (
           <div className="flex justify-center pb-2">
@@ -470,7 +481,7 @@ export function Chat({
           e.preventDefault();
           send();
         }}
-        className="border-t border-line px-4 py-3"
+        className="border-t border-line px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4"
       >
         <div className="relative mx-auto w-full max-w-3xl">
         {matches.length > 0 && (
@@ -551,15 +562,19 @@ export function Chat({
           strip across the top pushed the transcript out of view to show it. */}
       {(watching || terminal) && (
         <>
-          <div
-            onPointerDown={dragWidth}
-            title="Drag to resize"
-            className="w-1 shrink-0 cursor-col-resize bg-line transition hover:bg-accent/40"
-          />
+          {!isMobile && (
+            <div
+              onPointerDown={dragWidth}
+              title="Drag to resize"
+              className="w-1 shrink-0 cursor-col-resize bg-line transition hover:bg-accent/40"
+            />
+          )}
           <aside
             ref={browserPane}
-            style={{ width: asideWidth }}
-            className="flex shrink-0 flex-col overflow-hidden border-l border-line [&:fullscreen]:w-screen"
+            style={isMobile ? undefined : { width: asideWidth }}
+            className={`flex flex-col overflow-hidden [&:fullscreen]:w-screen ${
+              isMobile ? "fixed inset-0 z-40 w-full" : "shrink-0 border-l border-line"
+            }`}
           >
             {watching && (
               <div

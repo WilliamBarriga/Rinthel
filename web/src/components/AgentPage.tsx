@@ -100,7 +100,7 @@ export function AgentPage({ onSelect }: { onSelect: (id: string) => void }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+      <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-6">
         <div className="mx-auto w-full max-w-3xl">
           <header className="rounded-2xl border border-line bg-gradient-to-br from-accent/10 via-transparent to-transparent px-5 py-5">
             <div className="flex items-start gap-3">

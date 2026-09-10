@@ -262,7 +262,7 @@ function PersonDetail({
 
         <div>
           <span className="mb-1 block text-xs text-fg-subtle">Role</span>
-          <div className="grid grid-cols-4 gap-1">
+          <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
             {ROLES.map((r) => (
               <button
                 key={r.id}

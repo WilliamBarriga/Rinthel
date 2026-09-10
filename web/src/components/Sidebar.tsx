@@ -57,6 +57,7 @@ export function Sidebar({
   hasBrowser,
   sidebarOpen,
   onToggle,
+  onClose,
   onSelect,
   onCreate,
   onCreateSameWorkspace,
@@ -79,6 +80,10 @@ export function Sidebar({
   hasBrowser: boolean;
   sidebarOpen: boolean;
   onToggle: () => void;
+  /** Explicit close — distinct from onToggle so picking something on a phone
+   *  (where the drawer overlays the content) always dismisses it rather than
+   *  reopening one that was already closed. */
+  onClose: () => void;
   onSelect: (id: string) => void;
   onCreate: (workspacePath: string) => Promise<void>;
   onCreateSameWorkspace?: () => Promise<void>;
@@ -96,6 +101,12 @@ export function Sidebar({
   const [busy, setBusy] = useState(false);
   const [sameWorkspaceBusy, setSameWorkspaceBusy] = useState(false);
 
+  // On a phone the drawer sits on top of the content, so acting on it should
+  // dismiss it; on desktop it's part of the layout and stays put.
+  const closeOnMobile = () => {
+    if (window.matchMedia("(max-width: 767px)").matches) onClose();
+  };
+
   const makingNew = choice === NEW;
   const slug = slugify(name);
   const canSubmit = makingNew ? slug.length > 0 : Boolean(choice);
@@ -112,6 +123,7 @@ export function Sidebar({
       setName("");
       setChoice(NEW);
       setCreating(false);
+      closeOnMobile();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -128,7 +140,10 @@ export function Sidebar({
       key={s.id}
       session={s}
       active={activeId === s.id}
-      onSelect={() => onSelect(s.id)}
+      onSelect={() => {
+        onSelect(s.id);
+        closeOnMobile();
+      }}
       onRename={onRename}
       onDelete={onDelete}
       onPin={onPin}
@@ -136,7 +151,21 @@ export function Sidebar({
   );
 
   return (
-    <aside className={`flex ${sidebarOpen ? 'w-64' : 'w-0'} shrink-0 flex-col border-r border-line bg-surface transition-all duration-200 overflow-hidden`}>
+    <>
+      {/* Below md the sidebar is a drawer over the content, not part of the
+          layout — this dims and dismisses it. Desktop never renders it. */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] shrink-0 flex-col border-r border-line bg-surface transition-transform duration-200 md:static md:z-auto md:max-w-none md:translate-x-0 md:transition-all ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        } ${sidebarOpen ? "md:w-64" : "md:w-0 md:overflow-hidden md:border-r-0"}`}
+      >
       <div className="flex items-center gap-1 px-3 pb-3 pt-4">
         <img
           src="/logo-192.png"
@@ -168,6 +197,7 @@ export function Sidebar({
               setSameWorkspaceBusy(true);
               try {
                 await onCreateSameWorkspace();
+                closeOnMobile();
               } finally {
                 setSameWorkspaceBusy(false);
               }
@@ -186,19 +216,28 @@ export function Sidebar({
         <NavItem
           icon={<LuMessagesSquare />}
           label="Sessions"
-          onClick={() => onNavigate("sessions")}
+          onClick={() => {
+            onNavigate("sessions");
+            closeOnMobile();
+          }}
           active={view === "sessions"}
         />
         <NavItem
           icon={<LuBot />}
           label="Agent"
-          onClick={() => onNavigate("agent")}
+          onClick={() => {
+            onNavigate("agent");
+            closeOnMobile();
+          }}
           active={view === "agent"}
         />
         <NavItem
           icon={<LuClock />}
           label="Routines"
-          onClick={() => onNavigate("routines")}
+          onClick={() => {
+            onNavigate("routines");
+            closeOnMobile();
+          }}
           active={view === "routines"}
         />
         {/* Hidden unless there is one. The browser is an optional service, and
@@ -207,14 +246,20 @@ export function Sidebar({
           <NavItem
             icon={<LuGlobe />}
             label="Browser"
-            onClick={() => onNavigate("browser")}
+            onClick={() => {
+              onNavigate("browser");
+              closeOnMobile();
+            }}
             active={view === "browser"}
           />
         )}
         <NavItem
           icon={<LuShield />}
           label="Audit"
-          onClick={() => onNavigate("audit")}
+          onClick={() => {
+            onNavigate("audit");
+            closeOnMobile();
+          }}
           active={view === "audit"}
         />
 
@@ -304,14 +349,18 @@ export function Sidebar({
             <NavItem
               icon={<LuSettings />}
               label="Settings"
-              onClick={onOpenSettings}
+              onClick={() => {
+                onOpenSettings();
+                closeOnMobile();
+              }}
               active={false}
             />
           </div>
           <ThemeSwitcher />
         </div>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 
@@ -398,7 +447,10 @@ function SessionItem({
           {s.title}
         </span>
 
-        <div className="ml-auto hidden shrink-0 items-center gap-0.5 group-hover:flex">
+        {/* `hidden` until hover would hide these from touch entirely — there is
+            no hover to reveal them. Shown outright there; a mouse still gets
+            the reveal-on-hover behavior via the hover-capable media query. */}
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100">
           <button
             onClick={(e) => {
               e.stopPropagation();

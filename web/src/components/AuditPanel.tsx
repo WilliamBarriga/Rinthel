@@ -56,7 +56,7 @@ const when = (iso: string) => {
 export function AuditPage() {
   const [error, setError] = useState<string | null>(null);
   return (
-    <div className="h-full overflow-y-auto px-4 py-6">
+    <div className="h-full overflow-y-auto px-3 py-4 sm:px-4 sm:py-6">
       <div className="mx-auto w-full max-w-3xl">
         {error && (
           <div className="mb-4 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">

@@ -21,7 +21,7 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
   };
 
   return (
-    <div className="flex h-screen items-center justify-center px-4">
+    <div className="flex h-dvh items-center justify-center px-4">
       <form onSubmit={submit} className="w-full max-w-[19rem]">
         <div className="mb-6 flex flex-col items-center text-center">
           <img src="/logo-512.png" alt="" className="h-16 w-16 object-contain" draggable={false} />

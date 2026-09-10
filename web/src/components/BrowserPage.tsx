@@ -51,7 +51,7 @@ export function BrowserPage({ onOpenSession }: { onOpenSession: (id: string) => 
 
   if (!status) {
     return (
-      <div className="h-full overflow-y-auto px-4 py-6">
+      <div className="h-full overflow-y-auto px-3 py-4 sm:px-4 sm:py-6">
         <p className="mx-auto flex w-full max-w-3xl items-center gap-2 text-sm text-fg-subtle">
           <LuRefreshCw className="h-3.5 w-3.5 animate-spin" /> Loading…
         </p>
@@ -74,7 +74,7 @@ export function BrowserPage({ onOpenSession }: { onOpenSession: (id: string) => 
     : `https://${window.location.hostname}:${status.uiPort}/`;
 
   return (
-    <div className="h-full overflow-y-auto px-4 py-6">
+    <div className="h-full overflow-y-auto px-3 py-4 sm:px-4 sm:py-6">
       <div className="mx-auto w-full max-w-3xl">
         {error && (
           <div className="mb-4 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">

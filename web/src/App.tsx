@@ -32,7 +32,7 @@ export default function App() {
 
   if (authed === null) {
     return (
-      <div className="flex h-screen items-center justify-center text-sm text-fg-subtle">Loading…</div>
+      <div className="flex h-dvh items-center justify-center text-sm text-fg-subtle">Loading…</div>
     );
   }
   if (!authed) {
@@ -97,7 +97,10 @@ function Shell({
   const [uiQueue, setUiQueue] = useState<UiRequest[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     const saved = localStorage.getItem("rinthel-sidebar-open");
-    return saved === null ? true : saved === "true";
+    if (saved !== null) return saved === "true";
+    // No preference yet: open by default on desktop, closed on a phone-sized
+    // viewport, where the sidebar is an overlay rather than part of the layout.
+    return !window.matchMedia("(max-width: 767px)").matches;
   });
   useEffect(() => {
     localStorage.setItem("rinthel-sidebar-open", String(sidebarOpen));
@@ -268,7 +271,7 @@ function Shell({
   }, [playSound]);
 
   return (
-    <div className="flex h-screen bg-canvas">
+    <div className="flex h-dvh bg-canvas">
       <Sidebar
         sessions={sessions}
         workspaces={workspaces}
@@ -279,6 +282,7 @@ function Shell({
         hasBrowser={hasBrowser}
         sidebarOpen={sidebarOpen}
         onToggle={() => setSidebarOpen((v) => !v)}
+        onClose={() => setSidebarOpen(false)}
         onNavigate={(to) => navigate(`/${to}`)}
         onSelect={(id) => navigate(`/s/${id}`)}
         onCreate={async (workspacePath) => {
@@ -401,7 +405,7 @@ function Shell({
         <div className="fixed left-0 top-0 z-50 flex flex-col items-start pt-2 pl-0.5">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="rounded-r-lg border border-line bg-surface p-1.5 text-fg-muted shadow hover:text-fg"
+            className="rounded-r-lg border border-line bg-surface p-2 text-fg-muted shadow hover:text-fg md:p-1.5"
             title="Abrir barra lateral"
           >
             <LuPanelLeft className="h-4 w-4" />
