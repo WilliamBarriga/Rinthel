@@ -132,6 +132,10 @@ class _ServiceBase:
     wait_label: str
     kill_label: str
     port_of: Callable[[RinthelConfig], int]
+    # Filtra el servicio de INSTALL/BOOT/DOWN/RELOAD cuando da False (ver
+    # ``specs.py`` a partir de Fase 3) — default True porque hoy los 5
+    # servicios corren siempre.
+    enabled_of: Callable[[RinthelConfig], bool] = lambda cfg: True
     # None en un DockerComposeService que no expone healthcheck HTTP propio
     # — phase_wait_ready no tiene nada que pollear ahí y vuelve al toque.
     ready_url_of: Callable[[RinthelConfig], str] | None = None

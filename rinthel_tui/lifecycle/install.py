@@ -5,7 +5,7 @@ Mismo protocolo que el resto de lifecycle/ (``async def phase_*(cfg, report)
 -> None``, ``PhaseError``); reusa ``_run`` (subprocess) de
 ``managed_service.py`` y ``phase_check_docker`` de ``phases.py`` por import,
 no duplica lógica. INSTALL **configura**, no bootea — nunca hace ``docker
-compose up``; para eso está ``[1] BOOT`` (``specs.BOOT_PHASES``). Cada fase
+compose up``; para eso está ``[1] BOOT`` (``specs.boot_phases``). Cada fase
 es idempotente: reruns seguros, nunca pisa algo que ya funciona.
 """
 
@@ -13,12 +13,17 @@ import importlib.resources
 import os
 import secrets
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Callable, Coroutine
 
 from rinthel_tui.config import RinthelConfig
+from rinthel_tui.env_file import update_env_file
 from rinthel_tui.lifecycle.managed_service import _run
 from rinthel_tui.lifecycle.phases import phase_check_docker
 from rinthel_tui.lifecycle.types import PhaseError, PhaseReport
+
+PhaseFn = Callable[[RinthelConfig, PhaseReport], Coroutine[Any, Any, None]]
 
 # Hardcodeados igual que otros detalles de infra que no tiene sentido
 # overridear vía config (mismo criterio que el puerto de llama-server no
@@ -129,26 +134,6 @@ async def phase_install_download_model(cfg: RinthelConfig, report: PhaseReport) 
     report.success(f"Modelo descargado en {cfg.llama.model}")
 
 
-def _write_env_from_example(example: Path, target: Path, overrides: dict[str, str]) -> None:
-    """Copia ``example`` a ``target`` reemplazando solo las claves en
-    ``overrides`` — el resto del archivo (comentarios incluidos) queda
-    intacto."""
-    out: list[str] = []
-    seen: set[str] = set()
-    for line in example.read_text().splitlines():
-        stripped = line.strip()
-        key = stripped.split("=", 1)[0] if "=" in stripped and not stripped.startswith("#") else None
-        if key in overrides:
-            out.append(f"{key}={overrides[key]}")
-            seen.add(key)
-        else:
-            out.append(line)
-    for key, value in overrides.items():
-        if key not in seen:
-            out.append(f"{key}={value}")
-    target.write_text("\n".join(out) + "\n")
-
-
 async def phase_install_setup_pithagoras(cfg: RinthelConfig, report: PhaseReport) -> None:
     if (cfg.pithagoras.dir / ".git").exists():
         report.warn(f"{cfg.pithagoras.dir} ya existe — omito clone")
@@ -187,7 +172,7 @@ async def phase_install_setup_pithagoras(cfg: RinthelConfig, report: PhaseReport
         # de pithagoras.
         "PI_AGENT_DIR": str(cfg.install.pi_agent_dir),
     }
-    _write_env_from_example(example_path, env_path, overrides)
+    update_env_file(env_path, overrides, seed_from=example_path)
     report.success(f"{env_path} generado")
 
 
@@ -249,3 +234,45 @@ async def phase_install_setup_understory(cfg: RinthelConfig, report: PhaseReport
         report.success(f"bundle/ listo ({created} archivo(s) nuevo(s))")
     else:
         report.warn("bundle/ ya estaba completo — omito")
+
+
+# ── unidades instalables — un servicio con enabled=False no aparece en
+# [0] INSTALL (ver specs.install_phases), aunque su INSTALL_PHASES original
+# seguía siendo relevante para BOOT/DOWN/RELOAD vía enabled_of ────────────
+#
+# Whisper y TTS no tienen unidad acá — no tienen fase de instalación hoy
+# (sus binarios se compilan a mano fuera del repo, ver README); su
+# ``enabled`` solo afecta BOOT/DOWN/RELOAD (specs.boot_phases/down_phases),
+# no INSTALL.
+
+
+@dataclass(frozen=True, kw_only=True)
+class InstallUnit:
+    label: str
+    enabled_of: Callable[[RinthelConfig], bool]
+    steps: tuple[tuple[str, PhaseFn], ...]
+
+
+LLAMA_INSTALL = InstallUnit(
+    label="LLAMA.CPP + modelo",
+    enabled_of=lambda cfg: cfg.llama.enabled,
+    steps=(
+        ("LLAMA.CPP — clone", phase_install_clone_llamacpp),
+        ("LLAMA.CPP — build CUDA (native)", phase_install_build_llamacpp),
+        ("MODELO GGUF — descarga", phase_install_download_model),
+    ),
+)
+
+PITHAGORAS_INSTALL = InstallUnit(
+    label="PITHAGORAS",
+    enabled_of=lambda cfg: cfg.pithagoras.enabled,
+    steps=(("PITHAGORAS — clone + configurar", phase_install_setup_pithagoras),),
+)
+
+UNDERSTORY_INSTALL = InstallUnit(
+    label="UNDERSTORY",
+    enabled_of=lambda cfg: cfg.understory.enabled,
+    steps=(("UNDERSTORY — scaffold + configurar", phase_install_setup_understory),),
+)
+
+INSTALL_UNITS: list[InstallUnit] = [LLAMA_INSTALL, PITHAGORAS_INSTALL, UNDERSTORY_INSTALL]

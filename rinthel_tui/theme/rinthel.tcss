@@ -198,3 +198,39 @@ PhaseChecklist {
 .monitor-panel {
     width: 1fr;
 }
+
+/* ── Settings ([N] CONFIGURAR) ────────────────────────────── */
+
+#settings-body {
+    height: 1fr;
+}
+
+#settings-list {
+    width: 40;
+}
+
+#settings-detail {
+    width: 1fr;
+}
+
+.settings-row {
+    height: 3;
+}
+
+.settings-row-btn {
+    margin-left: 1;
+}
+
+.settings-field-label {
+    color: $dim;
+    margin-top: 1;
+}
+
+#settings-footer {
+    height: 3;
+    align: left middle;
+}
+
+#settings-footer Static {
+    margin-left: 2;
+}

@@ -74,55 +74,81 @@ def _renumbered(specs: list[PhaseSpec], total: int, start: int) -> list[PhaseSpe
 
 
 # ── INSTALL (bootstrap de infra en máquina nueva) ─────────────
-# Configura, no bootea — termina indicando que uses [1] BOOT.
-INSTALL_PHASES: list[PhaseSpec] = [
-    PhaseSpec("◈ [1/6] PREFLIGHT — GPU/CUDA/cmake/docker", install.phase_install_preflight),
-    PhaseSpec("◈ [2/6] LLAMA.CPP — clone", install.phase_install_clone_llamacpp),
-    PhaseSpec("◈ [3/6] LLAMA.CPP — build CUDA (native)", install.phase_install_build_llamacpp),
-    PhaseSpec("◈ [4/6] MODELO GGUF — descarga", install.phase_install_download_model),
-    PhaseSpec("◈ [5/6] PITHAGORAS — clone + configurar", install.phase_install_setup_pithagoras),
-    PhaseSpec("◈ [6/6] UNDERSTORY — scaffold + configurar", install.phase_install_setup_understory),
-]
+# Configura, no bootea — termina indicando que uses [1] BOOT. PREFLIGHT
+# corre siempre primero; después, los steps de cada InstallUnit con
+# enabled_of(cfg) en True (ver install.INSTALL_UNITS) — un servicio
+# deshabilitado no aparece acá, numerado dinámicamente igual que RELOAD.
+def install_phases(cfg: RinthelConfig) -> list[PhaseSpec]:
+    raw = [PhaseSpec("◈ PREFLIGHT — GPU/CUDA/cmake/docker", install.phase_install_preflight)]
+    for unit in install.INSTALL_UNITS:
+        if not unit.enabled_of(cfg):
+            continue
+        raw.extend(PhaseSpec(f"◈ {label}", fn) for label, fn in unit.steps)
+    return _renumbered(raw, len(raw), start=1)
 
 # ── BOOT (rinthel-up.sh) ──────────────────────────────────────
-BOOT_PHASES: list[PhaseSpec] = [
-    PhaseSpec("◈ DOCKER", phases.phase_check_docker),
-    *[spec for svc in services.LOCAL_SERVICES for spec in (_spawn_spec(svc), _wait_spec(svc))],
-    *[spec for svc in services.DOCKER_SERVICES for spec in (_up_spec(svc), _wait_spec(svc))],
-]
+# Funciones de ``cfg``, no constantes de módulo: cada servicio con
+# ``enabled_of(cfg)`` en False queda afuera de las 4 secuencias (spawn/kill/
+# up/down y su wait correspondiente), sin tocar nada más.
+def boot_phases(cfg: RinthelConfig) -> list[PhaseSpec]:
+    local = [s for s in services.LOCAL_SERVICES if s.enabled_of(cfg)]
+    docker = [s for s in services.DOCKER_SERVICES if s.enabled_of(cfg)]
+    return [
+        PhaseSpec("◈ DOCKER", phases.phase_check_docker),
+        *[spec for svc in local for spec in (_spawn_spec(svc), _wait_spec(svc))],
+        *[spec for svc in docker for spec in (_up_spec(svc), _wait_spec(svc))],
+    ]
+
 
 # ── DOWN (rinthel-down.sh) ────────────────────────────────────
-DOWN_PHASES: list[PhaseSpec] = [
-    *[_kill_spec(svc) for svc in services.LOCAL_SERVICES],
-    *[_down_spec(svc) for svc in services.DOCKER_SERVICES],
-]
+def down_phases(cfg: RinthelConfig) -> list[PhaseSpec]:
+    local = [s for s in services.LOCAL_SERVICES if s.enabled_of(cfg)]
+    docker = [s for s in services.DOCKER_SERVICES if s.enabled_of(cfg)]
+    return [
+        *[_kill_spec(svc) for svc in local],
+        *[_down_spec(svc) for svc in docker],
+    ]
+
 
 # ── RELOAD (rinthel-reload.sh) — 3 tandas: shutdown → boot → rebuild+up ───
-_shutdown_raw = [
-    *[_kill_spec(svc) for svc in services.LOCAL_SERVICES],
-    *[_down_spec(svc) for svc in services.DOCKER_SERVICES],
-    PhaseSpec(
-        f"◈ PUERTO {services.LLAMA_SERVICE.wait_label} LIBRE",
-        managed_service.phase_wait_port_free,
-        {"port_of": services.LLAMA_SERVICE.port_of},
-    ),
-]
-_boot_raw = [
-    PhaseSpec("◈ DOCKER", phases.phase_check_docker),
-    *[spec for svc in services.LOCAL_SERVICES for spec in (_spawn_spec(svc), _wait_spec(svc))],
-]
-_rebuild_raw = [
-    spec
-    for svc in services.DOCKER_SERVICES
-    for spec in (_up_spec(svc, no_cache=True), _wait_spec(svc))
-]
+def _reload_raw_groups(cfg: RinthelConfig) -> tuple[list[PhaseSpec], list[PhaseSpec], list[PhaseSpec]]:
+    local = [s for s in services.LOCAL_SERVICES if s.enabled_of(cfg)]
+    docker = [s for s in services.DOCKER_SERVICES if s.enabled_of(cfg)]
 
-_RELOAD_TOTAL = len(_shutdown_raw) + len(_boot_raw) + len(_rebuild_raw)
+    shutdown = [
+        *[_kill_spec(svc) for svc in local],
+        *[_down_spec(svc) for svc in docker],
+    ]
+    # Solo tiene sentido esperar el puerto de llama-server libre si vamos a
+    # relanzarlo más abajo en boot_raw — si está deshabilitado, nadie lo
+    # mató ni nadie lo va a levantar.
+    if services.LLAMA_SERVICE.enabled_of(cfg):
+        shutdown.append(
+            PhaseSpec(
+                f"◈ PUERTO {services.LLAMA_SERVICE.wait_label} LIBRE",
+                managed_service.phase_wait_port_free,
+                {"port_of": services.LLAMA_SERVICE.port_of},
+            )
+        )
 
-RELOAD_SHUTDOWN_PHASES: list[PhaseSpec] = _renumbered(_shutdown_raw, _RELOAD_TOTAL, start=1)
-RELOAD_BOOT_PHASES: list[PhaseSpec] = _renumbered(
-    _boot_raw, _RELOAD_TOTAL, start=1 + len(_shutdown_raw)
-)
-RELOAD_REBUILD_PHASES: list[PhaseSpec] = _renumbered(
-    _rebuild_raw, _RELOAD_TOTAL, start=1 + len(_shutdown_raw) + len(_boot_raw)
-)
+    boot = [
+        PhaseSpec("◈ DOCKER", phases.phase_check_docker),
+        *[spec for svc in local for spec in (_spawn_spec(svc), _wait_spec(svc))],
+    ]
+    rebuild = [
+        spec for svc in docker for spec in (_up_spec(svc, no_cache=True), _wait_spec(svc))
+    ]
+    return shutdown, boot, rebuild
+
+
+def reload_phases(cfg: RinthelConfig) -> tuple[list[PhaseSpec], list[PhaseSpec], list[PhaseSpec]]:
+    """Las 3 tandas de RELOAD, numeradas de punta a punta (``[i/N]``) sobre
+    solo los servicios con ``enabled_of(cfg)`` en True — agregar/sacar un
+    servicio, o deshabilitar uno, renumera sola sin tocar nada a mano."""
+    shutdown, boot, rebuild = _reload_raw_groups(cfg)
+    total = len(shutdown) + len(boot) + len(rebuild)
+    return (
+        _renumbered(shutdown, total, start=1),
+        _renumbered(boot, total, start=1 + len(shutdown)),
+        _renumbered(rebuild, total, start=1 + len(shutdown) + len(boot)),
+    )

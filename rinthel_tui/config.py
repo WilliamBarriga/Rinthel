@@ -114,6 +114,7 @@ class LlamaConfig:
     port: int
     log: Path
     env: dict[str, str]
+    enabled: bool
     ngl: str
     context_window: int
     flash_attention: bool
@@ -144,6 +145,7 @@ LLAMA_FIELDS: list[Field] = [
     Field("model", "RINTHEL_LLAMA_MODEL_PATH", Path, "~/llama.cpp/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", exists=True),
     Field("port", "RINTHEL_LLAMA_PORT", int, 8080, port=True),
     Field("log", "RINTHEL_LLAMA_LOG_PATH", Path, "~/Rinthel-general/logs/llama-server.log"),
+    Field("enabled", "RINTHEL_LLAMA_ENABLED", bool, True),
     Field("ngl", "RINTHEL_NGL", str, "all"),
     Field("context_window", "RINTHEL_CONTEXT_WINDOW", int, 112000, positive=True),
     Field("flash_attention", "RINTHEL_FLASH_ATTENTION", bool, True),
@@ -192,6 +194,7 @@ class WhisperConfig:
     port: int
     log: Path
     threads: int
+    enabled: bool
 
 
 WHISPER_FIELDS: list[Field] = [
@@ -200,6 +203,7 @@ WHISPER_FIELDS: list[Field] = [
     Field("port", "RINTHEL_WHISPER_PORT", int, 8090, port=True),
     Field("log", "RINTHEL_WHISPER_LOG", Path, "~/Rinthel-general/logs/whisper-server.log"),
     Field("threads", "RINTHEL_WHISPER_THREADS", int, 4, positive=True),
+    Field("enabled", "RINTHEL_WHISPER_ENABLED", bool, True),
 ]
 
 
@@ -211,6 +215,7 @@ class TTSConfig:
     voice_en: Path
     port: int
     log: Path
+    enabled: bool
 
 
 TTS_FIELDS: list[Field] = [
@@ -220,6 +225,7 @@ TTS_FIELDS: list[Field] = [
     Field("voice_en", "RINTHEL_TTS_VOICE_EN", Path, "~/codacus/piper/voices/en_US-hfc_female-medium.onnx", exists=True),
     Field("port", "RINTHEL_TTS_PORT", int, 8091, port=True),
     Field("log", "RINTHEL_TTS_LOG", Path, "~/Rinthel-general/logs/tts-piper.log"),
+    Field("enabled", "RINTHEL_TTS_ENABLED", bool, True),
 ]
 
 
@@ -227,11 +233,13 @@ TTS_FIELDS: list[Field] = [
 class UnderstoryConfig:
     dir: Path
     port: int
+    enabled: bool
 
 
 UNDERSTORY_FIELDS: list[Field] = [
     Field("dir", "RINTHEL_UNDERSTORY_DIR", Path, "~/understory-poc"),
     Field("port", "RINTHEL_UNDERSTORY_PORT", int, 3800, port=True),
+    Field("enabled", "RINTHEL_UNDERSTORY_ENABLED", bool, True),
 ]
 
 
@@ -239,11 +247,13 @@ UNDERSTORY_FIELDS: list[Field] = [
 class PithagorasConfig:
     dir: Path
     port: int
+    enabled: bool
 
 
 PITHAGORAS_FIELDS: list[Field] = [
     Field("dir", "RINTHEL_PITHAGORAS_DIR", Path, "~/pithagoras"),
     Field("port", "RINTHEL_PITHAGORAS_PORT", int, 4100, port=True),
+    Field("enabled", "RINTHEL_PITHAGORAS_ENABLED", bool, True),
 ]
 
 

@@ -231,6 +231,26 @@ async def test_kill_falls_back_to_sigkill(monkeypatch, cfg, report):
     assert any("SIGKILL" in msg for msg in report.successes)
 
 
+# ── enabled_of ───────────────────────────────────────────────────────────
+
+
+def test_enabled_of_defaults_to_true(cfg):
+    service = dataclasses.replace(services.LLAMA_SERVICE)
+    assert service.enabled_of(cfg) is True
+
+
+@pytest.mark.parametrize("service", LOCAL_SERVICES + DOCKER_SERVICES, ids=_ids(LOCAL_SERVICES + DOCKER_SERVICES))
+def test_enabled_of_resolves_against_real_config(cfg, service):
+    assert service.enabled_of(cfg) is True
+
+
+def test_enabled_of_custom_resolves_against_cfg(cfg):
+    service = dataclasses.replace(services.WHISPER_SERVICE, enabled_of=lambda c: c.whisper.port == cfg.whisper.port)
+    assert service.enabled_of(cfg) is True
+    disabled_cfg = dataclasses.replace(cfg, whisper=dataclasses.replace(cfg.whisper, port=0))
+    assert service.enabled_of(disabled_cfg) is False
+
+
 # ── phase_wait_port_free (genérico, usado en RELOAD) ────────────────────
 
 

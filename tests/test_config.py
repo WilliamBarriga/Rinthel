@@ -72,6 +72,34 @@ def test_validate_warns_on_missing_paths_but_does_not_raise():
     assert any("no existe todavía" in w for w in warnings)
 
 
+# ── enabled ────────────────────────────────────────────────────────────────
+
+
+def test_default_config_enables_all_services_by_default():
+    cfg = default_config()
+    assert cfg.llama.enabled is True
+    assert cfg.whisper.enabled is True
+    assert cfg.tts.enabled is True
+    assert cfg.understory.enabled is True
+    assert cfg.pithagoras.enabled is True
+
+
+@pytest.mark.parametrize(
+    "env_var, attr",
+    [
+        ("RINTHEL_LLAMA_ENABLED", "llama"),
+        ("RINTHEL_WHISPER_ENABLED", "whisper"),
+        ("RINTHEL_TTS_ENABLED", "tts"),
+        ("RINTHEL_UNDERSTORY_ENABLED", "understory"),
+        ("RINTHEL_PITHAGORAS_ENABLED", "pithagoras"),
+    ],
+)
+def test_enabled_can_be_disabled_per_service(monkeypatch, env_var, attr):
+    monkeypatch.setenv(env_var, "false")
+    cfg = default_config()
+    assert getattr(cfg, attr).enabled is False
+
+
 def test_validate_no_warnings_when_all_paths_exist(tmp_path):
     base = default_config()
     existing = tmp_path / "bin"

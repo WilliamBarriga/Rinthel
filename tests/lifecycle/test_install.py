@@ -11,9 +11,10 @@ herramientas).
 
 import asyncio
 import dataclasses
+import re
 import shutil
 
-from rinthel_tui.lifecycle import install
+from rinthel_tui.lifecycle import install, specs
 from rinthel_tui.lifecycle.phases import PhaseError
 
 
@@ -165,42 +166,6 @@ async def test_download_model_downloads_when_missing(monkeypatch, cfg, report, t
     assert any("descargado en" in msg for msg in report.successes)
 
 
-# ── _write_env_from_example (helper puro) ───────────────────────────
-
-
-def test_write_env_from_example_overrides_keys_and_keeps_rest(tmp_path):
-    example = tmp_path / ".env.example"
-    example.write_text(
-        "# comentario\nPORTAL_PASSWORD=changeme\nWORKSPACES_DIR=/tmp\nUNTOUCHED=stays\n"
-    )
-    target = tmp_path / ".env"
-
-    install._write_env_from_example(
-        example,
-        target,
-        overrides={"PORTAL_PASSWORD": "s3cr3t", "PI_AGENT_DIR": "/home/x/.pi/agent"},
-    )
-
-    lines = target.read_text().splitlines()
-    assert "# comentario" in lines
-    assert "PORTAL_PASSWORD=s3cr3t" in lines
-    assert "WORKSPACES_DIR=/tmp" in lines
-    assert "UNTOUCHED=stays" in lines
-    assert "PI_AGENT_DIR=/home/x/.pi/agent" in lines
-
-
-def test_write_env_from_example_does_not_touch_comment_lines_with_equals(tmp_path):
-    example = tmp_path / ".env.example"
-    example.write_text("# PORTAL_PASSWORD=example-in-a-comment\n")
-    target = tmp_path / ".env"
-
-    install._write_env_from_example(example, target, overrides={"PORTAL_PASSWORD": "real-value"})
-
-    lines = target.read_text().splitlines()
-    assert "# PORTAL_PASSWORD=example-in-a-comment" in lines
-    assert "PORTAL_PASSWORD=real-value" in lines
-
-
 # ── SETUP PITHAGORAS ─────────────────────────────────────────────
 
 
@@ -286,3 +251,50 @@ async def test_setup_understory_generates_env_and_bundle(cfg, report, tmp_path):
     assert (understory_dir / ".env").read_text() == "AUTH_TOKEN=abc123\n"
     assert (understory_dir / "bundle" / "agents" / "index.md").exists()
     assert (understory_dir / "bundle" / "index.md").exists()
+
+
+# ── INSTALL_UNITS / specs.install_phases ─────────────────────────────
+
+
+def _numbers(phase_specs):
+    out = []
+    for spec in phase_specs:
+        match = re.search(r"\[(\d+)/(\d+)\]", spec.label)
+        assert match is not None
+        out.append((int(match.group(1)), int(match.group(2))))
+    return out
+
+
+def test_install_phases_includes_all_units_by_default(cfg):
+    labels = [s.label for s in specs.install_phases(cfg)]
+    assert any("PREFLIGHT" in l for l in labels)
+    assert any("LLAMA.CPP — clone" in l for l in labels)
+    assert any("LLAMA.CPP — build CUDA" in l for l in labels)
+    assert any("MODELO GGUF" in l for l in labels)
+    assert any("PITHAGORAS" in l for l in labels)
+    assert any("UNDERSTORY" in l for l in labels)
+    numbers = _numbers(specs.install_phases(cfg))
+    total = len(numbers)
+    assert [n for n, _ in numbers] == list(range(1, total + 1))
+    assert all(n_total == total for _, n_total in numbers)
+
+
+def test_install_phases_excludes_disabled_unit_and_renumbers(cfg):
+    disabled = dataclasses.replace(cfg, llama=dataclasses.replace(cfg.llama, enabled=False))
+    phase_specs = specs.install_phases(disabled)
+    labels = [s.label for s in phase_specs]
+    assert not any("LLAMA.CPP" in l for l in labels)
+    assert not any("MODELO GGUF" in l for l in labels)
+    assert any("PREFLIGHT" in l for l in labels)
+    assert any("PITHAGORAS" in l for l in labels)
+    numbers = _numbers(phase_specs)
+    total = len(numbers)
+    assert [n for n, _ in numbers] == list(range(1, total + 1))
+
+
+def test_install_phases_excludes_only_the_disabled_service(cfg):
+    disabled = dataclasses.replace(cfg, pithagoras=dataclasses.replace(cfg.pithagoras, enabled=False))
+    labels = [s.label for s in specs.install_phases(disabled)]
+    assert not any("PITHAGORAS" in l for l in labels)
+    assert any("LLAMA.CPP" in l for l in labels)
+    assert any("UNDERSTORY" in l for l in labels)

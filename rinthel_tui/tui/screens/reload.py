@@ -5,18 +5,18 @@ lo calcula specs.py solo, a partir de cuántos servicios haya registrados en
 lifecycle/services.py.
 """
 
-from rinthel_tui.config import RinthelConfig
+from rinthel_tui.config import CONFIG, RinthelConfig
 from rinthel_tui.lifecycle import specs
 from rinthel_tui.theme import palette
 from rinthel_tui.tui.effects.transitions import DatamoshEffect, RippleEffect, VignetteEffect
 from rinthel_tui.tui.screens.phase_runner import PhaseSequenceScreen, ScreenPhaseReport
 
-_GROUPS = (specs.RELOAD_SHUTDOWN_PHASES, specs.RELOAD_BOOT_PHASES, specs.RELOAD_REBUILD_PHASES)
-
 
 class ReloadScreen(PhaseSequenceScreen):
     def __init__(self, cfg: RinthelConfig | None = None) -> None:
-        all_labels = [spec.label for group in _GROUPS for spec in group]
+        cfg = cfg or CONFIG
+        self._groups = specs.reload_phases(cfg)
+        all_labels = [spec.label for group in self._groups for spec in group]
         super().__init__("SYSTEM REBOOT", all_labels, cfg)
 
     async def _on_shutdown_to_boot(self) -> None:
@@ -31,7 +31,7 @@ class ReloadScreen(PhaseSequenceScreen):
         assert self.log_widget is not None
         report = ScreenPhaseReport(self.log_widget)
         transitions = (None, self._on_shutdown_to_boot, self._on_boot_to_rebuild)
-        for group, transition in zip(_GROUPS, transitions):
+        for group, transition in zip(self._groups, transitions):
             if transition is not None:
                 await transition()
             for spec in group:

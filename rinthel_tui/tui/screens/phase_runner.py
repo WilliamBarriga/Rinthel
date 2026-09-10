@@ -118,7 +118,7 @@ class PhaseSequenceScreen(Screen):
 
 
 class PhaseRunnerScreen(PhaseSequenceScreen):
-    """Usada por BOOT (specs.BOOT_PHASES) y TERMINATE (specs.DOWN_PHASES)."""
+    """Usada por BOOT (specs.boot_phases) y TERMINATE (specs.down_phases)."""
 
     def __init__(
         self,

@@ -64,13 +64,16 @@ PHASE_FNS = {
     "install_setup_understory": lambda cfg, report, args: install.phase_install_setup_understory(cfg, report),
 }
 
+# Funciones de cfg, no listas fijas — construidas en _main() ya con CONFIG
+# cargado, para que "boot"/"down"/"reload_*" reflejen qué servicios están
+# habilitados (RINTHEL_<SERVICIO>_ENABLED) igual que la TUI real.
 SPEC_LISTS = {
-    "boot": specs.BOOT_PHASES,
-    "down": specs.DOWN_PHASES,
-    "reload_shutdown": specs.RELOAD_SHUTDOWN_PHASES,
-    "reload_boot": specs.RELOAD_BOOT_PHASES,
-    "reload_rebuild": specs.RELOAD_REBUILD_PHASES,
-    "install": specs.INSTALL_PHASES,
+    "boot": specs.boot_phases,
+    "down": specs.down_phases,
+    "reload_shutdown": lambda cfg: specs.reload_phases(cfg)[0],
+    "reload_boot": lambda cfg: specs.reload_phases(cfg)[1],
+    "reload_rebuild": lambda cfg: specs.reload_phases(cfg)[2],
+    "install": specs.install_phases,
 }
 
 
@@ -87,7 +90,7 @@ async def _main(args: argparse.Namespace) -> int:
             return 1
     elif args.target in SPEC_LISTS:
         try:
-            await run_phase_list(cfg, SPEC_LISTS[args.target], report)
+            await run_phase_list(cfg, SPEC_LISTS[args.target](cfg), report)
         except PhaseFailed as exc:
             report.error(f"secuencia cortada en '{exc.label}': {exc.cause}")
             return 1

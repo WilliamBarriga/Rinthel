@@ -1,7 +1,9 @@
 """Menú principal — reemplaza _menu_run_tui/_menu_run_plain (rinthel-boot.sh).
 
-Fase 5 agrega [6] MONITOR y renumera EXIT a [7]. [0] INSTALL agrega el setup
-inicial de infra (CUDA/modelo/Pithagoras/Understory) para una máquina nueva.
+Fase 5 agrega [6] MONITOR y renumera EXIT a [7]. Fase 6 (servicios
+configurables) agrega [7] CONFIGURAR y renumera EXIT a [8]. [0] INSTALL
+agrega el setup inicial de infra (CUDA/modelo/Pithagoras/Understory) para
+una máquina nueva.
 """
 
 import random
@@ -32,6 +34,7 @@ from rinthel_tui.tui.screens.logs import LogsScreen
 from rinthel_tui.tui.screens.monitor import MonitorScreen
 from rinthel_tui.tui.screens.phase_runner import ClosingSequence, PhaseRunnerScreen
 from rinthel_tui.tui.screens.reload import ReloadScreen
+from rinthel_tui.tui.screens.settings import SettingsScreen
 from rinthel_tui.tui.widgets.jack_in_option_list import JackInOptionList
 from rinthel_tui.tui.widgets.service_badge import ServiceBadge
 
@@ -43,11 +46,11 @@ _DIVIDER_WIDTH_GUESS = 54
 
 # Índices fijos de los 3 divisores dentro de #menu-options (la estructura
 # del menú es estática — ver compose()). hot=True para los que anteceden
-# una acción sin retorno ([3] TERMINATE, [7] EXIT); el de antes de
+# una acción sin retorno ([3] TERMINATE, [8] EXIT); el de antes de
 # [5] CAPTURE queda dim/informativo.
 _DIVIDER_INDEX_1 = 3  # antes de [3] TERMINATE — hot
 _DIVIDER_INDEX_2 = 6  # antes de [5] CAPTURE — dim
-_DIVIDER_INDEX_3 = 9  # antes de [7] EXIT — hot
+_DIVIDER_INDEX_3 = 10  # antes de [8] EXIT — hot
 
 
 def _divider_markup(width: int, *, hot: bool = False) -> str:
@@ -80,8 +83,9 @@ def _build_options(width: int) -> tuple[Option, ...]:
         _build_divider(width, hot=False),
         Option("[5] CAPTURE     -- Capturar perfil MoE (routing profile)", id="capture"),
         Option("[6] MONITOR     -- Estado de servicios/Docker/GPU/CPU", id="monitor"),
+        Option("[7] CONFIGURAR  -- Servicios activos y parámetros", id="configure"),
         _build_divider(width, hot=True),
-        Option("[7] EXIT        -- Cerrar terminal", id="exit"),
+        Option("[8] EXIT        -- Cerrar terminal", id="exit"),
     )
 
 
@@ -135,12 +139,20 @@ class MenuScreen(Screen):
             yield RotatingTagline(TAGLINES, id="menu-tagline", classes="tagline")
             yield JackInOptionList(*_build_options(_DIVIDER_WIDTH_GUESS), id="menu-options")
             with Horizontal(id="menu-footer"):
-                yield ServiceBadge.for_service(UNDERSTORY_SERVICE, CONFIG, id="badge-understory")
-                yield ServiceBadge.for_service(PITHAGORAS_SERVICE, CONFIG, id="badge-pithagoras")
-                yield ServiceBadge.for_service(
-                    WHISPER_SERVICE, CONFIG, label="Whisper STT", id="badge-whisper"
-                )
-                yield ServiceBadge.for_service(TTS_SERVICE, CONFIG, label="TTS", id="badge-tts")
+                # Un servicio deshabilitado (enabled_of(CONFIG) en False) no
+                # muestra badge acá — BOOT/DOWN tampoco lo tocan (ver
+                # specs.boot_phases/down_phases), así que un badge "offline"
+                # de algo que ni siquiera se intenta levantar sería ruido.
+                if UNDERSTORY_SERVICE.enabled_of(CONFIG):
+                    yield ServiceBadge.for_service(UNDERSTORY_SERVICE, CONFIG, id="badge-understory")
+                if PITHAGORAS_SERVICE.enabled_of(CONFIG):
+                    yield ServiceBadge.for_service(PITHAGORAS_SERVICE, CONFIG, id="badge-pithagoras")
+                if WHISPER_SERVICE.enabled_of(CONFIG):
+                    yield ServiceBadge.for_service(
+                        WHISPER_SERVICE, CONFIG, label="Whisper STT", id="badge-whisper"
+                    )
+                if TTS_SERVICE.enabled_of(CONFIG):
+                    yield ServiceBadge.for_service(TTS_SERVICE, CONFIG, label="TTS", id="badge-tts")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         # push_screen_wait exige correr dentro de un worker (get_current_worker()
@@ -152,18 +164,22 @@ class MenuScreen(Screen):
         if option_id == "install":
             await self.app.push_screen_wait(SignalNoiseEffect(1, 3, 20))
             self.app.push_screen(
-                PhaseRunnerScreen("INSTALL — SETUP INICIAL", specs.INSTALL_PHASES, closing=_INSTALL_CLOSING)
+                PhaseRunnerScreen(
+                    "INSTALL — SETUP INICIAL", specs.install_phases(CONFIG), closing=_INSTALL_CLOSING
+                )
             )
         elif option_id == "boot":
             await self.app.push_screen_wait(SignalNoiseEffect(1, 3, 20))
-            self.app.push_screen(PhaseRunnerScreen("EXECUTE — FAST BOOT", specs.BOOT_PHASES, closing=_BOOT_CLOSING))
+            self.app.push_screen(
+                PhaseRunnerScreen("EXECUTE — FAST BOOT", specs.boot_phases(CONFIG), closing=_BOOT_CLOSING)
+            )
         elif option_id == "reload":
             await self.app.push_screen_wait(SignalNoiseEffect(1, 3, 20))
             self.app.push_screen(ReloadScreen())
         elif option_id == "terminate":
             await self.app.push_screen_wait(SignalNoiseEffect(1, 3, 20))
             self.app.push_screen(
-                PhaseRunnerScreen("SHUTDOWN SEQUENCE", specs.DOWN_PHASES, closing=_TERMINATE_CLOSING)
+                PhaseRunnerScreen("SHUTDOWN SEQUENCE", specs.down_phases(CONFIG), closing=_TERMINATE_CLOSING)
             )
         elif option_id == "logs":
             self.app.push_screen(LogsScreen())
@@ -172,6 +188,8 @@ class MenuScreen(Screen):
             self.app.push_screen(CaptureScreen())
         elif option_id == "monitor":
             self.app.push_screen(MonitorScreen())
+        elif option_id == "configure":
+            self.app.push_screen(SettingsScreen())
         elif option_id == "exit":
             await self.app.push_screen_wait(FarewellScreen())
             self.app.exit()
