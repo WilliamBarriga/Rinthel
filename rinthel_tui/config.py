@@ -276,14 +276,17 @@ INSTALL_FIELDS: list[Field] = [
 # ``RinthelConfig.validate()`` deriva los 3 chequeos (puertos, positivos,
 # paths) de acá en vez de mantener 3 listas a mano por separado. Agregar un
 # servicio nuevo es sumar una línea acá, no 3 en 3 lugares distintos.
-_ENTRIES: list[tuple[str, str, list[Field]]] = [
-    ("llama", "llama", LLAMA_FIELDS),
-    ("moe", "moe", MOE_FIELDS),
-    ("whisper", "whisper", WHISPER_FIELDS),
-    ("tts", "tts", TTS_FIELDS),
-    ("understory", "understory", UNDERSTORY_FIELDS),
-    ("pithagoras", "pithagoras", PITHAGORAS_FIELDS),
-    ("install", "install", INSTALL_FIELDS),
+# ``attr`` dobla como prefijo de los mensajes de error/warning (ej.
+# "llama.port=...") porque coincide 1:1 con el nombre del sub-config en
+# RinthelConfig — no hay caso hoy donde difieran.
+_ENTRIES: list[tuple[str, list[Field]]] = [
+    ("llama", LLAMA_FIELDS),
+    ("moe", MOE_FIELDS),
+    ("whisper", WHISPER_FIELDS),
+    ("tts", TTS_FIELDS),
+    ("understory", UNDERSTORY_FIELDS),
+    ("pithagoras", PITHAGORAS_FIELDS),
+    ("install", INSTALL_FIELDS),
 ]
 
 
@@ -323,12 +326,12 @@ class RinthelConfig:
         uno de los dos falla a "levantar" en silencio."""
         errors: list[str] = []
         seen_ports: dict[int, str] = {}
-        for prefix, attr, fields in _ENTRIES:
+        for attr, fields in _ENTRIES:
             sub = getattr(self, attr)
             for f in fields:
                 if not f.port:
                     continue
-                name = f"{prefix}.{f.attr}"
+                name = f"{attr}.{f.attr}"
                 port = getattr(sub, f.attr)
                 if not (1 <= port <= 65535):
                     errors.append(f"{name}={port} fuera de rango 1-65535")
@@ -337,17 +340,17 @@ class RinthelConfig:
                 else:
                     seen_ports[port] = name
 
-        for prefix, attr, fields in _ENTRIES:
+        for attr, fields in _ENTRIES:
             sub = getattr(self, attr)
             for f in fields:
                 if f.positive and getattr(sub, f.attr) <= 0:
-                    errors.append(f"{prefix}.{f.attr}={getattr(sub, f.attr)} debe ser > 0")
+                    errors.append(f"{attr}.{f.attr}={getattr(sub, f.attr)} debe ser > 0")
 
         if errors:
             raise ConfigError("; ".join(errors))
 
         warnings: list[str] = []
-        for _prefix, attr, fields in _ENTRIES:
+        for attr, fields in _ENTRIES:
             sub = getattr(self, attr)
             for f in fields:
                 if not f.exists:

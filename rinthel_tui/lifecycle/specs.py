@@ -36,7 +36,10 @@ def _spawn_spec(service: LocalProcessService) -> PhaseSpec:
     return PhaseSpec(f"◈ {service.menu_label}", managed_service.phase_spawn, {"service": service})
 
 
-def _wait_spec(service: LocalProcessService) -> PhaseSpec:
+def _wait_spec(service: LocalProcessService | DockerComposeService) -> PhaseSpec:
+    # Mismo phase_wait_ready para los dos tipos de servicio — ver
+    # managed_service._ServiceBase, de donde ambos heredan los campos de
+    # ready/poll.
     return PhaseSpec(
         f"◈ ESPERANDO {service.wait_label}", managed_service.phase_wait_ready, {"service": service}
     )
@@ -51,14 +54,6 @@ def _up_spec(service: DockerComposeService, *, no_cache: bool = False) -> PhaseS
         f"◈ {service.menu_label}",
         managed_service.phase_up,
         {"service": service, "no_cache": no_cache},
-    )
-
-
-def _wait_docker_spec(service: DockerComposeService) -> PhaseSpec:
-    return PhaseSpec(
-        f"◈ ESPERANDO {service.wait_label}",
-        managed_service.phase_wait_ready_docker,
-        {"service": service},
     )
 
 
@@ -93,7 +88,7 @@ INSTALL_PHASES: list[PhaseSpec] = [
 BOOT_PHASES: list[PhaseSpec] = [
     PhaseSpec("◈ DOCKER", phases.phase_check_docker),
     *[spec for svc in services.LOCAL_SERVICES for spec in (_spawn_spec(svc), _wait_spec(svc))],
-    *[spec for svc in services.DOCKER_SERVICES for spec in (_up_spec(svc), _wait_docker_spec(svc))],
+    *[spec for svc in services.DOCKER_SERVICES for spec in (_up_spec(svc), _wait_spec(svc))],
 ]
 
 # ── DOWN (rinthel-down.sh) ────────────────────────────────────
@@ -119,7 +114,7 @@ _boot_raw = [
 _rebuild_raw = [
     spec
     for svc in services.DOCKER_SERVICES
-    for spec in (_up_spec(svc, no_cache=True), _wait_docker_spec(svc))
+    for spec in (_up_spec(svc, no_cache=True), _wait_spec(svc))
 ]
 
 _RELOAD_TOTAL = len(_shutdown_raw) + len(_boot_raw) + len(_rebuild_raw)

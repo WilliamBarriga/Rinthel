@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__understory__memory_query"
+    ]
+  }
+}

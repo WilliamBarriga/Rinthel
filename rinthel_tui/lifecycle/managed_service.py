@@ -108,11 +108,20 @@ async def _wait_http_ready(
     return True
 
 
-# ── LocalProcessService: llama-server / whisper / tts ────────────────────
+# ── campos compartidos por LocalProcessService y DockerComposeService ────
+#
+# Ambos tipos de servicio se esperan igual (wait_ready pollea ready_url_of
+# con el mismo backoff) y se listan igual en menú/report, así que ese
+# subconjunto de campos vive acá una sola vez — evita mantenerlo duplicado
+# entre las dos dataclasses y permite que phase_wait_ready (más abajo) sea
+# una sola función en vez de una por tipo de servicio.
+# kw_only=True porque las subclases suman sus propios campos requeridos
+# (build_argv/log_of, dir_of/compose_service_name) después de los que ya
+# tienen default acá — sin kw_only, un dataclass no lo permite.
 
 
-@dataclass(frozen=True)
-class LocalProcessService:
+@dataclass(frozen=True, kw_only=True)
+class _ServiceBase:
     # display_name: usado en los mensajes de report ("llama-server murió al
     # instante", "no relanzo whisper-server"). menu_label/wait_label/
     # kill_label: texto de los PhaseSpec en specs.py — separados de
@@ -122,10 +131,10 @@ class LocalProcessService:
     menu_label: str
     wait_label: str
     kill_label: str
-    build_argv: Callable[[RinthelConfig], list[str]]
     port_of: Callable[[RinthelConfig], int]
-    log_of: Callable[[RinthelConfig], Path]
-    ready_url_of: Callable[[RinthelConfig], str]
+    # None en un DockerComposeService que no expone healthcheck HTTP propio
+    # — phase_wait_ready no tiene nada que pollear ahí y vuelve al toque.
+    ready_url_of: Callable[[RinthelConfig], str] | None = None
     default_ready_timeout: int = 90
     # Backoff exponencial del polling de wait_ready: arranca en
     # ready_poll_interval, se multiplica por ready_poll_backoff en cada
@@ -138,6 +147,15 @@ class LocalProcessService:
     # Línea extra de contexto tras un timeout de wait_ready — solo llama-server
     # la tiene hoy ("Levanta el modelo local antes de usar understory.").
     on_timeout_hint: str | None = None
+
+
+# ── LocalProcessService: llama-server / whisper / tts ────────────────────
+
+
+@dataclass(frozen=True, kw_only=True)
+class LocalProcessService(_ServiceBase):
+    build_argv: Callable[[RinthelConfig], list[str]]
+    log_of: Callable[[RinthelConfig], Path]
 
 
 async def phase_spawn(cfg: RinthelConfig, report: PhaseReport, *, service: LocalProcessService) -> None:
@@ -171,8 +189,15 @@ async def phase_spawn(cfg: RinthelConfig, report: PhaseReport, *, service: Local
 
 
 async def phase_wait_ready(
-    cfg: RinthelConfig, report: PhaseReport, *, service: LocalProcessService, timeout: int | None = None
+    cfg: RinthelConfig, report: PhaseReport, *, service: _ServiceBase, timeout: int | None = None
 ) -> None:
+    """Poll de ``service.ready_url_of`` — compartido entre LocalProcessService
+    y DockerComposeService (ambos son ``_ServiceBase``, con los mismos campos
+    de ready/poll). Antes eran dos funciones casi idénticas; la única
+    diferencia real era este guard de ``ready_url_of is None``, que en un
+    LocalProcessService nunca dispara (siempre define uno)."""
+    if service.ready_url_of is None:
+        return
     timeout = service.default_ready_timeout if timeout is None else timeout
     ready = await _wait_http_ready(
         service.ready_url_of(cfg),
@@ -229,26 +254,16 @@ async def phase_wait_port_free(
 # ── DockerComposeService: Understory / Pithagoras ────────────────────────
 
 
-@dataclass(frozen=True)
-class DockerComposeService:
-    display_name: str
-    menu_label: str
-    wait_label: str
-    kill_label: str
+@dataclass(frozen=True, kw_only=True)
+class DockerComposeService(_ServiceBase):
     dir_of: Callable[[RinthelConfig], Path]
-    port_of: Callable[[RinthelConfig], int]
     compose_service_name: str
     extra_env_of: Callable[[RinthelConfig], dict[str, str]] = lambda cfg: {}
     # Solo Pithagoras rebuildea la imagen del frontend antes de levantar.
     build_args: tuple[str, ...] | None = None
-    # Ninguno de los dos tenía wait_ready antes de este refactor — ver
-    # decisión con Tarkark: se agrega acá, con la misma URL raíz que ya usa
-    # ServiceBadge en menu.py/monitor.py para los badges de estado.
-    ready_url_of: Callable[[RinthelConfig], str] | None = None
+    # Los stacks docker tardan menos en levantar que llama-server cargando
+    # un modelo grande — pisa el default de 90s de _ServiceBase.
     default_ready_timeout: int = 60
-    ready_poll_interval: float = 2.0
-    ready_poll_backoff: float = 1.5
-    ready_poll_max_interval: float = 10.0
 
 
 async def phase_up(
@@ -271,25 +286,6 @@ async def phase_up(
         report.error(f"{service.display_name}: docker compose up falló (rc {rc})")
         raise PhaseError(f"{service.display_name.lower()} up failed (rc {rc})")
     report.success(f"{service.display_name} levantado")
-
-
-async def phase_wait_ready_docker(
-    cfg: RinthelConfig, report: PhaseReport, *, service: DockerComposeService, timeout: int | None = None
-) -> None:
-    if service.ready_url_of is None:
-        return
-    timeout = service.default_ready_timeout if timeout is None else timeout
-    ready = await _wait_http_ready(
-        service.ready_url_of(cfg),
-        timeout=timeout,
-        interval=service.ready_poll_interval,
-        max_interval=service.ready_poll_max_interval,
-        backoff=service.ready_poll_backoff,
-    )
-    if not ready:
-        report.warn(f"AVISO: nada respondiendo en :{service.port_of(cfg)} tras {timeout}s")
-        return
-    report.success(f"{service.display_name} respondiendo en :{service.port_of(cfg)}")
 
 
 async def phase_down(cfg: RinthelConfig, report: PhaseReport, *, service: DockerComposeService) -> None:
