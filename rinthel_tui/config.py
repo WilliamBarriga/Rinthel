@@ -27,6 +27,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Callable
 
 from dotenv import load_dotenv
 
@@ -69,6 +70,44 @@ def _bool_env(name: str, default: bool) -> bool:
 
 
 @dataclass(frozen=True)
+class Field:
+    """Un campo cargable desde env var — vive junto al dataclass que
+    describe, así que agregar/quitar un campo de un servicio es una sola
+    línea en un solo lugar, en vez de tocar el parsing en ``default_config()``
+    y por separado acordarse de sumarlo a los chequeos de ``validate()``.
+
+    ``port``/``positive``/``exists`` etiquetan qué chequeo de ``validate()``
+    le corresponde a este campo — ver ``_ENTRIES`` más abajo, que los agrega
+    genéricamente en vez de 3 listas mantenidas a mano."""
+
+    attr: str
+    env: str
+    kind: type
+    default: Any
+    port: bool = False
+    positive: bool = False
+    exists: bool = False
+
+
+_LOADERS: dict[type, Callable[[str, Any], Any]] = {
+    Path: _path_env,
+    int: _int_env,
+    float: _float_env,
+    bool: _bool_env,
+    str: _str_env,
+}
+
+
+def _load(cls: type, fields: list[Field], **extra: Any) -> Any:
+    """Instancia ``cls`` (un dataclass de config) leyendo cada ``Field`` de
+    su env var — ``extra`` cubre los pocos campos que no salen 1:1 de una
+    env var (ej. ``LlamaConfig.env``, sintetizado a partir de otros valores)."""
+    kwargs = {f.attr: _LOADERS[f.kind](f.env, f.default) for f in fields}
+    kwargs.update(extra)
+    return cls(**kwargs)
+
+
+@dataclass(frozen=True)
 class LlamaConfig:
     bin: Path
     model: Path
@@ -98,12 +137,52 @@ class LlamaConfig:
     sched_async_cpu: bool
 
 
+# ``env`` queda afuera — se sintetiza a partir de ``moe_cache_profile``
+# (ver ``default_config()``), no sale de una env var propia.
+LLAMA_FIELDS: list[Field] = [
+    Field("bin", "RINTHEL_LLAMA_BIN", Path, "~/codacus/llama.cpp/build-cuda/bin/llama-server", exists=True),
+    Field("model", "RINTHEL_LLAMA_MODEL_PATH", Path, "~/llama.cpp/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", exists=True),
+    Field("port", "RINTHEL_LLAMA_PORT", int, 8080, port=True),
+    Field("log", "RINTHEL_LLAMA_LOG_PATH", Path, "~/Rinthel-general/logs/llama-server.log"),
+    Field("ngl", "RINTHEL_NGL", str, "all"),
+    Field("context_window", "RINTHEL_CONTEXT_WINDOW", int, 112000, positive=True),
+    Field("flash_attention", "RINTHEL_FLASH_ATTENTION", bool, True),
+    Field("flash_inference", "RINTHEL_FLASH_INFERENCE", bool, False),
+    Field("n_cpu_moe", "RINTHEL_N_CPU_MOE", int, 60),
+    Field("threads_batch", "RINTHEL_THREADS_BATCH", int, 7, positive=True),
+    Field("threads", "RINTHEL_THREADS", int, 8, positive=True),
+    Field("ubatch_size", "RINTHEL_UBATCH_SIZE", int, 512),
+    Field("batch_size", "RINTHEL_BATCH_SIZE", int, 512),
+    Field("parallel", "RINTHEL_PARALLEL", int, 1, positive=True),
+    Field("temperature", "RINTHEL_TEMPERATURE", float, 0.7),
+    Field("top_p", "RINTHEL_TOP_P", float, 0.8),
+    Field("top_k", "RINTHEL_TOP_K", int, 20),
+    Field("min_p", "RINTHEL_MIN_P", float, 0.1),
+    Field("repeat_penalty", "RINTHEL_REPEAT_PENALTY", float, 1.05),
+    Field("cache_reuse", "RINTHEL_CACHE_REUSE", int, 256),
+    Field("cache_ram", "RINTHEL_CACHE_RAM", int, -1),
+    Field("load_mode", "RINTHEL_LOAD_MODE", str, "mlock"),
+    Field("spec_type", "RINTHEL_SPEC_TYPE", str, "draft-mtp"),
+    Field("spec_draft_n_max", "RINTHEL_SPEC_DRAFT_N_MAX", int, 2),
+    Field("sched_async_cpu", "RINTHEL_SCHED_ASYNC_CPU", bool, True),
+]
+
+
 @dataclass(frozen=True)
 class MoeConfig:
     trace_build: Path
     trace_out_dir: Path
     cache_profile: Path
     cache_slots: int
+
+
+# ``cache_profile`` queda afuera — comparte valor con ``GGML_MOE_CACHE_PROFILE``
+# de ``LlamaConfig.env``, se computa una sola vez en ``default_config()``.
+MOE_FIELDS: list[Field] = [
+    Field("trace_build", "RINTHEL_MOE_TRACE_BUILD", Path, "~/codacus/llama.cpp/build-cuda/bin/llama-moe-trace"),
+    Field("trace_out_dir", "RINTHEL_MOE_TRACE_OUT_DIR", Path, "~/codacus/profiles"),
+    Field("cache_slots", "RINTHEL_MOE_CACHE_SLOTS", int, 0),
+]
 
 
 @dataclass(frozen=True)
@@ -113,6 +192,15 @@ class WhisperConfig:
     port: int
     log: Path
     threads: int
+
+
+WHISPER_FIELDS: list[Field] = [
+    Field("bin", "RINTHEL_WHISPER_BIN", Path, "~/codacus/whisper.cpp/build/bin/whisper-server", exists=True),
+    Field("model", "RINTHEL_WHISPER_MODEL", Path, "~/codacus/whisper.cpp/models/ggml-base.bin", exists=True),
+    Field("port", "RINTHEL_WHISPER_PORT", int, 8090, port=True),
+    Field("log", "RINTHEL_WHISPER_LOG", Path, "~/Rinthel-general/logs/whisper-server.log"),
+    Field("threads", "RINTHEL_WHISPER_THREADS", int, 4, positive=True),
+]
 
 
 @dataclass(frozen=True)
@@ -125,16 +213,38 @@ class TTSConfig:
     log: Path
 
 
+TTS_FIELDS: list[Field] = [
+    Field("bin", "RINTHEL_TTS_BIN", Path, "~/codacus/piper/piper/piper", exists=True),
+    Field("server_script", "RINTHEL_TTS_SERVER_SCRIPT", Path, "~/Rinthel-general/services/tts-piper/server.py", exists=True),
+    Field("voice_es", "RINTHEL_TTS_VOICE_ES", Path, "~/codacus/piper/voices/es_AR-daniela-high.onnx", exists=True),
+    Field("voice_en", "RINTHEL_TTS_VOICE_EN", Path, "~/codacus/piper/voices/en_US-hfc_female-medium.onnx", exists=True),
+    Field("port", "RINTHEL_TTS_PORT", int, 8091, port=True),
+    Field("log", "RINTHEL_TTS_LOG", Path, "~/Rinthel-general/logs/tts-piper.log"),
+]
+
+
 @dataclass(frozen=True)
 class UnderstoryConfig:
     dir: Path
     port: int
 
 
+UNDERSTORY_FIELDS: list[Field] = [
+    Field("dir", "RINTHEL_UNDERSTORY_DIR", Path, "~/understory-poc"),
+    Field("port", "RINTHEL_UNDERSTORY_PORT", int, 3800, port=True),
+]
+
+
 @dataclass(frozen=True)
 class PithagorasConfig:
     dir: Path
     port: int
+
+
+PITHAGORAS_FIELDS: list[Field] = [
+    Field("dir", "RINTHEL_PITHAGORAS_DIR", Path, "~/pithagoras"),
+    Field("port", "RINTHEL_PITHAGORAS_PORT", int, 4100, port=True),
+]
 
 
 @dataclass(frozen=True)
@@ -145,6 +255,36 @@ class InstallConfig:
     pithagoras_repo_url: str
     workspaces_dir: Path
     pi_agent_dir: Path
+
+
+INSTALL_FIELDS: list[Field] = [
+    Field("llamacpp_repo_dir", "RINTHEL_LLAMACPP_REPO_DIR", Path, "~/codacus/llama.cpp"),
+    Field("llamacpp_repo_url", "RINTHEL_LLAMACPP_REPO_URL", str, "https://github.com/thecodacus/llama.cpp.git"),
+    Field(
+        "model_download_url",
+        "RINTHEL_MODEL_DOWNLOAD_URL",
+        str,
+        "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+    ),
+    Field("pithagoras_repo_url", "RINTHEL_PITHAGORAS_REPO_URL", str, "https://github.com/WilliamBarriga/pithagoras.git"),
+    Field("workspaces_dir", "RINTHEL_WORKSPACES_DIR", Path, "~"),
+    Field("pi_agent_dir", "RINTHEL_PI_AGENT_DIR", Path, "~/.pi/agent"),
+]
+
+
+# Un solo lugar que empareja cada sub-config con su tabla de campos —
+# ``RinthelConfig.validate()`` deriva los 3 chequeos (puertos, positivos,
+# paths) de acá en vez de mantener 3 listas a mano por separado. Agregar un
+# servicio nuevo es sumar una línea acá, no 3 en 3 lugares distintos.
+_ENTRIES: list[tuple[str, str, list[Field]]] = [
+    ("llama", "llama", LLAMA_FIELDS),
+    ("moe", "moe", MOE_FIELDS),
+    ("whisper", "whisper", WHISPER_FIELDS),
+    ("tts", "tts", TTS_FIELDS),
+    ("understory", "understory", UNDERSTORY_FIELDS),
+    ("pithagoras", "pithagoras", PITHAGORAS_FIELDS),
+    ("install", "install", INSTALL_FIELDS),
+]
 
 
 class ConfigError(Exception):
@@ -182,145 +322,66 @@ class RinthelConfig:
         terminen apuntando al mismo puerto sin que nadie lo note hasta que
         uno de los dos falla a "levantar" en silencio."""
         errors: list[str] = []
+        seen_ports: dict[int, str] = {}
+        for prefix, attr, fields in _ENTRIES:
+            sub = getattr(self, attr)
+            for f in fields:
+                if not f.port:
+                    continue
+                name = f"{prefix}.{f.attr}"
+                port = getattr(sub, f.attr)
+                if not (1 <= port <= 65535):
+                    errors.append(f"{name}={port} fuera de rango 1-65535")
+                elif port in seen_ports:
+                    errors.append(f"{name}={port} choca con {seen_ports[port]}")
+                else:
+                    seen_ports[port] = name
 
-        ports = {
-            "llama.port": self.llama.port,
-            "whisper.port": self.whisper.port,
-            "tts.port": self.tts.port,
-            "understory.port": self.understory.port,
-            "pithagoras.port": self.pithagoras.port,
-        }
-        seen: dict[int, str] = {}
-        for name, port in ports.items():
-            if not (1 <= port <= 65535):
-                errors.append(f"{name}={port} fuera de rango 1-65535")
-                continue
-            if port in seen:
-                errors.append(f"{name}={port} choca con {seen[port]}")
-            else:
-                seen[port] = name
-
-        for name, value in (
-            ("llama.threads", self.llama.threads),
-            ("llama.threads_batch", self.llama.threads_batch),
-            ("llama.context_window", self.llama.context_window),
-            ("llama.parallel", self.llama.parallel),
-            ("whisper.threads", self.whisper.threads),
-        ):
-            if value <= 0:
-                errors.append(f"{name}={value} debe ser > 0")
+        for prefix, attr, fields in _ENTRIES:
+            sub = getattr(self, attr)
+            for f in fields:
+                if f.positive and getattr(sub, f.attr) <= 0:
+                    errors.append(f"{prefix}.{f.attr}={getattr(sub, f.attr)} debe ser > 0")
 
         if errors:
             raise ConfigError("; ".join(errors))
 
         warnings: list[str] = []
-        for label, path in (
-            ("RINTHEL_LLAMA_BIN", self.llama.bin),
-            ("RINTHEL_LLAMA_MODEL_PATH", self.llama.model),
-            ("RINTHEL_WHISPER_BIN", self.whisper.bin),
-            ("RINTHEL_WHISPER_MODEL", self.whisper.model),
-            ("RINTHEL_TTS_BIN", self.tts.bin),
-            ("RINTHEL_TTS_SERVER_SCRIPT", self.tts.server_script),
-            ("RINTHEL_TTS_VOICE_ES", self.tts.voice_es),
-            ("RINTHEL_TTS_VOICE_EN", self.tts.voice_en),
-        ):
-            if not path.exists():
-                warnings.append(f"{label}={path} no existe todavía")
+        for _prefix, attr, fields in _ENTRIES:
+            sub = getattr(self, attr)
+            for f in fields:
+                if not f.exists:
+                    continue
+                path = getattr(sub, f.attr)
+                if not path.exists():
+                    warnings.append(f"{f.env}={path} no existe todavía")
         return warnings
 
 
 def default_config() -> RinthelConfig:
+    # Computado antes de los _load() de LLAMA_FIELDS/MOE_FIELDS -- lo comparten
+    # llama.env["GGML_MOE_CACHE_PROFILE"] y moe.cache_profile, ninguno de los
+    # dos lo carga por su cuenta.
     moe_cache_profile = _path_env(
         "RINTHEL_MOE_CACHE_PROFILE", "~/codacus/profiles/qwen3.6-merged.csv"
     )
 
-    llama = LlamaConfig(
-        bin=_path_env("RINTHEL_LLAMA_BIN", "~/codacus/llama.cpp/build-cuda/bin/llama-server"),
-        model=_path_env("RINTHEL_LLAMA_MODEL_PATH", "~/llama.cpp/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"),
-        port=_int_env("RINTHEL_LLAMA_PORT", 8080),
-        log=_path_env("RINTHEL_LLAMA_LOG_PATH", "~/Rinthel-general/logs/llama-server.log"),
+    llama = _load(
+        LlamaConfig,
+        LLAMA_FIELDS,
         env={
             "GGML_CUDA_REGISTER_HOST": "1",
             "GGML_SCHED_PREFETCH_EXPERTS": "1",
             "GGML_MOE_CACHE_PROFILE": str(moe_cache_profile),
             "GGML_MOE_CACHE_SLOTS": "10",
         },
-        ngl=_str_env("RINTHEL_NGL", "all"),
-        context_window=_int_env("RINTHEL_CONTEXT_WINDOW", 112000),
-        flash_attention=_bool_env("RINTHEL_FLASH_ATTENTION", True),
-        flash_inference=_bool_env("RINTHEL_FLASH_INFERENCE", False),
-        n_cpu_moe=_int_env("RINTHEL_N_CPU_MOE", 60),
-        threads_batch=_int_env("RINTHEL_THREADS_BATCH", 7),
-        threads=_int_env("RINTHEL_THREADS", 8),
-        ubatch_size=_int_env("RINTHEL_UBATCH_SIZE", 512),
-        batch_size=_int_env("RINTHEL_BATCH_SIZE", 512),
-        parallel=_int_env("RINTHEL_PARALLEL", 1),
-        temperature=_float_env("RINTHEL_TEMPERATURE", 0.7),
-        top_p=_float_env("RINTHEL_TOP_P", 0.8),
-        top_k=_int_env("RINTHEL_TOP_K", 20),
-        min_p=_float_env("RINTHEL_MIN_P", 0.1),
-        repeat_penalty=_float_env("RINTHEL_REPEAT_PENALTY", 1.05),
-        cache_reuse=_int_env("RINTHEL_CACHE_REUSE", 256),
-        cache_ram=_int_env("RINTHEL_CACHE_RAM", -1),
-        load_mode=_str_env("RINTHEL_LOAD_MODE", "mlock"),
-        spec_type=_str_env("RINTHEL_SPEC_TYPE", "draft-mtp"),
-        spec_draft_n_max=_int_env("RINTHEL_SPEC_DRAFT_N_MAX", 2),
-        sched_async_cpu=_bool_env("RINTHEL_SCHED_ASYNC_CPU", True),
     )
-
-    moe = MoeConfig(
-        trace_build=_path_env(
-            "RINTHEL_MOE_TRACE_BUILD", "~/codacus/llama.cpp/build-cuda/bin/llama-moe-trace"
-        ),
-        trace_out_dir=_path_env("RINTHEL_MOE_TRACE_OUT_DIR", "~/codacus/profiles"),
-        cache_profile=moe_cache_profile,
-        cache_slots=_int_env("RINTHEL_MOE_CACHE_SLOTS", 0),
-    )
-
-    whisper = WhisperConfig(
-        bin=_path_env("RINTHEL_WHISPER_BIN", "~/codacus/whisper.cpp/build/bin/whisper-server"),
-        model=_path_env("RINTHEL_WHISPER_MODEL", "~/codacus/whisper.cpp/models/ggml-base.bin"),
-        port=_int_env("RINTHEL_WHISPER_PORT", 8090),
-        log=_path_env("RINTHEL_WHISPER_LOG", "~/Rinthel-general/logs/whisper-server.log"),
-        threads=_int_env("RINTHEL_WHISPER_THREADS", 4),
-    )
-
-    tts = TTSConfig(
-        bin=_path_env("RINTHEL_TTS_BIN", "~/codacus/piper/piper/piper"),
-        server_script=_path_env(
-            "RINTHEL_TTS_SERVER_SCRIPT", "~/Rinthel-general/services/tts-piper/server.py"
-        ),
-        voice_es=_path_env("RINTHEL_TTS_VOICE_ES", "~/codacus/piper/voices/es_AR-daniela-high.onnx"),
-        voice_en=_path_env("RINTHEL_TTS_VOICE_EN", "~/codacus/piper/voices/en_US-hfc_female-medium.onnx"),
-        port=_int_env("RINTHEL_TTS_PORT", 8091),
-        log=_path_env("RINTHEL_TTS_LOG", "~/Rinthel-general/logs/tts-piper.log"),
-    )
-
-    understory = UnderstoryConfig(
-        dir=_path_env("RINTHEL_UNDERSTORY_DIR", "~/understory-poc"),
-        port=_int_env("RINTHEL_UNDERSTORY_PORT", 3800),
-    )
-
-    pithagoras = PithagorasConfig(
-        dir=_path_env("RINTHEL_PITHAGORAS_DIR", "~/pithagoras"),
-        port=_int_env("RINTHEL_PITHAGORAS_PORT", 4100),
-    )
-
-    install = InstallConfig(
-        llamacpp_repo_dir=_path_env("RINTHEL_LLAMACPP_REPO_DIR", "~/codacus/llama.cpp"),
-        llamacpp_repo_url=_str_env(
-            "RINTHEL_LLAMACPP_REPO_URL", "https://github.com/thecodacus/llama.cpp.git"
-        ),
-        model_download_url=_str_env(
-            "RINTHEL_MODEL_DOWNLOAD_URL",
-            "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
-        ),
-        pithagoras_repo_url=_str_env(
-            "RINTHEL_PITHAGORAS_REPO_URL", "https://github.com/WilliamBarriga/pithagoras.git"
-        ),
-        workspaces_dir=_path_env("RINTHEL_WORKSPACES_DIR", "~"),
-        pi_agent_dir=_path_env("RINTHEL_PI_AGENT_DIR", "~/.pi/agent"),
-    )
+    moe = _load(MoeConfig, MOE_FIELDS, cache_profile=moe_cache_profile)
+    whisper = _load(WhisperConfig, WHISPER_FIELDS)
+    tts = _load(TTSConfig, TTS_FIELDS)
+    understory = _load(UnderstoryConfig, UNDERSTORY_FIELDS)
+    pithagoras = _load(PithagorasConfig, PITHAGORAS_FIELDS)
+    install = _load(InstallConfig, INSTALL_FIELDS)
 
     return RinthelConfig(
         llama=llama, moe=moe, whisper=whisper, tts=tts,
