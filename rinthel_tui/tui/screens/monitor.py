@@ -14,6 +14,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Static
 
 from rinthel_tui.config import CONFIG, RinthelConfig
+from rinthel_tui.lifecycle.services import LLAMA_SERVICE, PITHAGORAS_SERVICE, UNDERSTORY_SERVICE
 from rinthel_tui.monitoring import resources, services
 from rinthel_tui.tui.widgets.log_tail import LogTail
 from rinthel_tui.tui.widgets.service_badge import ServiceBadge
@@ -45,15 +46,9 @@ class MonitorScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="monitor-badges"):
-            yield ServiceBadge(
-                "Understory", f"http://localhost:{self.cfg.understory.port}", id="mon-badge-understory"
-            )
-            yield ServiceBadge(
-                "Pithagoras", f"http://localhost:{self.cfg.pithagoras.port}", id="mon-badge-pithagoras"
-            )
-            yield ServiceBadge(
-                "llama-server", f"http://127.0.0.1:{self.cfg.llama.port}/v1/models", id="mon-badge-llama"
-            )
+            yield ServiceBadge.for_service(UNDERSTORY_SERVICE, self.cfg, id="mon-badge-understory")
+            yield ServiceBadge.for_service(PITHAGORAS_SERVICE, self.cfg, id="mon-badge-pithagoras")
+            yield ServiceBadge.for_service(LLAMA_SERVICE, self.cfg, id="mon-badge-llama")
 
         self.docker_table = DataTable(id="monitor-docker", classes="panel")
         self.docker_table.border_title = "◈ DOCKER STATUS"
