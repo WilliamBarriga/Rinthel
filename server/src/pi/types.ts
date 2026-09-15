@@ -40,7 +40,7 @@ export interface PiClient extends EventEmitter {
   /** The portal's session id, set when the SDK client is created. */
   readonly portalSessionId?: string;
 
-  prompt(message: string): Promise<void>;
+  prompt(message: string, options?: { voice?: boolean }): Promise<void>;
   abort(): Promise<void>;
   /**
    * Whether the agent has stopped for good — not merely between turns.

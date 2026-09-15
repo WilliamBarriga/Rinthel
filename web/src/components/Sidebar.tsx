@@ -2,10 +2,11 @@ import { useState, type ReactNode } from "react";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import {
   LuBot,
+  LuPanelLeftClose,
+  LuPanelLeftOpen,
   LuClock,
   LuGlobe,
   LuMessagesSquare,
-  LuPanelLeftClose,
   LuPin,
   LuPinOff,
   LuPlus,
@@ -78,6 +79,7 @@ export function Sidebar({
   view: "chat" | "sessions" | "agent" | "routines" | "browser" | "audit";
   /** Whether the optional browser service is there at all. */
   hasBrowser: boolean;
+  /** Below md, whether the drawer is open. Ignored at md+ — see `collapsed`. */
   sidebarOpen: boolean;
   onToggle: () => void;
   /** Explicit close — distinct from onToggle so picking something on a phone
@@ -94,6 +96,16 @@ export function Sidebar({
   onOpenSettings: () => void;
   onNavigate: (to: "sessions" | "agent" | "routines" | "browser" | "audit") => void;
 }) {
+  // Desktop-only: collapses to an icon rail. Independent of `sidebarOpen`,
+  // which only governs the mobile drawer — the two never fight over the same
+  // state because collapsed only ever applies at md+.
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebarCollapsed") === "true");
+  const toggleCollapsed = () => {
+    setCollapsed(value => {
+      localStorage.setItem("sidebarCollapsed", String(!value));
+      return !value;
+    });
+  };
   const [creating, setCreating] = useState(false);
   const [choice, setChoice] = useState<string>(NEW);
   const [name, setName] = useState("");
@@ -162,10 +174,26 @@ export function Sidebar({
         />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] shrink-0 flex-col border-r border-line bg-surface transition-transform duration-200 md:static md:z-auto md:max-w-none md:translate-x-0 md:transition-all ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-transform duration-200 md:static md:z-auto md:max-w-none md:translate-x-0 md:transition-[width] md:duration-300 md:ease-in-out motion-reduce:md:transition-none ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } ${sidebarOpen ? "md:w-64" : "md:w-0 md:overflow-hidden md:border-r-0"}`}
+        } ${collapsed ? "md:w-12" : "md:w-64"}`}
       >
+        {/* Desktop-only collapse toggle — mobile uses the backdrop/onClose
+            drawer affordance instead, not this icon rail. */}
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
+          aria-controls="sidebar-content"
+          className="absolute right-2 top-3 z-10 hidden h-8 w-8 place-items-center rounded-lg text-fg-subtle transition-colors hover:bg-canvas hover:text-fg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent md:grid"
+        >
+          {collapsed ? <LuPanelLeftOpen size={18} /> : <LuPanelLeftClose size={18} />}
+        </button>
+
+        <div id="sidebar-content" className={`flex min-h-0 w-72 flex-1 flex-col md:w-64 ${collapsed ? "md:hidden" : "md:flex"}`}>
+
       <div className="flex items-center gap-1 px-3 pb-3 pt-4">
         <img
           src="/logo-192.png"
@@ -182,7 +210,7 @@ export function Sidebar({
         </span>
         <button
           onClick={onToggle}
-          className="ml-auto rounded p-1 text-fg-faint hover:bg-fg/5 hover:text-fg"
+          className="ml-auto rounded p-1 text-fg-faint hover:bg-fg/5 hover:text-fg md:hidden"
           title="Cerrar barra lateral"
         >
           <LuPanelLeftClose className="h-4 w-4" />
@@ -359,6 +387,7 @@ export function Sidebar({
           <ThemeSwitcher />
         </div>
       </div>
+        </div>
       </aside>
     </>
   );

@@ -40,3 +40,12 @@ docs/.vitepress/cache
 /web/tailwindcss
 /web/typescript
 /web/vite
+
+# Optional voice runtime checkouts and model weights
+voice-runtime/
+
+# Generated, version-matched VAD model and WebAssembly assets
+web/public/voice-assets/
+
+playwright-report/
+test-results/

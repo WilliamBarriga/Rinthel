@@ -264,7 +264,6 @@ function Shell({
   const soundEnabled = stored.soundEnabled ?? true;
   const soundType = (stored.soundType as SoundType) ?? "default";
   const playSound = useNotificationSound(soundEnabled, soundType);
-  const voiceEnabled = stored.voiceEnabled ?? false;
   const playSoundRef = useRef(playSound);
   useEffect(() => {
     playSoundRef.current = playSound;
@@ -342,7 +341,6 @@ function Shell({
           <Chat
             session={active}
             events={events}
-            voiceEnabled={voiceEnabled}
             hasEarlier={moreBefore}
             loadingEarlier={loadingBefore}
             onLoadEarlier={async () => {
@@ -359,8 +357,8 @@ function Shell({
                 setLoadingBefore(false);
               }
             }}
-            onSend={async (msg) => {
-              await api.prompt(active.id, msg);
+            onSend={async (msg, options) => {
+              await api.prompt(active.id, msg, options);
               refreshSessions();
             }}
             onAbort={async () => {
@@ -402,7 +400,7 @@ function Shell({
       )}
 
       {!sidebarOpen && (
-        <div className="fixed left-0 top-0 z-50 flex flex-col items-start pt-2 pl-0.5">
+        <div className="fixed left-0 top-0 z-50 flex flex-col items-start pt-2 pl-0.5 md:hidden">
           <button
             onClick={() => setSidebarOpen(true)}
             className="rounded-r-lg border border-line bg-surface p-2 text-fg-muted shadow hover:text-fg md:p-1.5"

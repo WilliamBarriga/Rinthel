@@ -1,3 +1,4 @@
+import { canvasesRouter } from "./api/canvases.js";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
@@ -33,9 +34,9 @@ import { routinesRouter } from "./api/routines.js";
 import { skillsRouter } from "./api/skills.js";
 import { mcpRouter } from "./api/mcp.js";
 import { peopleRouter } from "./api/people.js";
+import { voiceRouter } from "./api/voice.js";
 import { browserRouter } from "./api/browser.js";
 import { terminalRouter } from "./api/terminal.js";
-import { voiceRouter } from "./api/voice.js";
 import { attachBrowserUpgrade, mountBrowserProxy } from "./browser-proxy.js";
 import { watchBrowserFrames } from "./extensions/browser-frames.js";
 import { startLlamaProxy } from "./llama-progress.js";
@@ -112,7 +113,7 @@ app.get("/api/settings", (_req, res) => {
 });
 
 app.put("/api/settings", async (req, res) => {
-  const { provider, model, thinkingLevel, soundEnabled, soundType, voiceEnabled } = req.body ?? {};
+  const { provider, model, thinkingLevel, soundEnabled, soundType } = req.body ?? {};
   const allowedSounds = ["default", "chime", "pop", "futuristic", "interface-zoom", "none"];
 
   if (soundType !== undefined && !allowedSounds.includes(soundType)) {
@@ -125,7 +126,6 @@ app.put("/api/settings", async (req, res) => {
   if (typeof thinkingLevel === "string") patch.thinkingLevel = thinkingLevel.trim();
   if (typeof soundEnabled === "boolean") patch.soundEnabled = soundEnabled ? "true" : "false";
   if (typeof soundType === "string") patch.soundType = soundType;
-  if (typeof voiceEnabled === "boolean") patch.voiceEnabled = voiceEnabled ? "true" : "false";
   // Checked before anything is written. Rejecting half way through left the
   // provider changed on a request that answered 400, which is a worse outcome
   // than either accepting or refusing the lot. Rejected rather than clamped
@@ -391,7 +391,7 @@ app.post("/api/sessions/:id/prompt", async (req, res) => {
   try {
     // Returns as soon as pi accepts the prompt. The run continues server-side
     // regardless of what this browser does next.
-    await sessions.prompt(session.id, message);
+    await sessions.prompt(session.id, message, { voice: req.body?.voice === true });
     res.json({ ok: true, status: "running" });
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
@@ -575,6 +575,7 @@ app.use("/api", peopleRouter());
 app.use("/api", browserRouter());
 app.use("/api", voiceRouter());
 app.use("/api", terminalRouter());
+app.use("/api", canvasesRouter());
 // Before the SPA fallback, which answers everything that is not /api.
 mountBrowserProxy(app);
 
@@ -726,6 +727,7 @@ watchBrowserFrames();
 // Reports how far llama.cpp has got through a prompt, which is otherwise a
 // silent minute or two before the first token.
 startLlamaProxy((sessionId, prefill) => sessions.reportPrefill(sessionId, prefill));
+getDb().prepare("UPDATE canvases SET active_call = NULL, status = 'interrupted', agent_read_revision = revision WHERE active_call IS NOT NULL").run();
 pinConnection();
 
 async function shutdown(signal: string) {
