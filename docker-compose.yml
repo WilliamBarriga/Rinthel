@@ -66,9 +66,20 @@ services:
       # box's own address works from inside the container unchanged.
       LLAMA_BASE_URL: ${LLAMA_BASE_URL:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # STT (whisper.cpp) / TTS (Piper), same host-networking story as
+      # LLAMA_BASE_URL, now bearer-token gated by Rinthel-general.
+      WHISPER_BASE_URL: ${WHISPER_BASE_URL:-}
+      TTS_BASE_URL: ${TTS_BASE_URL:-}
+      WHISPER_AUTH_TOKEN: ${WHISPER_AUTH_TOKEN:-}
+      TTS_AUTH_TOKEN: ${TTS_AUTH_TOKEN:-}
       # Bearer token for understory's /mcp, read by pi-mcp-adapter via
       # mcp.json's bearerTokenEnv (see /data/home/.pi/agent/mcp.json).
       UNDERSTORY_TOKEN: ${UNDERSTORY_TOKEN:?set UNDERSTORY_TOKEN in .env}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   tailscale:
     # Opcional — excluido de `docker compose up -d` por default (solo se
@@ -94,6 +105,11 @@ services:
       TS_STATE_DIR: /var/lib/tailscale
       TS_EXTRA_ARGS: --advertise-tags=tag:pithagoras --accept-dns=true
       TS_USERSPACE: "false"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   portal-data:
