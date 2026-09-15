@@ -20,8 +20,16 @@
 TUI (Textual) para gestionar el ciclo de vida de la infraestructura local de
 Rinthel: un `llama-server` (CUDA) sirviendo **Qwen3.6-35B-A3B-MTP** más los
 stacks Docker de **Understory** (capa de memoria MCP) y **Pithagoras**
-(portal de tareas). El ciclo de vida se maneja en fases `async` explícitas
-— ver `rinthel_tui/lifecycle/`.
+(portal de tareas).
+
+**Documentación:**
+
+- [`docs/01-system-overview.md`](docs/01-system-overview.md) — qué corre,
+  fases del ciclo de vida, estructura del código.
+- [`docs/02-hardware-optimization.md`](docs/02-hardware-optimization.md) —
+  por qué cada flag de inferencia vale lo que vale (VRAM, quant, MoE cache).
+- [`docs/03-troubleshooting.md`](docs/03-troubleshooting.md) — errores
+  comunes y cómo resolverlos.
 
 ## `[0]` Instalación rápida (máquina nueva)
 
@@ -87,7 +95,9 @@ pip install .
 
 ## Uso
 
-Con el venv de dev, desde la raíz del repo:
+Con el venv de dev, desde la raíz del repo. Detalle del ciclo de vida
+completo (fases, diagrama, servicios) en
+[`docs/01-system-overview.md`](docs/01-system-overview.md):
 
 ```bash
 ./rinthel-boot.sh
@@ -118,55 +128,6 @@ componiéndose desde ruido, glitch reveal) → `MenuScreen`:
 [7] EXIT        -- Cerrar terminal
 ```
 
-```
-SplashScreen (glitch reveal)
-       │
-       ▼
-   MenuScreen
-       │
-       ├── [0] INSTALL   ──▶ 6 fases: preflight → build → pithagoras → understory
-       ├── [1] BOOT       ──▶ docker → llama-server → understory → pithagoras
-       ├── [2] RELOAD     ──▶ 9 fases: shutdown completo → boot completo
-       └── [3] TERMINATE  ──▶ shutdown total
-```
-
-## Estructura del proyecto
-
-```
-rinthel_tui/
-├── app.py               # entry point — RinthelApp
-├── config.py             # RinthelConfig — defaults + carga de .env
-├── branding/              # banner ASCII duotono + animación de composición
-├── theme/
-│   ├── palette.py          # paleta canónica — fuente numérica única
-│   └── cyberpunk_theme.py
-├── tui/
-│   ├── screens/            # Splash, Menu, PhaseRunner, Logs, Monitor, Capture, Reload, Farewell
-│   ├── widgets/             # sparkline, service_badge, checklist
-│   └── effects/             # flicker, transitions, intro
-└── lifecycle/
-    ├── install.py           # fases [0] INSTALL
-    ├── phases.py            # fases BOOT/DOWN/RELOAD
-    ├── specs.py              # listas declarativas de fases
-    ├── runner.py             # ejecutor async con progreso por fase
-    └── capture_profile.py    # captura de perfiles de ruteo MoE
-```
-
-## Ecosistema — paleta compartida
-
-La paleta duotono (`theme/palette.py`) no es solo de este repo: el frontend
-web de Pithagoras (`web/src/index.css`) la implementa como
-`[data-theme="cyberpunk"]` con los mismos valores hex. Cambiar un color acá
-sin actualizar el otro lado los desincroniza visualmente.
-
-| Rol | Hex |
-|-----|-----|
-| Electric purple (marco, texto) | `#BF00FF` |
-| Neon yellow (cara iluminada) | `#FCEE0A` |
-| Electric cyan | `#7CFCFF` |
-| Neon magenta | `#EA00D9` |
-| Night city purple-black (fondo) | `#0D0221` |
-
 ## Configuración
 
 Todos los paths, puertos y flags de inferencia de `llama-server` tienen un
@@ -180,73 +141,21 @@ cp .env.example .env
 
 `.env` se carga automáticamente al importar `rinthel_tui.config` (vía
 `python-dotenv`, buscando hacia arriba desde el cwd) y nunca se commitea
-(está en `.gitignore`). Sin `.env`, se usan los defaults embebidos.
+(está en `.gitignore`). Sin `.env`, se usan los defaults embebidos de
+`rinthel_tui/config.py::default_config()`.
 
-Variables disponibles: paths de binario/modelo/logs, puertos de
-llama-server/Understory/Pithagoras, y todos los flags de inferencia
-(`-c`, `--temp`, `--top-p`, `--n-cpu-moe`, `--threads`, etc.) — ver
-`.env.example` para la lista completa con sus defaults.
+Variables disponibles: paths de binario/modelo/logs, puertos de cada
+servicio, y todos los flags de inferencia (`-c`, `--temp`, `--top-p`,
+`--n-cpu-moe`, `--threads`, etc.) — ver `.env.example` para la lista
+completa con sus valores, y
+[`docs/02-hardware-optimization.md`](docs/02-hardware-optimization.md) para
+el porqué de cada uno de los flags de inferencia.
 
-Si `RINTHEL_LLAMA_BIN` o `RINTHEL_MODEL_PATH` apuntan a algo que no existe,
-la app **no crashea al arrancar** — solo avisa por stderr. El fallo real (con
-mensaje claro) ocurre recién si elegís BOOT y la fase de spawn de
-llama-server falla de verdad.
-
-`RINTHEL_EFFECTS=false` apaga los efectos visuales (glow/glitch/ripple) —
-útil en terminales lentos o corriendo en CI.
-
-Vars específicas de `[0] INSTALL` (todas opcionales, ver `.env.example`):
-
-- `RINTHEL_LLAMACPP_REPO_URL` / `RINTHEL_LLAMACPP_REPO_DIR` — de dónde se
-  clona `llama.cpp` (branch `perf`) y dónde.
-- `RINTHEL_MODEL_DOWNLOAD_URL` — de dónde se descarga el modelo GGUF si
-  `RINTHEL_MODEL_PATH` todavía no existe.
-- `RINTHEL_PITHAGORAS_REPO_URL` — de dónde se clona Pithagoras (branch
-  `rinthel-pithagoras`).
-- `RINTHEL_WORKSPACES_DIR` — carpeta que Pithagoras monta en `/workspaces`
-  (default `$HOME`).
-
-## Troubleshooting
-
-> [!NOTE]
-> **"error: no se encontró .venv/bin/python"** al correr `rinthel-boot.sh` —
-> no creaste el venv, o lo estás corriendo desde otro directorio. Creá el
-> venv en la raíz del repo (ver [Instalación](#instalación)).
-
-> [!TIP]
-> **Puerto ocupado** — BOOT no relanza `llama-server` si ya hay algo
-> escuchando en `RINTHEL_PORT` (default `8080`); usa RELOAD o TERMINATE
-> primero, o cambiá el puerto en `.env`.
-
-> [!WARNING]
-> **"llama-server murió al instante"** — casi siempre un flag inválido o el
-> modelo/bin no existen de verdad; revisá el log en `RINTHEL_LOG_PATH`
-> (default `logs/llama-server.log`).
-
-> [!NOTE]
-> **Modelo/binario no encontrado** — la app avisa por stderr al arrancar
-> pero no bloquea el menú; ajustá `RINTHEL_LLAMA_BIN`/`RINTHEL_MODEL_PATH`
-> en `.env`.
-
-> [!IMPORTANT]
-> **Docker daemon inactivo** — la fase de BOOT lo detecta y corta con
-> instrucciones (`sudo systemctl start docker`) antes de tocar nada más.
-
-## Desarrollo
-
-`scripts/test_phases.py` corre fases individuales o listas completas contra
-la infraestructura real, sin pasar por Textual — útil para probar cambios en
-`lifecycle/` rápido:
-
-```bash
-.venv/bin/python scripts/test_phases.py list
-.venv/bin/python scripts/test_phases.py boot
-.venv/bin/python scripts/test_phases.py spawn_llama
-.venv/bin/python scripts/test_phases.py wait_port_free --port 8080
-```
-
-No es un test suite de `pytest` (opera contra Docker/GPU reales, no hay
-mocks) — es intencional que viva en `scripts/`, no en `tests/`.
+Si `RINTHEL_LLAMA_BIN` o `RINTHEL_LLAMA_MODEL_PATH` apuntan a algo que no
+existe, la app **no crashea al arrancar** — solo avisa por stderr. El fallo
+real (con mensaje claro) ocurre recién si elegís BOOT y la fase de spawn de
+llama-server falla de verdad. Más casos en
+[`docs/03-troubleshooting.md`](docs/03-troubleshooting.md).
 
 ## Créditos
 
