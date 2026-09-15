@@ -5,6 +5,13 @@ Qué está corriendo, cómo arranca, y cómo está organizado el código. Para e
 [`02-hardware-optimization.md`](02-hardware-optimization.md). Para errores
 comunes, [`03-troubleshooting.md`](03-troubleshooting.md).
 
+Ver también: diagrama de [arquitectura en runtime](diagrams/out/rinthel-runtime.html)
+y de [fuentes de install/build](diagrams/out/rinthel-install-sources.html)
+(interactivos — abrir el `.html` en el navegador; generados con
+[Archify](https://github.com/tt-a1i/archify) a partir de
+`docs/diagrams/*.eraser`, ver [`docs/diagrams/README.md`](diagrams/README.md)
+para regenerarlos).
+
 ## Qué corre
 
 | Servicio | Rol | Puerto default |
@@ -16,9 +23,9 @@ comunes, [`03-troubleshooting.md`](03-troubleshooting.md).
 `llama-server` corre como proceso local (no Docker) porque necesita acceso
 directo a la GPU. El resto son stacks `docker compose` independientes.
 
-La voz (STT+TTS) ya no la orquesta esta TUI — es un add-on autocontenido de
-Pithagoras (`pithagoras-voice`, ver `docs/guide/voice.md` en ese repo),
-activable/desactivable desde su propio Settings → Add-ons.
+La voz (STT+TTS) es un add-on autocontenido de Pithagoras (`pithagoras-voice`,
+ver `docs/guide/voice.md` en ese repo), activable/desactivable desde su
+propio Settings → Add-ons.
 
 ## Ciclo de vida (fases async)
 

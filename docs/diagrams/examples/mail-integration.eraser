@@ -1,0 +1,28 @@
+colorMode: pastel
+styleMode: shadow
+direction: right
+
+Outlook [icon: mail]
+PC Usuario [icon: monitor]
+
+Red Local [icon: network] {
+
+  Servidor API {
+    API [icon: server]
+    PostgreSQL [icon: database]
+  }
+
+  Servidores Bots {
+    Bot1 [icon: server, label: "Servidor Bot 1"]
+    Bot2 [icon: server, label: "Servidor Bot 2"]
+  }
+}
+
+PC Usuario > Outlook: envía correo
+API <> Outlook: lee correos (Graph API)
+API <> Outlook: envia notificaciones
+API > PostgreSQL: guarda registros
+API > Bot1: envía archivos (SFTP)
+API > Bot2: envía archivos (SFTP)
+Bot1 > API: reporta ejecución
+Bot2 > API: reporta ejecución

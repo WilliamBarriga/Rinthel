@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Mail / Bots Integration"
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [
+      40,
+      80
+    ],
+    "cols": 4,
+    "gapX": 100,
+    "gapY": 90,
+    "cellW": 128,
+    "cellH": 64
+  },
+  "components": [
+    {
+      "id": "pc_usuario",
+      "type": "frontend",
+      "label": "PC Usuario",
+      "size": [
+        120,
+        60
+      ],
+      "col": 0,
+      "row": 0
+    },
+    {
+      "id": "outlook",
+      "type": "external",
+      "label": "Outlook",
+      "size": [
+        120,
+        60
+      ],
+      "col": 1,
+      "row": 0
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "API",
+      "size": [
+        120,
+        60
+      ],
+      "col": 2,
+      "row": 0
+    },
+    {
+      "id": "postgresql",
+      "type": "database",
+      "label": "PostgreSQL",
+      "brand": "postgresql",
+      "size": [
+        120,
+        60
+      ],
+      "col": 3,
+      "row": 0
+    },
+    {
+      "id": "bot1",
+      "type": "backend",
+      "label": "Servidor Bot 1",
+      "size": [
+        128,
+        60
+      ],
+      "col": 3,
+      "row": 1
+    },
+    {
+      "id": "bot2",
+      "type": "backend",
+      "label": "Servidor Bot 2",
+      "size": [
+        128,
+        60
+      ],
+      "col": 3,
+      "row": 2
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Servidor API",
+      "wraps": [
+        "api",
+        "postgresql"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Servidores Bots",
+      "wraps": [
+        "bot1",
+        "bot2"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Red Local",
+      "wraps": [
+        "api",
+        "postgresql",
+        "bot1",
+        "bot2"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "pc_usuario",
+      "to": "outlook",
+      "label": "envía correo"
+    },
+    {
+      "from": "api",
+      "to": "outlook",
+      "label": "lee correos (Graph API)",
+      "labelDy": -45
+    },
+    {
+      "from": "outlook",
+      "to": "api"
+    },
+    {
+      "from": "api",
+      "to": "outlook",
+      "label": "envia notificaciones",
+      "labelDy": 45
+    },
+    {
+      "from": "outlook",
+      "to": "api"
+    },
+    {
+      "from": "api",
+      "to": "postgresql",
+      "label": "guarda registros"
+    },
+    {
+      "from": "api",
+      "to": "bot1",
+      "label": "envía archivos (SFTP)",
+      "labelDy": -45
+    },
+    {
+      "from": "api",
+      "to": "bot2",
+      "label": "envía archivos (SFTP)",
+      "labelDy": -45
+    },
+    {
+      "from": "bot1",
+      "to": "api",
+      "label": "reporta ejecución",
+      "labelDy": 45
+    },
+    {
+      "from": "bot2",
+      "to": "api",
+      "label": "reporta ejecución",
+      "labelDy": 45
+    }
+  ]
+}

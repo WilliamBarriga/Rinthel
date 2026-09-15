@@ -78,7 +78,8 @@ Reglas:
 - `nvidia-container-toolkit` instalado y configurado (`nvidia-ctk runtime
   configure --runtime=docker`) si vas a usar el add-on de voz de Pithagoras
   (`pithagoras-voice` pide GPU vía Docker) — sin esto, `docker info` no
-  detecta el runtime NVIDIA y el add-on no puede levantar
+  detecta el runtime NVIDIA y el add-on no puede levantar (ver
+  `docs/guide/voice.md` en el repo de Pithagoras)
 - Los repos de Understory y Pithagoras clonados en algún lado (paths
   configurables, ver [Configuración](#configuración))
 
@@ -129,7 +130,8 @@ componiéndose desde ruido, glitch reveal) → `MenuScreen`:
 [4] LOGS        -- Ver llama-server en vivo
 [5] CAPTURE     -- Capturar perfil MoE (routing profile)
 [6] MONITOR     -- Estado de servicios/Docker/GPU/CPU
-[7] EXIT        -- Cerrar terminal
+[7] CONFIGURAR  -- Servicios activos y parámetros
+[8] EXIT        -- Cerrar terminal
 ```
 
 ## Configuración
@@ -170,9 +172,9 @@ Tres piezas de infraestructura que `[0] INSTALL` levanta son de
   [`ghcr.io/thecodacus/understory`](https://github.com/thecodacus/understory),
   no se clona ni se compila desde fuente, ver
   `phase_install_setup_understory` en `rinthel_tui/lifecycle/install.py`.
-- **Pithagoras** (portal de tareas) — se usa vía
-  [`WilliamBarriga/pithagoras`](https://github.com/WilliamBarriga/pithagoras),
-  fork basado en el original de thecodacus.
+- **Pithagoras** (portal de tareas) — el trabajo es de
+  [thecodacus](https://github.com/thecodacus/pithagoras); se usa vía mi fork
+  [`WilliamBarriga/pithagoras`](https://github.com/WilliamBarriga/pithagoras).
 - El fork custom de **`llama.cpp`** (branch `perf`, default
   `RINTHEL_LLAMACPP_REPO_URL=https://github.com/thecodacus/llama.cpp.git`)
   que se clona y compila con soporte CUDA.

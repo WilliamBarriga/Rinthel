@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Rinthel Install & Build Sources"
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [
+      40,
+      80
+    ],
+    "cols": 3,
+    "gapX": 100,
+    "gapY": 90,
+    "cellW": 420,
+    "cellH": 64
+  },
+  "components": [
+    {
+      "id": "github_llama_cpp",
+      "type": "backend",
+      "label": "GitHub thecodacus/llama.cpp, branch perf",
+      "brand": "github",
+      "size": [
+        297,
+        60
+      ],
+      "col": 0,
+      "row": 0
+    },
+    {
+      "id": "github_pithagoras",
+      "type": "backend",
+      "label": "GitHub WilliamBarriga/pithagoras, branch rinthel-pithagoras",
+      "brand": "github",
+      "size": [
+        420,
+        60
+      ],
+      "col": 0,
+      "row": 1
+    },
+    {
+      "id": "hugging_face",
+      "type": "backend",
+      "label": "Hugging Face unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
+      "brand": "hugging-face",
+      "size": [
+        329,
+        60
+      ],
+      "col": 0,
+      "row": 2
+    },
+    {
+      "id": "ghcr",
+      "type": "cloud",
+      "label": "ghcr.io (container registry)",
+      "size": [
+        219,
+        60
+      ],
+      "col": 0,
+      "row": 3
+    },
+    {
+      "id": "test_tarkairk",
+      "type": "backend",
+      "label": "~/test-tarkAIrk (perf R&D lab, offline)",
+      "brand": "python",
+      "size": [
+        290,
+        60
+      ],
+      "col": 0,
+      "row": 4
+    },
+    {
+      "id": "rinthel_tui",
+      "type": "backend",
+      "label": "Rinthel TUI (INSTALL phase)",
+      "brand": "python",
+      "size": [
+        212,
+        60
+      ],
+      "col": 1,
+      "row": 0
+    },
+    {
+      "id": "understory_image",
+      "type": "cloud",
+      "label": "Understory image",
+      "brand": "docker",
+      "size": [
+        141,
+        60
+      ],
+      "col": 1,
+      "row": 1
+    },
+    {
+      "id": "pithagoras_image",
+      "type": "cloud",
+      "label": "Pithagoras portal image",
+      "brand": "docker",
+      "size": [
+        186,
+        60
+      ],
+      "col": 1,
+      "row": 2
+    },
+    {
+      "id": "llama_cpp_fork",
+      "type": "backend",
+      "label": "llama.cpp fork binary (thecodacus/llama.cpp, branch perf)",
+      "size": [
+        407,
+        60
+      ],
+      "col": 2,
+      "row": 0
+    }
+  ],
+  "boundaries": [],
+  "connections": [
+    {
+      "from": "github_llama_cpp",
+      "to": "rinthel_tui",
+      "label": "git clone + cmake build (INSTALL phase)"
+    },
+    {
+      "from": "github_pithagoras",
+      "to": "rinthel_tui",
+      "label": "git clone + config (INSTALL phase)"
+    },
+    {
+      "from": "hugging_face",
+      "to": "rinthel_tui",
+      "label": "model download",
+      "labelDy": -26
+    },
+    {
+      "from": "ghcr",
+      "to": "understory_image",
+      "label": "image pull",
+      "labelDy": -21
+    },
+    {
+      "from": "ghcr",
+      "to": "pithagoras_image",
+      "label": "image pull"
+    },
+    {
+      "from": "rinthel_tui",
+      "to": "llama_cpp_fork",
+      "label": "cmake --build (CUDA)"
+    },
+    {
+      "from": "test_tarkairk",
+      "to": "rinthel_tui",
+      "label": "reads rinthel_tui.config / lifecycle.phases (read-only)",
+      "variant": "dashed",
+      "labelDy": -35
+    },
+    {
+      "from": "test_tarkairk",
+      "to": "llama_cpp_fork",
+      "label": "spawns throwaway llama-server (benchmarking)",
+      "variant": "dashed"
+    }
+  ]
+}

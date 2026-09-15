@@ -240,3 +240,7 @@ archify-demo/
 
 # news — curated Reddit/LLM roundups, regenerable from web searches
 news/
+
+# Playwright MCP — browser automation screenshots/session artifacts
+.playwright-mcp/
+.diagrams_venv/

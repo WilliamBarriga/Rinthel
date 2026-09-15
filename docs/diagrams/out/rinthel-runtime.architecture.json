@@ -1,0 +1,333 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Rinthel Runtime Architecture"
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [
+      40,
+      80
+    ],
+    "cols": 3,
+    "gapX": 100,
+    "gapY": 90,
+    "cellW": 362,
+    "cellH": 64
+  },
+  "components": [
+    {
+      "id": "browser_client",
+      "type": "frontend",
+      "label": "Browser client",
+      "size": [
+        128,
+        60
+      ],
+      "col": 0,
+      "row": 0
+    },
+    {
+      "id": "rinthel_tui",
+      "type": "backend",
+      "label": "Rinthel TUI (orchestrator)",
+      "brand": "python",
+      "size": [
+        206,
+        60
+      ],
+      "col": 0,
+      "row": 1
+    },
+    {
+      "id": "net_fix",
+      "type": "security",
+      "label": "understory-net-fix.service (systemd, NAT/iptables)",
+      "size": [
+        362,
+        60
+      ],
+      "col": 0,
+      "row": 2
+    },
+    {
+      "id": "llama_server",
+      "type": "backend",
+      "label": "llama-server (CUDA) 127.0.0.1:8080",
+      "size": [
+        258,
+        60
+      ],
+      "col": 1,
+      "row": 2
+    },
+    {
+      "id": "pithagoras",
+      "type": "backend",
+      "label": "Pithagoras portal (network_mode: host, :4100)",
+      "size": [
+        329,
+        60
+      ],
+      "col": 1,
+      "row": 0
+    },
+    {
+      "id": "external_llm",
+      "type": "external",
+      "label": "External LLM (OpenRouter/Anthropic)",
+      "size": [
+        264,
+        60
+      ],
+      "col": 2,
+      "row": 9
+    },
+    {
+      "id": "portal_db",
+      "type": "database",
+      "label": "portal.db (SQLite)",
+      "brand": "sqlite",
+      "size": [
+        154,
+        60
+      ],
+      "col": 2,
+      "row": 0
+    },
+    {
+      "id": "tailscale",
+      "type": "security",
+      "label": "Tailscale sidecar (optional)",
+      "size": [
+        219,
+        60
+      ],
+      "col": 2,
+      "row": 1
+    },
+    {
+      "id": "discord",
+      "type": "external",
+      "label": "Discord",
+      "brand": "discord",
+      "size": [
+        120,
+        60
+      ],
+      "col": 2,
+      "row": 2
+    },
+    {
+      "id": "slack",
+      "type": "external",
+      "label": "Slack",
+      "size": [
+        120,
+        60
+      ],
+      "col": 2,
+      "row": 3
+    },
+    {
+      "id": "telegram",
+      "type": "external",
+      "label": "Telegram",
+      "brand": "telegram",
+      "size": [
+        120,
+        60
+      ],
+      "col": 2,
+      "row": 4
+    },
+    {
+      "id": "whisper_cpp",
+      "type": "backend",
+      "label": "whisper.cpp :8178",
+      "size": [
+        147,
+        60
+      ],
+      "col": 2,
+      "row": 5
+    },
+    {
+      "id": "audio_cpp",
+      "type": "backend",
+      "label": "breeze / audio.cpp :7861 / :7860",
+      "size": [
+        245,
+        60
+      ],
+      "col": 2,
+      "row": 6
+    },
+    {
+      "id": "understory",
+      "type": "backend",
+      "label": "Understory ghcr.io/thecodacus/understory, :3800",
+      "brand": "docker",
+      "size": [
+        342,
+        60
+      ],
+      "col": 2,
+      "row": 7
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Understory stack",
+      "wraps": [
+        "understory"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Voice add-on",
+      "wraps": [
+        "whisper_cpp",
+        "audio_cpp"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Pithagoras stack",
+      "wraps": [
+        "pithagoras",
+        "portal_db",
+        "tailscale",
+        "discord",
+        "slack",
+        "telegram",
+        "whisper_cpp",
+        "audio_cpp"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Docker Engine",
+      "wraps": [
+        "understory",
+        "pithagoras",
+        "portal_db",
+        "tailscale",
+        "discord",
+        "slack",
+        "telegram",
+        "whisper_cpp",
+        "audio_cpp"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Host Machine",
+      "wraps": [
+        "rinthel_tui",
+        "llama_server",
+        "net_fix",
+        "understory",
+        "pithagoras",
+        "portal_db",
+        "tailscale",
+        "discord",
+        "slack",
+        "telegram",
+        "whisper_cpp",
+        "audio_cpp"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "rinthel_tui",
+      "to": "llama_server",
+      "label": "spawns (LocalProcessService)"
+    },
+    {
+      "from": "rinthel_tui",
+      "to": "understory",
+      "label": "docker compose up/down",
+      "labelDy": 49
+    },
+    {
+      "from": "rinthel_tui",
+      "to": "pithagoras",
+      "label": "docker compose up/down"
+    },
+    {
+      "from": "browser_client",
+      "to": "pithagoras",
+      "label": "HTTPS/SSE :4100"
+    },
+    {
+      "from": "pithagoras",
+      "to": "llama_server",
+      "label": "HTTP :8080, OpenAI-compatible",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "pithagoras",
+      "to": "understory",
+      "label": "MCP :3800, bearer token"
+    },
+    {
+      "from": "understory",
+      "to": "llama_server",
+      "label": "host.docker.internal -> NAT -> 127.0.0.1:8080"
+    },
+    {
+      "from": "net_fix",
+      "to": "understory",
+      "label": "enables",
+      "variant": "dashed"
+    },
+    {
+      "from": "pithagoras",
+      "to": "external_llm",
+      "label": "fallback (PI_PROVIDER/PI_MODEL)",
+      "variant": "dashed"
+    },
+    {
+      "from": "pithagoras",
+      "to": "portal_db"
+    },
+    {
+      "from": "pithagoras",
+      "to": "tailscale",
+      "variant": "dashed"
+    },
+    {
+      "from": "pithagoras",
+      "to": "discord",
+      "label": "optional channel",
+      "variant": "dashed"
+    },
+    {
+      "from": "pithagoras",
+      "to": "slack",
+      "label": "optional channel",
+      "variant": "dashed"
+    },
+    {
+      "from": "pithagoras",
+      "to": "telegram",
+      "label": "optional channel",
+      "variant": "dashed"
+    },
+    {
+      "from": "pithagoras",
+      "to": "whisper_cpp",
+      "label": "/inference"
+    },
+    {
+      "from": "pithagoras",
+      "to": "audio_cpp",
+      "label": "/v1/audio/speech"
+    }
+  ]
+}
