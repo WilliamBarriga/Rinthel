@@ -237,3 +237,6 @@ archify-demo/
 !.pi/agent/skills/
 .pi/agent/skills/*
 !.pi/agent/skills/graphify/
+
+# news — curated Reddit/LLM roundups, regenerable from web searches
+news/

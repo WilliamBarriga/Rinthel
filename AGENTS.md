@@ -5,6 +5,12 @@
 > graphify ya está instalado como skill de proyecto
 > (`.pi/agent/skills/graphify/`, via `graphify pi install --project`).
 
+## Entorno
+
+- **Workspace root:** `/workspaces` — es el mismo path que `/home/tarkark`
+  en el host. Dentro del contenedor, todo el workspace se monta como
+  `/workspaces`.
+
 ## Graphify en este repo
 
 `graphify-out/graph.json` ya existe (construido por Claude Code). Tratar
