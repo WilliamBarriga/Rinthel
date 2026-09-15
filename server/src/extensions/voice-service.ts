@@ -69,7 +69,7 @@ export async function stop() {
   error = '';
 }
 
-const managedModel = {id:'breeze',family:'breeze_tts',path:'/voice/models/breeze-q8_0.gguf',task:'tts',mode:'streaming',session_options:{'breeze_tts.reference_cache_slots':'1'}};
+const managedModel = {id:'breeze',family:'pocket_tts',path:'/voice/models/pocket-tts-spanish-q8_0.gguf',task:'tts',mode:'streaming'};
 export async function modelAction(action:'load'|'unload') {
   const response=await fetch(`http://127.0.0.1:7862/v1/models/${action}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action==='load'?managedModel:{id:'breeze'}),signal:AbortSignal.timeout(120000)});
   if(!response.ok)throw new Error(`Voice model ${action} failed (${response.status}): ${(await response.text()).slice(0,300)}`);
