@@ -40,8 +40,6 @@ _ENV_EXAMPLE_PATH = _REPO_ROOT / ".env.example"
 # por cada servicio nuevo.
 _SETTINGS_SERVICES: list[tuple[str, LocalProcessService | DockerComposeService]] = [
     ("llama", services.LLAMA_SERVICE),
-    ("whisper", services.WHISPER_SERVICE),
-    ("tts", services.TTS_SERVICE),
     ("understory", services.UNDERSTORY_SERVICE),
     ("pithagoras", services.PITHAGORAS_SERVICE),
 ]

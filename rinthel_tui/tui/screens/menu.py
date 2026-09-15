@@ -18,12 +18,7 @@ from textual.widgets.option_list import Option
 from rinthel_tui.branding.taglines import TAGLINES
 from rinthel_tui.config import CONFIG, EFFECTS_ENABLED
 from rinthel_tui.lifecycle import specs
-from rinthel_tui.lifecycle.services import (
-    PITHAGORAS_SERVICE,
-    TTS_SERVICE,
-    UNDERSTORY_SERVICE,
-    WHISPER_SERVICE,
-)
+from rinthel_tui.lifecycle.services import PITHAGORAS_SERVICE, UNDERSTORY_SERVICE
 from rinthel_tui.theme import palette
 from rinthel_tui.tui.effects.flicker import GlitchLabel
 from rinthel_tui.tui.effects.tagline import RotatingTagline
@@ -147,12 +142,6 @@ class MenuScreen(Screen):
                     yield ServiceBadge.for_service(UNDERSTORY_SERVICE, CONFIG, id="badge-understory")
                 if PITHAGORAS_SERVICE.enabled_of(CONFIG):
                     yield ServiceBadge.for_service(PITHAGORAS_SERVICE, CONFIG, id="badge-pithagoras")
-                if WHISPER_SERVICE.enabled_of(CONFIG):
-                    yield ServiceBadge.for_service(
-                        WHISPER_SERVICE, CONFIG, label="Whisper STT", id="badge-whisper"
-                    )
-                if TTS_SERVICE.enabled_of(CONFIG):
-                    yield ServiceBadge.for_service(TTS_SERVICE, CONFIG, label="TTS", id="badge-tts")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         # push_screen_wait exige correr dentro de un worker (get_current_worker()

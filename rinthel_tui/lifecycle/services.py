@@ -1,8 +1,7 @@
 """Instancias concretas de ``LocalProcessService``/``DockerComposeService``
 — un lugar único para agregar un servicio nuevo (llama-server local, o
-Understory/Pithagoras/whisper/tts vía docker compose) sin tocar
-``managed_service.py`` ni triplicar fases en ``phases.py`` como antes de
-este refactor.
+Understory/Pithagoras vía docker compose) sin tocar ``managed_service.py``
+ni triplicar fases en ``phases.py`` como antes de este refactor.
 """
 
 from rinthel_tui.config import RinthelConfig
@@ -98,41 +97,9 @@ PITHAGORAS_SERVICE = DockerComposeService(
     ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.pithagoras.port}/",
 )
 
-# whisper-stt y tts-piper son código/Dockerfile propios versionados en
-# services/ (no un clone externo como Understory/Pithagoras) — no llevan
-# build_args porque la imagen se construye una sola vez en INSTALL, no en
-# cada RELOAD.
-WHISPER_SERVICE = DockerComposeService(
-    display_name="whisper-server",
-    menu_label="WHISPER — STT",
-    wait_label="WHISPER",
-    kill_label="WHISPER — STT",
-    dir_of=lambda cfg: cfg.whisper.dir,
-    port_of=lambda cfg: cfg.whisper.port,
-    enabled_of=lambda cfg: cfg.whisper.enabled,
-    compose_service_name="whisper-stt",
-    extra_env_of=lambda cfg: {"PORT": str(cfg.whisper.port)},
-    ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.whisper.port}/",
-    default_ready_timeout=90,
-)
-
-TTS_SERVICE = DockerComposeService(
-    display_name="tts-piper",
-    menu_label="TTS — PIPER",
-    wait_label="TTS",
-    kill_label="TTS — PIPER",
-    dir_of=lambda cfg: cfg.tts.dir,
-    port_of=lambda cfg: cfg.tts.port,
-    enabled_of=lambda cfg: cfg.tts.enabled,
-    compose_service_name="tts-piper",
-    extra_env_of=lambda cfg: {"PORT": str(cfg.tts.port)},
-    ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.tts.port}/",
-    default_ready_timeout=30,
-)
-
 
 # Orden de aparición en BOOT/DOWN/RELOAD — agregar o sacar un servicio de
 # estas listas alcanza para que las 4 secuencias lo reflejen (specs.py no
 # tiene ninguna referencia hardcodeada a un servicio puntual).
 LOCAL_SERVICES: list[LocalProcessService] = [LLAMA_SERVICE]
-DOCKER_SERVICES: list[DockerComposeService] = [UNDERSTORY_SERVICE, PITHAGORAS_SERVICE, WHISPER_SERVICE, TTS_SERVICE]
+DOCKER_SERVICES: list[DockerComposeService] = [UNDERSTORY_SERVICE, PITHAGORAS_SERVICE]

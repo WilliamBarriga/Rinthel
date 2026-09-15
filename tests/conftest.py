@@ -42,12 +42,11 @@ def cfg(tmp_path):
     """RinthelConfig real (misma construcción que en prod vía default_config())
     con los paths de log redirigidos a tmp_path para no tocar el filesystem
     real del repo. RinthelConfig es composición de sub-configs congelados
-    (cfg.llama, cfg.whisper, cfg.tts, ...), así que hay que reemplazar cada
-    sub-config con dataclasses.replace, no el campo directamente."""
+    (cfg.llama, cfg.understory, cfg.pithagoras, ...), así que hay que
+    reemplazar cada sub-config con dataclasses.replace, no el campo
+    directamente."""
     base = default_config()
     return dataclasses.replace(
         base,
         llama=dataclasses.replace(base.llama, log=tmp_path / "llama-server.log"),
-        whisper=dataclasses.replace(base.whisper, dir=tmp_path / "whisper-stt"),
-        tts=dataclasses.replace(base.tts, dir=tmp_path / "tts-piper"),
     )

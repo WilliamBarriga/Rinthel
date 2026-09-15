@@ -24,19 +24,17 @@ def _labels(phase_specs):
 def test_boot_phases_includes_all_services_by_default(cfg):
     labels = _labels(specs.boot_phases(cfg))
     assert any("LLAMA-SERVER" in l for l in labels)
-    assert any("WHISPER" in l for l in labels)
-    assert any("TTS" in l for l in labels)
     assert any("UNDERSTORY" in l for l in labels)
     assert any("PITHAGORAS" in l for l in labels)
 
 
 def test_boot_phases_excludes_disabled_local_service(cfg):
-    disabled = _disable(cfg, "whisper")
+    disabled = _disable(cfg, "understory")
     labels = _labels(specs.boot_phases(disabled))
-    assert not any("WHISPER" in l for l in labels)
+    assert not any("UNDERSTORY" in l for l in labels)
     # el resto sigue presente — deshabilitar uno no toca a los demás.
     assert any("LLAMA-SERVER" in l for l in labels)
-    assert any("TTS" in l for l in labels)
+    assert any("PITHAGORAS" in l for l in labels)
 
 
 def test_boot_phases_excludes_disabled_docker_service(cfg):
@@ -47,9 +45,9 @@ def test_boot_phases_excludes_disabled_docker_service(cfg):
 
 
 def test_down_phases_excludes_disabled_service(cfg):
-    disabled = _disable(cfg, "tts")
+    disabled = _disable(cfg, "pithagoras")
     labels = _labels(specs.down_phases(disabled))
-    assert not any("TTS" in l for l in labels)
+    assert not any("PITHAGORAS" in l for l in labels)
     assert any("LLAMA-SERVER" in l for l in labels)
     assert any("UNDERSTORY" in l for l in labels)
 
@@ -76,12 +74,12 @@ def test_reload_phases_numbers_are_contiguous_by_default(cfg):
 
 
 def test_reload_phases_renumbers_without_gaps_when_service_disabled(cfg):
-    disabled = _disable(cfg, "whisper")
+    disabled = _disable(cfg, "understory")
     groups = specs.reload_phases(disabled)
     numbers = _all_numbers(groups)
     total = sum(len(g) for g in groups)
     assert [n for n, _ in numbers] == list(range(1, total + 1))
-    assert not any("WHISPER" in s.label for group in groups for s in group)
+    assert not any("UNDERSTORY" in s.label for group in groups for s in group)
 
 
 def test_reload_phases_excludes_llama_port_wait_when_llama_disabled(cfg):

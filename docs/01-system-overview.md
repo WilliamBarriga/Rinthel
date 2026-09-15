@@ -12,11 +12,13 @@ comunes, [`03-troubleshooting.md`](03-troubleshooting.md).
 | `llama-server` (CUDA, proceso local) | Sirve **Qwen3.6-35B-A3B-MTP** | `8080` |
 | Understory (Docker) | Capa de memoria MCP | `3800` |
 | Pithagoras (Docker) | Portal de tareas | `4100` |
-| whisper-stt (Docker) | Entrada por voz (STT) | `8090` |
-| tts-piper (Docker) | Salida hablada (TTS) | `8091` |
 
 `llama-server` corre como proceso local (no Docker) porque necesita acceso
 directo a la GPU. El resto son stacks `docker compose` independientes.
+
+La voz (STT+TTS) ya no la orquesta esta TUI — es un add-on autocontenido de
+Pithagoras (`pithagoras-voice`, ver `docs/guide/voice.md` en ese repo),
+activable/desactivable desde su propio Settings → Add-ons.
 
 ## Ciclo de vida (fases async)
 
@@ -32,7 +34,8 @@ componiéndose desde ruido, glitch reveal) → `MenuScreen`:
 [4] LOGS        -- Ver llama-server en vivo
 [5] CAPTURE     -- Capturar perfil MoE (routing profile)
 [6] MONITOR     -- Estado de servicios/Docker/GPU/CPU
-[7] EXIT        -- Cerrar terminal
+[7] CONFIGURAR  -- Servicios activos y parámetros
+[8] EXIT        -- Cerrar terminal
 ```
 
 ```

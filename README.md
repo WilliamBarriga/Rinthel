@@ -75,6 +75,10 @@ Reglas:
 - El modelo GGUF — por defecto **Qwen3.6-35B-A3B-MTP** en cuantización
   `Q4_K_XL` (ver `.env.example` para otros modelos)
 - Docker + `docker compose` si vas a levantar Understory/Pithagoras
+- `nvidia-container-toolkit` instalado y configurado (`nvidia-ctk runtime
+  configure --runtime=docker`) si vas a usar el add-on de voz de Pithagoras
+  (`pithagoras-voice` pide GPU vía Docker) — sin esto, `docker info` no
+  detecta el runtime NVIDIA y el add-on no puede levantar
 - Los repos de Understory y Pithagoras clonados en algún lado (paths
   configurables, ver [Configuración](#configuración))
 

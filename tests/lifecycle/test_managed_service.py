@@ -199,7 +199,7 @@ async def test_wait_ready_timeout_hint_only_fires_when_configured(monkeypatch, c
 
 async def test_wait_ready_no_hint_for_services_without_one(monkeypatch, cfg, report):
     monkeypatch.setattr(managed_service, "_http_ok", _async_false)
-    await managed_service.phase_wait_ready(cfg, report, service=services.WHISPER_SERVICE, timeout=0)
+    await managed_service.phase_wait_ready(cfg, report, service=services.UNDERSTORY_SERVICE, timeout=0)
     assert report.infos == []
 
 
@@ -237,7 +237,7 @@ async def test_wait_ready_backoff_does_not_overshoot_timeout(monkeypatch, cfg, r
     fake_sleep, slept = _recording_sleep()
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
     service = dataclasses.replace(
-        services.WHISPER_SERVICE,
+        services.UNDERSTORY_SERVICE,
         ready_poll_interval=2.0,
         ready_poll_backoff=3.0,
         ready_poll_max_interval=100.0,
@@ -252,7 +252,7 @@ async def test_wait_ready_stops_polling_as_soon_as_it_responds(monkeypatch, cfg,
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(managed_service, "_http_ok", _port_sequence([False, False, True]))
     service = dataclasses.replace(
-        services.TTS_SERVICE, ready_poll_interval=1.0, ready_poll_backoff=2.0, ready_poll_max_interval=10.0
+        services.PITHAGORAS_SERVICE, ready_poll_interval=1.0, ready_poll_backoff=2.0, ready_poll_max_interval=10.0
     )
     await managed_service.phase_wait_ready(cfg, report, service=service, timeout=30)
     assert slept == [1.0, 2.0]
@@ -296,9 +296,11 @@ def test_enabled_of_resolves_against_real_config(cfg, service):
 
 
 def test_enabled_of_custom_resolves_against_cfg(cfg):
-    service = dataclasses.replace(services.WHISPER_SERVICE, enabled_of=lambda c: c.whisper.port == cfg.whisper.port)
+    service = dataclasses.replace(
+        services.UNDERSTORY_SERVICE, enabled_of=lambda c: c.understory.port == cfg.understory.port
+    )
     assert service.enabled_of(cfg) is True
-    disabled_cfg = dataclasses.replace(cfg, whisper=dataclasses.replace(cfg.whisper, port=0))
+    disabled_cfg = dataclasses.replace(cfg, understory=dataclasses.replace(cfg.understory, port=0))
     assert service.enabled_of(disabled_cfg) is False
 
 

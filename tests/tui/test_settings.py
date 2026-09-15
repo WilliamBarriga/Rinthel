@@ -21,14 +21,14 @@ def test_stringify_other_types_use_str():
 def test_diff_overrides_excludes_values_that_match_current_config(cfg):
     edits = {
         "RINTHEL_LLAMA_PORT": str(cfg.llama.port),  # sin cambios reales
-        "RINTHEL_TTS_ENABLED": "false",  # sí cambió (default es true)
+        "RINTHEL_PITHAGORAS_ENABLED": "false",  # sí cambió (default es true)
     }
     overrides = _diff_overrides(cfg, edits)
-    assert overrides == {"RINTHEL_TTS_ENABLED": "false"}
+    assert overrides == {"RINTHEL_PITHAGORAS_ENABLED": "false"}
 
 
 def test_diff_overrides_empty_when_nothing_changed(cfg):
-    edits = {"RINTHEL_WHISPER_PORT": str(cfg.whisper.port)}
+    edits = {"RINTHEL_UNDERSTORY_PORT": str(cfg.understory.port)}
     assert _diff_overrides(cfg, edits) == {}
 
 

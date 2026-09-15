@@ -44,14 +44,14 @@ def test_default_config_respects_port_override(monkeypatch):
 
 def test_validate_raises_on_duplicate_ports():
     base = default_config()
-    cfg = dataclasses.replace(base, whisper=dataclasses.replace(base.whisper, port=base.llama.port))
+    cfg = dataclasses.replace(base, understory=dataclasses.replace(base.understory, port=base.llama.port))
     with pytest.raises(ConfigError, match="choca con"):
         cfg.validate()
 
 
 def test_validate_raises_on_port_out_of_range():
     base = default_config()
-    cfg = dataclasses.replace(base, tts=dataclasses.replace(base.tts, port=70000))
+    cfg = dataclasses.replace(base, pithagoras=dataclasses.replace(base.pithagoras, port=70000))
     with pytest.raises(ConfigError, match="fuera de rango"):
         cfg.validate()
 
@@ -78,8 +78,6 @@ def test_validate_warns_on_missing_paths_but_does_not_raise():
 def test_default_config_enables_all_services_by_default():
     cfg = default_config()
     assert cfg.llama.enabled is True
-    assert cfg.whisper.enabled is True
-    assert cfg.tts.enabled is True
     assert cfg.understory.enabled is True
     assert cfg.pithagoras.enabled is True
 
@@ -88,8 +86,6 @@ def test_default_config_enables_all_services_by_default():
     "env_var, attr",
     [
         ("RINTHEL_LLAMA_ENABLED", "llama"),
-        ("RINTHEL_WHISPER_ENABLED", "whisper"),
-        ("RINTHEL_TTS_ENABLED", "tts"),
         ("RINTHEL_UNDERSTORY_ENABLED", "understory"),
         ("RINTHEL_PITHAGORAS_ENABLED", "pithagoras"),
     ],
@@ -107,7 +103,5 @@ def test_validate_no_warnings_when_all_paths_exist(tmp_path):
     cfg = dataclasses.replace(
         base,
         llama=dataclasses.replace(base.llama, bin=existing, model=existing),
-        whisper=dataclasses.replace(base.whisper, dir=tmp_path),
-        tts=dataclasses.replace(base.tts, dir=tmp_path),
     )
     assert cfg.validate() == []

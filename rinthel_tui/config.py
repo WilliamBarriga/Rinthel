@@ -6,10 +6,10 @@ explícito como argumento (no leen el entorno global), así que no importa en
 qué orden ni en qué proceso/subshell corran.
 
 ``RinthelConfig`` es composición de un sub-config por servicio
-(``cfg.llama``, ``cfg.whisper``, ``cfg.tts``, ``cfg.understory``,
-``cfg.pithagoras``, ``cfg.moe``, ``cfg.install``) — cada uno con sus propios
+(``cfg.llama``, ``cfg.understory``, ``cfg.pithagoras``, ``cfg.moe``,
+``cfg.install``) — cada uno con sus propios
 campos, sin el prefijo repetido que tenían como campos sueltos del
-dataclass monolítico anterior (``cfg.whisper_port`` -> ``cfg.whisper.port``).
+dataclass monolítico anterior (``cfg.llama_port`` -> ``cfg.llama.port``).
 
 Todo campo puede overridearse con una var de entorno ``RINTHEL_*`` (ver
 ``.env.example``) — los nombres de esas vars NO cambiaron con este split,
@@ -188,34 +188,6 @@ MOE_FIELDS: list[Field] = [
 
 
 @dataclass(frozen=True)
-class WhisperConfig:
-    dir: Path
-    port: int
-    enabled: bool
-
-
-WHISPER_FIELDS: list[Field] = [
-    Field("dir", "RINTHEL_WHISPER_DIR", Path, "~/Rinthel-general/services/whisper-stt", exists=True),
-    Field("port", "RINTHEL_WHISPER_PORT", int, 8090, port=True),
-    Field("enabled", "RINTHEL_WHISPER_ENABLED", bool, True),
-]
-
-
-@dataclass(frozen=True)
-class TTSConfig:
-    dir: Path
-    port: int
-    enabled: bool
-
-
-TTS_FIELDS: list[Field] = [
-    Field("dir", "RINTHEL_TTS_DIR", Path, "~/Rinthel-general/services/tts-piper", exists=True),
-    Field("port", "RINTHEL_TTS_PORT", int, 8091, port=True),
-    Field("enabled", "RINTHEL_TTS_ENABLED", bool, True),
-]
-
-
-@dataclass(frozen=True)
 class UnderstoryConfig:
     dir: Path
     port: int
@@ -278,8 +250,6 @@ INSTALL_FIELDS: list[Field] = [
 _ENTRIES: list[tuple[str, list[Field]]] = [
     ("llama", LLAMA_FIELDS),
     ("moe", MOE_FIELDS),
-    ("whisper", WHISPER_FIELDS),
-    ("tts", TTS_FIELDS),
     ("understory", UNDERSTORY_FIELDS),
     ("pithagoras", PITHAGORAS_FIELDS),
     ("install", INSTALL_FIELDS),
@@ -295,8 +265,6 @@ class ConfigError(Exception):
 class RinthelConfig:
     llama: LlamaConfig
     moe: MoeConfig
-    whisper: WhisperConfig
-    tts: TTSConfig
     understory: UnderstoryConfig
     pithagoras: PithagorasConfig
     install: InstallConfig
@@ -376,14 +344,12 @@ def default_config() -> RinthelConfig:
         },
     )
     moe = _load(MoeConfig, MOE_FIELDS, cache_profile=moe_cache_profile)
-    whisper = _load(WhisperConfig, WHISPER_FIELDS)
-    tts = _load(TTSConfig, TTS_FIELDS)
     understory = _load(UnderstoryConfig, UNDERSTORY_FIELDS)
     pithagoras = _load(PithagorasConfig, PITHAGORAS_FIELDS)
     install = _load(InstallConfig, INSTALL_FIELDS)
 
     return RinthelConfig(
-        llama=llama, moe=moe, whisper=whisper, tts=tts,
+        llama=llama, moe=moe,
         understory=understory, pithagoras=pithagoras, install=install,
     )
 
