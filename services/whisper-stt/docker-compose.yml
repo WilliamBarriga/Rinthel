@@ -12,3 +12,8 @@ services:
       AUTH_TOKEN: ${AUTH_TOKEN}
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN}
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

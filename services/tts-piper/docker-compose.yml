@@ -9,3 +9,8 @@ services:
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN}
       MAX_TEXT_LENGTH: ${MAX_TEXT_LENGTH}
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

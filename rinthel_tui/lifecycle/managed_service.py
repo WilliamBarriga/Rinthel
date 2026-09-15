@@ -83,6 +83,21 @@ async def _http_ok(url: str, timeout: float = 2.0) -> bool:
     return await asyncio.to_thread(_check)
 
 
+_MAX_LOG_BYTES = 10 * 1024 * 1024  # 10MB — arriba de esto, rotamos antes de escribir más
+
+
+def _rotate_log_if_large(log: Path, max_bytes: int = _MAX_LOG_BYTES) -> None:
+    """Rota ``log`` a ``log.1`` (un solo backup) si ya pasó ``max_bytes`` —
+    sin esto, un log de un proceso de larga vida (llama-server corriendo
+    semanas) crece sin límite. Se llama en cada ``phase_spawn``, así que
+    cubre cada BOOT/RELOAD; no protege dentro de una misma corrida larga sin
+    reinicio, para eso hace falta logrotate a nivel de sistema."""
+    if log.exists() and log.stat().st_size > max_bytes:
+        rotated = log.with_name(log.name + ".1")
+        rotated.unlink(missing_ok=True)
+        log.rename(rotated)
+
+
 async def _wait_http_ready(
     url: str,
     *,
@@ -169,6 +184,7 @@ async def phase_spawn(cfg: RinthelConfig, report: PhaseReport, *, service: Local
         return
     log = service.log_of(cfg)
     log.parent.mkdir(parents=True, exist_ok=True)
+    _rotate_log_if_large(log)
     log_file = open(log, "ab")
     argv = service.build_argv(cfg)
     try:

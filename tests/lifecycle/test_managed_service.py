@@ -84,6 +84,57 @@ def _with_dir(service, directory):
     return dataclasses.replace(service, dir_of=lambda cfg: directory)
 
 
+# ── rotación de logs ──────────────────────────────────────────────────
+
+
+def test_rotate_log_if_large_rotates_oversized_file(tmp_path):
+    log = tmp_path / "big.log"
+    log.write_bytes(b"x" * (managed_service._MAX_LOG_BYTES + 1))
+    managed_service._rotate_log_if_large(log)
+    assert not log.exists()
+    assert (tmp_path / "big.log.1").read_bytes() == b"x" * (managed_service._MAX_LOG_BYTES + 1)
+
+
+def test_rotate_log_if_large_leaves_small_file_alone(tmp_path):
+    log = tmp_path / "small.log"
+    log.write_bytes(b"x" * 100)
+    managed_service._rotate_log_if_large(log)
+    assert log.exists()
+    assert not (tmp_path / "small.log.1").exists()
+
+
+def test_rotate_log_if_large_is_noop_when_missing(tmp_path):
+    log = tmp_path / "missing.log"
+    managed_service._rotate_log_if_large(log)
+    assert not log.exists()
+
+
+def test_rotate_log_if_large_replaces_existing_backup(tmp_path):
+    log = tmp_path / "big.log"
+    log.write_bytes(b"x" * (managed_service._MAX_LOG_BYTES + 1))
+    backup = tmp_path / "big.log.1"
+    backup.write_bytes(b"old backup")
+    managed_service._rotate_log_if_large(log)
+    assert backup.read_bytes() != b"old backup"
+
+
+@pytest.mark.parametrize("service", LOCAL_SERVICES, ids=_ids(LOCAL_SERVICES))
+async def test_spawn_rotates_oversized_log_before_appending(monkeypatch, cfg, report, service):
+    monkeypatch.setattr(managed_service, "_port_in_use", _async_false)
+    monkeypatch.setattr(
+        asyncio, "create_subprocess_exec", lambda *a, **k: _coro(_FakeProc(0, hang=True))
+    )
+    log = service.log_of(cfg)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_bytes(b"x" * (managed_service._MAX_LOG_BYTES + 1))
+
+    await managed_service.phase_spawn(cfg, report, service=service)
+
+    assert log.with_name(log.name + ".1").exists()
+    assert log.exists()
+    assert log.stat().st_size == 0
+
+
 # ── phase_spawn / phase_wait_ready / phase_kill (proceso local) ─────────
 
 
