@@ -36,6 +36,8 @@ def _llama_argv(cfg: RinthelConfig) -> list[str]:
         "--load-mode", cfg.llama.load_mode,
         "--spec-type", cfg.llama.spec_type,
         "--spec-draft-n-max", str(cfg.llama.spec_draft_n_max),
+        "--cache-type-k", cfg.llama.cache_type_k,
+        "--cache-type-v", cfg.llama.cache_type_v,
     ]
     if cfg.moe.cache_slots > 0:
         argv += [

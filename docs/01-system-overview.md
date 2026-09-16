@@ -1,48 +1,56 @@
 # System Overview
 
-Qué está corriendo, cómo arranca, y cómo está organizado el código. Para el
-*por qué* de los flags de inferencia de `llama-server`, ver
-[`02-hardware-optimization.md`](02-hardware-optimization.md). Para errores
-comunes, [`03-troubleshooting.md`](03-troubleshooting.md).
+What's running, how it boots, and how the code is organized. For the
+*why* behind `llama-server`'s inference flags, see
+[`02-hardware-optimization.md`](02-hardware-optimization.md). For common
+errors, see [`03-troubleshooting.md`](03-troubleshooting.md).
 
-Ver también: diagrama de [arquitectura en runtime](diagrams/out/rinthel-runtime.html)
-y de [fuentes de install/build](diagrams/out/rinthel-install-sources.html)
-(interactivos — abrir el `.html` en el navegador; generados con
-[Archify](https://github.com/tt-a1i/archify) a partir de
-`docs/diagrams/*.eraser`, ver [`docs/diagrams/README.md`](diagrams/README.md)
-para regenerarlos).
+See also: [runtime architecture diagram](diagrams/out/rinthel-runtime.html)
+and [install/build sources diagram](diagrams/out/rinthel-install-sources.html)
+(interactive — open the `.html` in a browser; generated with
+[Archify](https://github.com/tt-a1i/archify) from
+`docs/diagrams/*.eraser`, see [`docs/diagrams/README.md`](diagrams/README.md)
+to regenerate them).
 
-## Qué corre
+## What runs
 
-| Servicio | Rol | Puerto default |
+| Service | Role | Default port |
 |---|---|---|
-| `llama-server` (CUDA, proceso local) | Sirve **Qwen3.6-35B-A3B-MTP** | `8080` |
-| Understory (Docker) | Capa de memoria MCP | `3800` |
-| Pithagoras (Docker) | Portal de tareas | `4100` |
+| `llama-server` (CUDA, local process) | Serves **Qwen3.6-35B-A3B-MTP** | `8080` |
+| Understory (Docker) | MCP memory layer | `3800` |
+| Pithagoras (Docker) | Task portal | `4100` |
 
-`llama-server` corre como proceso local (no Docker) porque necesita acceso
-directo a la GPU. El resto son stacks `docker compose` independientes.
+`llama-server` runs as a local process (not Docker) because it needs
+direct GPU access. The rest are independent `docker compose` stacks.
 
-La voz (STT+TTS) es un add-on autocontenido de Pithagoras (`pithagoras-voice`,
-ver `docs/guide/voice.md` en ese repo), activable/desactivable desde su
-propio Settings → Add-ons.
+`llama-server` binds to `127.0.0.1` only. Understory and Pithagoras bind
+to `0.0.0.0` (required by `network_mode: host` in their compose files), so
+without `ufw` they'd be reachable from the whole LAN. `ufw` is what
+actually restricts those ports (`sudo ufw status verbose`); remote access
+(another network, phone) goes through Tailscale instead of exposing the
+port to the internet. If Tailscale connects but the port doesn't respond
+while on the same wifi, see [`03-troubleshooting.md`](03-troubleshooting.md).
 
-## Ciclo de vida (fases async)
+Voice (STT+TTS) is a self-contained Pithagoras add-on (`pithagoras-voice`,
+see `docs/guide/voice.md` in that repo), toggled from its own
+Settings → Add-ons.
 
-Todo el arranque/apagado se maneja en fases `async` explícitas —
-`rinthel_tui/lifecycle/`. La TUI arranca en `SplashScreen` (banner duotono
-componiéndose desde ruido, glitch reveal) → `MenuScreen`:
+## Lifecycle (async phases)
+
+The whole boot/shutdown flow is handled through explicit `async` phases —
+`rinthel_tui/lifecycle/`. The TUI starts at `SplashScreen` (duotone banner
+composing itself out of noise, glitch reveal) → `MenuScreen`:
 
 ```
-[0] INSTALL     -- Setup inicial (CUDA/modelo/Pithagoras/Understory)
-[1] BOOT        -- Levantar todo (up)
-[2] RELOAD      -- Apagar + reiniciar completo
-[3] TERMINATE   -- Shutdown total
-[4] LOGS        -- Ver llama-server en vivo
-[5] CAPTURE     -- Capturar perfil MoE (routing profile)
-[6] MONITOR     -- Estado de servicios/Docker/GPU/CPU
-[7] CONFIGURAR  -- Servicios activos y parámetros
-[8] EXIT        -- Cerrar terminal
+[0] INSTALL     -- Initial setup (CUDA/model/Pithagoras/Understory)
+[1] BOOT        -- Bring everything up
+[2] RELOAD      -- Full shutdown + restart
+[3] TERMINATE   -- Full shutdown
+[4] LOGS        -- Watch llama-server live
+[5] CAPTURE     -- Capture MoE profile (routing profile)
+[6] MONITOR     -- Services/Docker/GPU/CPU status
+[7] CONFIGURE   -- Active services and parameters
+[8] EXIT        -- Close terminal
 ```
 
 ```
@@ -51,55 +59,55 @@ SplashScreen (glitch reveal)
        ▼
    MenuScreen
        │
-       ├── [0] INSTALL   ──▶ 6 fases: preflight → build → pithagoras → understory
+       ├── [0] INSTALL   ──▶ 6 phases: preflight → build → pithagoras → understory
        ├── [1] BOOT       ──▶ docker → llama-server → understory → pithagoras
-       ├── [2] RELOAD     ──▶ 9 fases: shutdown completo → boot completo
-       └── [3] TERMINATE  ──▶ shutdown total
+       ├── [2] RELOAD     ──▶ 9 phases: full shutdown → full boot
+       └── [3] TERMINATE  ──▶ full shutdown
 ```
 
-## Estructura del proyecto
+## Project structure
 
 ```
 rinthel_tui/
 ├── app.py               # entry point — RinthelApp
-├── config.py             # RinthelConfig — defaults + carga de .env
-├── branding/              # banner ASCII duotono + animación de composición
+├── config.py             # RinthelConfig — defaults + .env loading
+├── branding/              # duotone ASCII banner + composition animation
 ├── theme/
-│   ├── palette.py          # paleta canónica — fuente numérica única
+│   ├── palette.py          # canonical palette — single source of truth
 │   └── cyberpunk_theme.py
 ├── tui/
 │   ├── screens/            # Splash, Menu, PhaseRunner, Logs, Monitor, Capture, Reload, Farewell
 │   ├── widgets/             # sparkline, service_badge, checklist
 │   └── effects/             # flicker, transitions, intro
 └── lifecycle/
-    ├── install.py           # fases [0] INSTALL
-    ├── phases.py            # fases BOOT/DOWN/RELOAD
-    ├── services.py            # argv builders + LocalProcessService/DockerComposeService por servicio
-    ├── specs.py              # listas declarativas de fases
-    ├── runner.py             # ejecutor async con progreso por fase
-    └── capture_profile.py    # captura de perfiles de ruteo MoE
+    ├── install.py           # [0] INSTALL phases
+    ├── phases.py            # BOOT/DOWN/RELOAD phases
+    ├── services.py            # argv builders + LocalProcessService/DockerComposeService per service
+    ├── specs.py              # declarative phase lists
+    ├── runner.py             # async runner with per-phase progress
+    └── capture_profile.py    # MoE routing profile capture
 ```
 
-## Ecosistema — paleta compartida
+## Ecosystem — shared palette
 
-La paleta duotono (`theme/palette.py`) no es solo de este repo: el frontend
-web de Pithagoras (`web/src/index.css`) la implementa como
-`[data-theme="cyberpunk"]` con los mismos valores hex. Cambiar un color acá
-sin actualizar el otro lado los desincroniza visualmente.
+The duotone palette (`theme/palette.py`) isn't just this repo's:
+Pithagoras' web frontend (`web/src/index.css`) implements it as
+`[data-theme="cyberpunk"]` with the same hex values. Changing a color here
+without updating the other side desyncs them visually.
 
-| Rol | Hex |
+| Role | Hex |
 |-----|-----|
-| Electric purple (marco, texto) | `#BF00FF` |
-| Neon yellow (cara iluminada) | `#FCEE0A` |
+| Electric purple (frame, text) | `#BF00FF` |
+| Neon yellow (lit face) | `#FCEE0A` |
 | Electric cyan | `#7CFCFF` |
 | Neon magenta | `#EA00D9` |
-| Night city purple-black (fondo) | `#0D0221` |
+| Night city purple-black (background) | `#0D0221` |
 
-## Desarrollo
+## Development
 
-`scripts/test_phases.py` corre fases individuales o listas completas contra
-la infraestructura real, sin pasar por Textual — útil para probar cambios en
-`lifecycle/` rápido:
+`scripts/test_phases.py` runs individual phases or full lists against
+real infrastructure, without going through Textual — useful for testing
+`lifecycle/` changes quickly:
 
 ```bash
 .venv/bin/python scripts/test_phases.py list
@@ -108,5 +116,5 @@ la infraestructura real, sin pasar por Textual — útil para probar cambios en
 .venv/bin/python scripts/test_phases.py wait_port_free --port 8080
 ```
 
-No es un test suite de `pytest` (opera contra Docker/GPU reales, no hay
-mocks) — es intencional que viva en `scripts/`, no en `tests/`.
+It's not a `pytest` test suite (it operates against real Docker/GPU, no
+mocks) — that's intentional, it lives in `scripts/`, not `tests/`.

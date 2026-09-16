@@ -136,6 +136,8 @@ class LlamaConfig:
     spec_type: str
     spec_draft_n_max: int
     sched_async_cpu: bool
+    cache_type_k: str
+    cache_type_v: str
 
 
 # ``env`` queda afuera — se sintetiza a partir de ``moe_cache_profile``
@@ -167,6 +169,8 @@ LLAMA_FIELDS: list[Field] = [
     Field("spec_type", "RINTHEL_SPEC_TYPE", str, "draft-mtp"),
     Field("spec_draft_n_max", "RINTHEL_SPEC_DRAFT_N_MAX", int, 2),
     Field("sched_async_cpu", "RINTHEL_SCHED_ASYNC_CPU", bool, True),
+    Field("cache_type_k", "RINTHEL_CACHE_TYPE_K", str, "f16"),
+    Field("cache_type_v", "RINTHEL_CACHE_TYPE_V", str, "f16"),
 ]
 
 

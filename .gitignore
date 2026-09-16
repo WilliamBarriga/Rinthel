@@ -238,6 +238,9 @@ archify-demo/
 .pi/agent/skills/*
 !.pi/agent/skills/graphify/
 
+# wayfinder — local markdown issue tracker, not source
+.scratch/
+
 # news — curated Reddit/LLM roundups, regenerable from web searches
 news/
 

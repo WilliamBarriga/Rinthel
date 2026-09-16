@@ -1,115 +1,120 @@
-# Diagramas de arquitectura
+# Architecture diagrams
 
-Los diagramas de este repo se escriben en una variante del DSL de
-[Eraser](https://docs.eraser.io/docs/syntax) (`*.eraser`) y se compilan a
-HTML interactivo con [Archify](https://github.com/tt-a1i/archify).
+The diagrams in this repo are written in a variant of
+[Eraser](https://docs.eraser.io/docs/syntax)'s DSL (`*.eraser`) and
+compiled to interactive HTML with [Archify](https://github.com/tt-a1i/archify).
 
-Para arrancar ya: [`QUICKSTART.md`](QUICKSTART.md). Para la sintaxis
-completa del subset soportado: [`SYNTAX.md`](SYNTAX.md).
+To get started right away: [`QUICKSTART.md`](QUICKSTART.md). For the full
+syntax of the supported subset: [`SYNTAX.md`](SYNTAX.md).
 
-## Requisitos
+## Requirements
 
-- Node.js (para correr Archify) — ya en PATH en este host.
-- El paquete de Archify en `~/archify-pkg` (fuera de este repo). Si no está:
-  clonar/descomprimir ese paquete en el home del usuario; el path está
-  hardcodeado en `_ir_builder.py::ARCHIFY_BIN`.
-- Python stdlib únicamente — no hace falta `pip install` nada para compilar.
+- Node.js (to run Archify) — already on PATH on this host.
+- The Archify package at `~/archify-pkg` (outside this repo). If it's not
+  there: clone/unpack that package into the user's home; the path is
+  hardcoded in `_ir_builder.py::ARCHIFY_BIN`.
+- Python stdlib only — no `pip install` needed to compile.
 
-## Flujo de trabajo
+## Workflow
 
 ```bash
-# 1. Compilar el .eraser a JSON IR de Archify, validando geometría/labels
+# 1. Compile the .eraser into Archify's JSON IR, validating geometry/labels
 .venv/bin/python docs/diagrams/eraser_to_archify.py \
     docs/diagrams/rinthel-runtime.eraser \
     docs/diagrams/out/rinthel-runtime.architecture.json \
     --validate
 
-# 2. Si validate no tira errores, renderizar a HTML autocontenido
+# 2. If validate raises no errors, render to self-contained HTML
 node ~/archify-pkg/archify/bin/archify.mjs render architecture \
     docs/diagrams/out/rinthel-runtime.architecture.json \
     docs/diagrams/out/rinthel-runtime.html
 ```
 
-Abrir el `.html` resultante en el navegador — es interactivo (zoom, hover,
-leyenda) y se ve muy por encima de un PNG de Graphviz.
+Open the resulting `.html` in a browser — it's interactive (zoom, hover,
+legend) and looks far better than a Graphviz PNG.
 
-## Escribir un diagrama nuevo
+## Writing a new diagram
 
-Sintaxis base (subset de Eraser real):
+Base syntax (subset of real Eraser):
 
 ```
-title: Mi Diagrama
+title: My Diagram
 direction: right
 
-Nodo A [icon: server]
-Nodo B [icon: postgresql]
+Node A [icon: server]
+Node B [icon: postgresql]
 
-Grupo {
-  Nodo C [icon: docker]
+Group {
+  Node C [icon: docker]
 }
 
-Nodo A > Nodo B: hace una query
-Nodo A <> Nodo B: bidireccional
+Node A > Node B: makes a query
+Node A <> Node B: bidirectional
 ```
 
-- `icon:` primero intenta matchear el catálogo de marcas reales de Archify
-  (`node ~/archify-pkg/archify/bin/archify.mjs brands`) — si el nombre del
-  nodo o el icono coincide con algo como `postgresql`, `docker`, `github`,
-  `python`, `discord`, `telegram`, sale el logo real. Si no matchea, cae a
-  una tabla chica de palabras genéricas (`mail`, `monitor`, `server`,
-  `database`, `network`, `cloud`, `queue`...).
-- `{ }` anida grupos (se traducen a `boundaries` de Archify, tipo región).
-- `A > B`, `A < B`, `A <> B` son las tres formas de conexión. `<>` genera
-  dos conexiones (Archify no tiene una sola flecha bidireccional nativa).
+- `icon:` first tries to match Archify's real brand catalog
+  (`node ~/archify-pkg/archify/bin/archify.mjs brands`) — if the node's
+  name or icon matches something like `postgresql`, `docker`, `github`,
+  `python`, `discord`, `telegram`, the real logo shows up. If it doesn't
+  match, it falls back to a small table of generic words (`mail`,
+  `monitor`, `server`, `database`, `network`, `cloud`, `queue`...).
+- `{ }` nests groups (translated to Archify `boundaries`, a region type).
+- `A > B`, `A < B`, `A <> B` are the three connection forms. `<>`
+  generates two connections (Archify has no native single bidirectional
+  arrow).
 
-### Dos extensiones sobre el Eraser real
+### Two extensions over real Eraser
 
-Archify necesita un `componentType` tipado
-(frontend/backend/database/cloud/security/messagebus/external) para su
-leyenda, algo que el Eraser real no tiene. Por eso:
+Archify needs a typed `componentType`
+(frontend/backend/database/cloud/security/messagebus/external) for its
+legend, which real Eraser doesn't have. Hence:
 
-- `Nodo [icon: x, type: database]` — fuerza el tipo cuando ni la marca ni el
-  icono genérico lo infieren bien (ej: Slack no tiene logo en el catálogo
-  bundleado — `Slack [icon: slack, type: external]`).
-- `Nodo [icon: x, row: 0, col: 2]` — fija la celda del grid cuando el
-  layering automático (rank por distancia topológica desde los edges) elige
-  mal. Dejarlo afuera salvo que `--validate` se queje.
-- Una conexión puede terminar en `{style: dashed, labelDy: -20}` — pasa
-  directo a la conexión de Archify (`style` mapea a `variant`; también
-  soporta `fromSide`, `toSide`, `route`, `labelDx`, `labelSegment`).
+- `Node [icon: x, type: database]` — forces the type when neither the
+  brand nor the generic icon infers it well (e.g. Slack has no logo in
+  the bundled catalog — `Slack [icon: slack, type: external]`).
+- `Node [icon: x, row: 0, col: 2]` — pins the grid cell when automatic
+  layering (rank by topological distance from the edges) picks wrong.
+  Leave it out unless `--validate` complains.
+- A connection can end with `{style: dashed, labelDy: -20}` — passed
+  straight through to Archify's connection (`style` maps to `variant`;
+  it also supports `fromSide`, `toSide`, `route`, `labelDx`,
+  `labelSegment`).
 
-## Cuando `--validate` se queja
+## When `--validate` complains
 
-Archify no hace auto-layout real — coloca por grid (`row`/`col`) y rutea
-automático, pero el ruteo/labels pueden pisarse con topologías densas
-(columnas con muchos nodos apilados, conexiones que saltan varias columnas).
-`--validate` tira diagnósticos exactos con la coordenada y el fix sugerido
-(`labelDy +54` / `labelAt [x, y]` / etc.) — iterar así:
+Archify doesn't do real auto-layout — it places nodes on a grid
+(`row`/`col`) and routes automatically, but routing/labels can overlap
+with dense topologies (columns with many stacked nodes, connections
+spanning several columns). `--validate` prints exact diagnostics with the
+coordinate and a suggested fix (`labelDy +54` / `labelAt [x, y]` / etc.)
+— iterate like this:
 
-1. Ver qué conexión/nodo señala el diagnóstico (**ojo**: para conexiones
-   con label default, a veces el label que se pisa con una caja es el de
-   *otra* conexión que pasa cerca, no el de la conexión "obvia" — confirmar
-   el par `from`/`to` exacto en el mensaje antes de tocar nada).
-2. Si es un label pisando una caja: `{labelDy: N}` con el valor sugerido.
-3. Si es una conexión cruzando un nodo ajeno: mover ese nodo con
-   `row`/`col` explícito, o probar `{route: orthogonal-v}` /
+1. See which connection/node the diagnostic points at (**careful**: for
+   connections with a default label, sometimes the label overlapping a
+   box belongs to *another* nearby connection, not the "obvious" one —
+   confirm the exact `from`/`to` pair in the message before touching
+   anything).
+2. If it's a label overlapping a box: `{labelDy: N}` with the suggested
+   value.
+3. If it's a connection crossing an unrelated node: move that node with
+   an explicit `row`/`col`, or try `{route: orthogonal-v}` /
    `{fromSide: ..., toSide: ...}`.
-4. Repetir `--validate` hasta 0 errores. Los warnings (`composition
-   standard: N warnings`) son opcionales, no bloquean.
+4. Repeat `--validate` until 0 errors. Warnings (`composition standard: N
+   warnings`) are optional, non-blocking.
 
-## Archivos
+## Files
 
 ```
 docs/diagrams/
-├── _ir_builder.py               # lógica compartida: dict -> IR de Archify
-├── eraser_to_archify.py         # parser del DSL + CLI (el único entrypoint)
-├── rinthel-runtime.eraser        # fuente: arquitectura en runtime
-├── rinthel-install-sources.eraser # fuente: de dónde saca cosas INSTALL
+├── _ir_builder.py               # shared logic: dict -> Archify IR
+├── eraser_to_archify.py         # DSL parser + CLI (the only entrypoint)
+├── rinthel-runtime.eraser        # source: runtime architecture
+├── rinthel-install-sources.eraser # source: where INSTALL pulls things from
 ├── examples/
-│   └── mail-integration.eraser   # ejemplo de sintaxis, no es de Rinthel
-└── out/                          # generado — *.architecture.json + *.html
+│   └── mail-integration.eraser   # syntax example, not Rinthel-specific
+└── out/                          # generated — *.architecture.json + *.html
 ```
 
-`out/` se puede regenerar en cualquier momento con el flujo de arriba; se
-versiona igual que se versionaban los PNGs antes, para que los links desde
-`docs/01-system-overview.md` funcionen sin tener que correr nada.
+`out/` can be regenerated at any time with the workflow above; it's
+versioned the same way the PNGs used to be, so links from
+`docs/01-system-overview.md` work without having to run anything.

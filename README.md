@@ -17,171 +17,169 @@
 
 </div>
 
-TUI (Textual) para gestionar el ciclo de vida de la infraestructura local de
-Rinthel: un `llama-server` (CUDA) sirviendo **Qwen3.6-35B-A3B-MTP** más los
-stacks Docker de **Understory** (capa de memoria MCP) y **Pithagoras**
-(portal de tareas).
+TUI (Textual) for managing the lifecycle of Rinthel's local infrastructure: a
+`llama-server` (CUDA) serving **Qwen3.6-35B-A3B-MTP** plus the Docker stacks
+for **Understory** (MCP memory layer) and **Pithagoras** (task portal).
 
-**Documentación:**
+**Documentation:**
 
-- [`docs/01-system-overview.md`](docs/01-system-overview.md) — qué corre,
-  fases del ciclo de vida, estructura del código.
+- [`docs/01-system-overview.md`](docs/01-system-overview.md) — what runs,
+  lifecycle phases, code structure.
 - [`docs/02-hardware-optimization.md`](docs/02-hardware-optimization.md) —
-  por qué cada flag de inferencia vale lo que vale (VRAM, quant, MoE cache).
-- [`docs/03-troubleshooting.md`](docs/03-troubleshooting.md) — errores
-  comunes y cómo resolverlos.
+  why each inference flag is set the way it is (VRAM, quant, MoE cache).
+- [`docs/03-troubleshooting.md`](docs/03-troubleshooting.md) — common errors
+  and how to fix them.
 
-## `[0]` Instalación rápida (máquina nueva)
+## `[0]` Quick install (new machine)
 
-Un solo comando, sin más dependencia previa que poder instalar Python:
+One command, with no prior dependency beyond being able to install Python:
 
 ```bash
-git clone <url-de-este-repo> && cd Rinthel-general && ./install.sh
+git clone <this-repo-url> && cd Rinthel-general && ./install.sh
 ```
 
-`install.sh` detecta (o instala, vía PPA `deadsnakes` si hace falta) Python
-3.13+, crea el venv y arranca la TUI. Desde ahí, **`[0] INSTALL`** en el menú
-corre 6 fases:
+`install.sh` detects (or installs, via the `deadsnakes` PPA if needed)
+Python 3.13+, creates the venv and starts the TUI. From there,
+**`[0] INSTALL`** in the menu runs 6 phases:
 
-| Fase | Qué hace |
+| Phase | What it does |
 |------|----------|
-| `1/6` PREFLIGHT | Detecta GPU/CUDA/cmake/docker |
-| `2/6` LLAMA.CPP | Clona el fork custom (branch `perf`) |
-| `3/6` LLAMA.CPP | Build CUDA, arquitectura `native` (no fija) |
-| `4/6` MODELO GGUF | Descarga el modelo configurado |
-| `5/6` PITHAGORAS | Clone + configuración |
-| `6/6` UNDERSTORY | Scaffold + configuración |
+| `1/6` PREFLIGHT | Detects GPU/CUDA/cmake/docker |
+| `2/6` LLAMA.CPP | Clones the custom fork (`perf` branch) |
+| `3/6` LLAMA.CPP | CUDA build, `native` architecture (not pinned) |
+| `4/6` MODEL GGUF | Downloads the configured model |
+| `5/6` PITHAGORAS | Clone + configuration |
+| `6/6` UNDERSTORY | Scaffold + configuration |
 
-Reglas:
+Rules:
 
-- `NVIDIA driver` + `CUDA toolkit` deben estar instalados de antes —
-  `[0] INSTALL` los detecta pero no los instala.
-- Es re-ejecutable: cada fase es idempotente, omite lo que ya existe.
-- `INSTALL` configura, no bootea — al terminar, usá `[1] BOOT` para levantar
-  todo.
+- `NVIDIA driver` + `CUDA toolkit` must already be installed —
+  `[0] INSTALL` detects them but doesn't install them.
+- It's re-runnable: each phase is idempotent, skips what already exists.
+- `INSTALL` configures, it doesn't boot — once it's done, use `[1] BOOT` to
+  bring everything up.
 
-## Requisitos de hardware
+## Hardware requirements
 
-- GPU NVIDIA con al menos **8 GB de VRAM** (para el offload CUDA de
-  `llama-server`; el resto de las capas del modelo corre en CPU vía
-  `--n-cpu-moe`, ajustable en `.env`).
-- Al menos **32 GB de RAM**.
+- NVIDIA GPU with at least **8 GB of VRAM** (for `llama-server`'s CUDA
+  offload; the rest of the model's layers run on CPU via `--n-cpu-moe`,
+  adjustable in `.env`).
+- At least **32 GB of RAM**.
 
-## Requisitos
+## Requirements
 
 - Python 3.13+
-- Un build de `llama.cpp` con soporte CUDA (`llama-server`, y opcionalmente
-  `llama-moe-trace` para capturar perfiles de ruteo MoE)
-- El modelo GGUF — por defecto **Qwen3.6-35B-A3B-MTP** en cuantización
-  `Q4_K_XL` (ver `.env.example` para otros modelos)
-- Docker + `docker compose` si vas a levantar Understory/Pithagoras
-- `nvidia-container-toolkit` instalado y configurado (`nvidia-ctk runtime
-  configure --runtime=docker`) si vas a usar el add-on de voz de Pithagoras
-  (`pithagoras-voice` pide GPU vía Docker) — sin esto, `docker info` no
-  detecta el runtime NVIDIA y el add-on no puede levantar (ver
-  `docs/guide/voice.md` en el repo de Pithagoras)
-- Los repos de Understory y Pithagoras clonados en algún lado (paths
-  configurables, ver [Configuración](#configuración))
+- A `llama.cpp` build with CUDA support (`llama-server`, and optionally
+  `llama-moe-trace` for capturing MoE routing profiles)
+- The GGUF model — default is **Qwen3.6-35B-A3B-MTP** at `Q4_K_XL`
+  quantization (see `.env.example` for other models)
+- Docker + `docker compose` if you're going to run Understory/Pithagoras
+- `nvidia-container-toolkit` installed and configured (`nvidia-ctk runtime
+  configure --runtime=docker`) if you're going to use Pithagoras' voice
+  add-on (`pithagoras-voice` requires GPU via Docker) — without this,
+  `docker info` won't detect the NVIDIA runtime and the add-on can't start
+  (see `docs/guide/voice.md` in the Pithagoras repo)
+- The Understory and Pithagoras repos cloned somewhere (configurable
+  paths, see [Configuration](#configuration))
 
-## Instalación
+## Installation
 
-**Modo dev** (recomendado si vas a tocar el código):
+**Dev mode** (recommended if you're going to touch the code):
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
 
-**Modo prod** (solo para usar el comando `rinthel`):
+**Prod mode** (just to use the `rinthel` command):
 
 ```bash
 pip install .
 ```
 
-## Uso
+## Usage
 
-Con el venv de dev, desde la raíz del repo. Detalle del ciclo de vida
-completo (fases, diagrama, servicios) en
+With the dev venv, from the repo root. Full lifecycle details (phases,
+diagram, services) in
 [`docs/01-system-overview.md`](docs/01-system-overview.md):
 
 ```bash
 ./rinthel-boot.sh
 ```
 
-`rinthel-boot.sh` resuelve `.venv/bin/python` relativo a sí mismo — **hay que
-ejecutarlo siempre desde (o con cwd en) la raíz del repo**; no está pensado
-para symlinkearse ni copiarse a otro lugar.
+`rinthel-boot.sh` resolves `.venv/bin/python` relative to itself — **it
+must always be run from (or with cwd inside) the repo root**; it's not
+meant to be symlinked or copied elsewhere.
 
-Con una instalación vía `pip install .` (no requiere venv local ni cwd
-específico):
+With a `pip install .` installation (no local venv or specific cwd
+required):
 
 ```bash
 rinthel
 ```
 
-Ambos arrancan la misma `RinthelApp`: `SplashScreen` (banner duotono
-componiéndose desde ruido, glitch reveal) → `MenuScreen`:
+Both start the same `RinthelApp`: `SplashScreen` (duotone banner composing
+itself out of noise, glitch reveal) → `MenuScreen`:
 
 ```
-[0] INSTALL     -- Setup inicial (CUDA/modelo/Pithagoras/Understory)
-[1] BOOT        -- Levantar todo (up)
-[2] RELOAD      -- Apagar + reiniciar completo
-[3] TERMINATE   -- Shutdown total
-[4] LOGS        -- Ver llama-server en vivo
-[5] CAPTURE     -- Capturar perfil MoE (routing profile)
-[6] MONITOR     -- Estado de servicios/Docker/GPU/CPU
-[7] CONFIGURAR  -- Servicios activos y parámetros
-[8] EXIT        -- Cerrar terminal
+[0] INSTALL     -- Initial setup (CUDA/model/Pithagoras/Understory)
+[1] BOOT        -- Bring everything up
+[2] RELOAD      -- Full shutdown + restart
+[3] TERMINATE   -- Full shutdown
+[4] LOGS        -- Watch llama-server live
+[5] CAPTURE     -- Capture MoE profile (routing profile)
+[6] MONITOR     -- Services/Docker/GPU/CPU status
+[7] CONFIGURE   -- Active services and parameters
+[8] EXIT        -- Close terminal
 ```
 
-## Configuración
+## Configuration
 
-Todos los paths, puertos y flags de inferencia de `llama-server` tienen un
-default embebido en `rinthel_tui/config.py::default_config()`. Para
-ajustarlos a tu máquina, copiá `.env.example` a `.env` en la raíz del repo y
-descomentá/ajustá lo que necesites:
+All of `llama-server`'s paths, ports and inference flags have an embedded
+default in `rinthel_tui/config.py::default_config()`. To tune them for
+your machine, copy `.env.example` to `.env` at the repo root and
+uncomment/adjust what you need:
 
 ```bash
 cp .env.example .env
 ```
 
-`.env` se carga automáticamente al importar `rinthel_tui.config` (vía
-`python-dotenv`, buscando hacia arriba desde el cwd) y nunca se commitea
-(está en `.gitignore`). Sin `.env`, se usan los defaults embebidos de
-`rinthel_tui/config.py::default_config()`.
+`.env` loads automatically when `rinthel_tui.config` is imported (via
+`python-dotenv`, searching upward from the cwd) and is never committed
+(it's in `.gitignore`). Without a `.env`, the embedded defaults from
+`rinthel_tui/config.py::default_config()` are used.
 
-Variables disponibles: paths de binario/modelo/logs, puertos de cada
-servicio, y todos los flags de inferencia (`-c`, `--temp`, `--top-p`,
-`--n-cpu-moe`, `--threads`, etc.) — ver `.env.example` para la lista
-completa con sus valores, y
-[`docs/02-hardware-optimization.md`](docs/02-hardware-optimization.md) para
-el porqué de cada uno de los flags de inferencia.
+Available variables: binary/model/log paths, each service's port, and all
+the inference flags (`-c`, `--temp`, `--top-p`, `--n-cpu-moe`, `--threads`,
+etc.) — see `.env.example` for the full list with their values, and
+[`docs/02-hardware-optimization.md`](docs/02-hardware-optimization.md) for
+why each inference flag is set the way it is.
 
-Si `RINTHEL_LLAMA_BIN` o `RINTHEL_LLAMA_MODEL_PATH` apuntan a algo que no
-existe, la app **no crashea al arrancar** — solo avisa por stderr. El fallo
-real (con mensaje claro) ocurre recién si elegís BOOT y la fase de spawn de
-llama-server falla de verdad. Más casos en
+If `RINTHEL_LLAMA_BIN` or `RINTHEL_LLAMA_MODEL_PATH` point at something
+that doesn't exist, the app **doesn't crash on startup** — it just warns
+on stderr. The real failure (with a clear message) only happens if you
+pick BOOT and the llama-server spawn phase actually fails. More cases in
 [`docs/03-troubleshooting.md`](docs/03-troubleshooting.md).
 
-## Créditos
+## Credits
 
-Tres piezas de infraestructura que `[0] INSTALL` levanta son de
+Three pieces of infrastructure that `[0] INSTALL` sets up are from
 [thecodacus](https://github.com/thecodacus):
 
-- **Understory** (capa de memoria MCP) — corre desde la imagen publicada
+- **Understory** (MCP memory layer) — runs from the published image
   [`ghcr.io/thecodacus/understory`](https://github.com/thecodacus/understory),
-  no se clona ni se compila desde fuente, ver
-  `phase_install_setup_understory` en `rinthel_tui/lifecycle/install.py`.
-- **Pithagoras** (portal de tareas) — el trabajo es de
-  [thecodacus](https://github.com/thecodacus/pithagoras); se usa vía mi fork
-  [`WilliamBarriga/pithagoras`](https://github.com/WilliamBarriga/pithagoras).
-- El fork custom de **`llama.cpp`** (branch `perf`, default
+  not cloned or built from source, see `phase_install_setup_understory` in
+  `rinthel_tui/lifecycle/install.py`.
+- **Pithagoras** (task portal) — the work is
+  [thecodacus](https://github.com/thecodacus/pithagoras)'s; used via my
+  fork [`WilliamBarriga/pithagoras`](https://github.com/WilliamBarriga/pithagoras).
+- The custom **`llama.cpp`** fork (`perf` branch, default
   `RINTHEL_LLAMACPP_REPO_URL=https://github.com/thecodacus/llama.cpp.git`)
-  que se clona y compila con soporte CUDA.
+  that gets cloned and built with CUDA support.
 
-## Licencia
+## License
 
-MIT — ver [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE).
 
 ---
 

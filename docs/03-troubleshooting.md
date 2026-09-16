@@ -1,33 +1,48 @@
 # Troubleshooting
 
 > [!NOTE]
-> **"error: no se encontró .venv/bin/python"** al correr `rinthel-boot.sh` —
-> no creaste el venv, o lo estás corriendo desde otro directorio. Creá el
-> venv en la raíz del repo (ver `README.md` → Instalación).
+> **"error: .venv/bin/python not found"** when running `rinthel-boot.sh`
+> — you haven't created the venv, or you're running it from a different
+> directory. Create the venv at the repo root (see `README.md` →
+> Installation).
 
 > [!TIP]
-> **Puerto ocupado** — BOOT no relanza `llama-server` si ya hay algo
-> escuchando en `RINTHEL_LLAMA_PORT` (default `8080`); usa RELOAD o
-> TERMINATE primero, o cambiá el puerto en `.env`.
+> **Port already in use** — BOOT won't relaunch `llama-server` if
+> something is already listening on `RINTHEL_LLAMA_PORT` (default
+> `8080`); use RELOAD or TERMINATE first, or change the port in `.env`.
 
 > [!WARNING]
-> **"llama-server murió al instante"** — casi siempre un flag inválido o el
-> modelo/bin no existen de verdad; revisá el log en `RINTHEL_LLAMA_LOG_PATH`
-> (default `logs/llama-server.log`).
+> **"llama-server died instantly"** — almost always an invalid flag or
+> the model/binary don't actually exist; check the log at
+> `RINTHEL_LLAMA_LOG_PATH` (default `logs/llama-server.log`).
 
 > [!WARNING]
-> **`CUDA error: out of memory` en el primer request real** (no al arrancar
-> el server, sí en cuanto llega el primer prompt de tamaño normal) — casi
-> siempre es la ventana de contexto (`-c`) o el expert-cache pidiendo más
-> VRAM de la que hay libre. Ver
-> [`02-hardware-optimization.md`](02-hardware-optimization.md) para el
-> margen de seguridad de 900 MiB y qué flag bajar primero.
+> **`CUDA error: out of memory` on the first real request** (not on
+> startup, but as soon as a normal-sized prompt comes in) — almost always
+> the context window (`-c`), the batch size, or the expert cache asking
+> for more VRAM than is actually free. See
+> [`02-hardware-optimization.md`](02-hardware-optimization.md) for the
+> ~300 MiB safety margin and which flag to lower first.
 
 > [!NOTE]
-> **Modelo/binario no encontrado** — la app avisa por stderr al arrancar
-> pero no bloquea el menú; ajustá `RINTHEL_LLAMA_BIN`/`RINTHEL_LLAMA_MODEL_PATH`
-> en `.env`.
+> **Model/binary not found** — the app warns on stderr at startup but
+> doesn't block the menu; adjust
+> `RINTHEL_LLAMA_BIN`/`RINTHEL_LLAMA_MODEL_PATH` in `.env`.
 
 > [!IMPORTANT]
-> **Docker daemon inactivo** — la fase de BOOT lo detecta y corta con
-> instrucciones (`sudo systemctl start docker`) antes de tocar nada más.
+> **Docker daemon not running** — the BOOT phase detects it and stops
+> with instructions (`sudo systemctl start docker`) before touching
+> anything else.
+
+> [!TIP]
+> **Tailscale connects but the port doesn't respond (same wifi)** —
+> `ufw` filters by subnet (e.g. `192.168.1.0/24`), and that traffic
+> arrives with a source IP from Tailscale's range (`100.x.x.x`), not your
+> LAN, even though it's on the same physical network. Add `sudo ufw allow
+> in on tailscale0 to any port <port>` instead of (or in addition to) the
+> subnet rule.
+
+> [!NOTE]
+> **Phone shows "offline" in `tailscale status` with no config change**
+> — not a network issue, the app got killed in the background. Check
+> battery optimization (and autostart, on MIUI/Xiaomi) for Tailscale.
