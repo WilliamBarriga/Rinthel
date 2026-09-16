@@ -223,7 +223,7 @@ fn draw_menu(f: &mut Frame, app: &App) {
     let area = f.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(5), Constraint::Min(0)])
+        .constraints([Constraint::Length(5), Constraint::Min(0), Constraint::Length(3)])
         .split(area);
 
     let title = Paragraph::new(vec![
@@ -258,6 +258,11 @@ fn draw_menu(f: &mut Frame, app: &App) {
             .border_style(Style::default().fg(app.colors.dim)),
     );
     f.render_widget(list, chunks[1]);
+
+    f.render_widget(
+        Paragraph::new(status_line(app)).block(Block::default().borders(Borders::ALL)),
+        chunks[2],
+    );
 }
 
 fn draw_monitor(f: &mut Frame, app: &App) {
@@ -375,7 +380,14 @@ fn draw_monitor(f: &mut Frame, app: &App) {
     let log = Paragraph::new(log_text).block(Block::default().borders(Borders::ALL).title(" log_tail (llama-server) "));
     f.render_widget(log, mid_cols[1]);
 
-    let status_line = if let Some(name) = app.command_in_flight {
+    f.render_widget(Paragraph::new(status_line(app)).block(Block::default().borders(Borders::ALL)), rows[4]);
+}
+
+/// Feedback de boot/terminate — antes solo la pintaba `draw_monitor`, así
+/// que dispararlos desde el menú (Enter sobre BOOT/TERMINATE) no mostraba
+/// nada hasta cambiar de pantalla. Factoreado para que ambas screens lo usen.
+fn status_line(app: &App) -> Line<'static> {
+    if let Some(name) = app.command_in_flight {
         Line::from(Span::styled(
             format!(" {name}... (bloqueante, protocolo POST) "),
             Style::default().fg(app.colors.warn),
@@ -389,9 +401,12 @@ fn draw_monitor(f: &mut Frame, app: &App) {
             Style::default().fg(app.colors.success),
         ))
     } else {
-        Line::from(Span::styled(" b=boot  t=terminate  Esc=menu  q=salir ", Style::default().fg(app.colors.dim)))
-    };
-    f.render_widget(Paragraph::new(status_line).block(Block::default().borders(Borders::ALL)), rows[4]);
+        let hint = match app.screen {
+            Screen::Menu => " ↑↓=mover  Enter=elegir  q=salir ",
+            Screen::Monitor => " b=boot  t=terminate  Esc=menu  q=salir ",
+        };
+        Line::from(Span::styled(hint, Style::default().fg(app.colors.dim)))
+    }
 }
 
 fn draw(f: &mut Frame, app: &App) {
