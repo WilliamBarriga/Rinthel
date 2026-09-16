@@ -10,13 +10,24 @@
       40,
       80
     ],
-    "cols": 3,
+    "cols": 4,
     "gapX": 100,
     "gapY": 90,
-    "cellW": 362,
+    "cellW": 479,
     "cellH": 64
   },
   "components": [
+    {
+      "id": "tarkark",
+      "type": "frontend",
+      "label": "Tarkark (user)",
+      "size": [
+        128,
+        60
+      ],
+      "col": 0,
+      "row": 0
+    },
     {
       "id": "browser_client",
       "type": "frontend",
@@ -25,7 +36,7 @@
         128,
         60
       ],
-      "col": 0,
+      "col": 1,
       "row": 0
     },
     {
@@ -37,19 +48,8 @@
         206,
         60
       ],
-      "col": 0,
+      "col": 1,
       "row": 1
-    },
-    {
-      "id": "net_fix",
-      "type": "security",
-      "label": "understory-net-fix.service (systemd, NAT/iptables)",
-      "size": [
-        362,
-        60
-      ],
-      "col": 0,
-      "row": 2
     },
     {
       "id": "llama_server",
@@ -59,7 +59,7 @@
         258,
         60
       ],
-      "col": 1,
+      "col": 2,
       "row": 2
     },
     {
@@ -70,7 +70,7 @@
         329,
         60
       ],
-      "col": 1,
+      "col": 2,
       "row": 0
     },
     {
@@ -81,7 +81,7 @@
         264,
         60
       ],
-      "col": 2,
+      "col": 3,
       "row": 9
     },
     {
@@ -93,7 +93,7 @@
         154,
         60
       ],
-      "col": 2,
+      "col": 3,
       "row": 0
     },
     {
@@ -104,77 +104,42 @@
         219,
         60
       ],
-      "col": 2,
+      "col": 3,
       "row": 1
-    },
-    {
-      "id": "discord",
-      "type": "external",
-      "label": "Discord",
-      "brand": "discord",
-      "size": [
-        120,
-        60
-      ],
-      "col": 2,
-      "row": 2
-    },
-    {
-      "id": "slack",
-      "type": "external",
-      "label": "Slack",
-      "size": [
-        120,
-        60
-      ],
-      "col": 2,
-      "row": 3
-    },
-    {
-      "id": "telegram",
-      "type": "external",
-      "label": "Telegram",
-      "brand": "telegram",
-      "size": [
-        120,
-        60
-      ],
-      "col": 2,
-      "row": 4
     },
     {
       "id": "whisper_cpp",
       "type": "backend",
-      "label": "whisper.cpp :8178",
-      "size": [
-        147,
-        60
-      ],
-      "col": 2,
-      "row": 5
-    },
-    {
-      "id": "audio_cpp",
-      "type": "backend",
-      "label": "breeze / audio.cpp :7861 / :7860",
+      "label": "whisper.cpp (managed, CPU) :8188",
       "size": [
         245,
         60
       ],
-      "col": 2,
-      "row": 6
+      "col": 3,
+      "row": 2
+    },
+    {
+      "id": "audio_cpp",
+      "type": "backend",
+      "label": "audio.cpp / Breeze-TTS-2 (managed, GPU) :7862",
+      "size": [
+        329,
+        60
+      ],
+      "col": 3,
+      "row": 3
     },
     {
       "id": "understory",
       "type": "backend",
-      "label": "Understory ghcr.io/thecodacus/understory, :3800",
+      "label": "Understory ghcr.io/thecodacus/understory (network_mode: host, :3800)",
       "brand": "docker",
       "size": [
-        342,
+        479,
         60
       ],
-      "col": 2,
-      "row": 7
+      "col": 3,
+      "row": 4
     }
   ],
   "boundaries": [
@@ -200,9 +165,6 @@
         "pithagoras",
         "portal_db",
         "tailscale",
-        "discord",
-        "slack",
-        "telegram",
         "whisper_cpp",
         "audio_cpp"
       ]
@@ -215,9 +177,6 @@
         "pithagoras",
         "portal_db",
         "tailscale",
-        "discord",
-        "slack",
-        "telegram",
         "whisper_cpp",
         "audio_cpp"
       ]
@@ -228,20 +187,26 @@
       "wraps": [
         "rinthel_tui",
         "llama_server",
-        "net_fix",
         "understory",
         "pithagoras",
         "portal_db",
         "tailscale",
-        "discord",
-        "slack",
-        "telegram",
         "whisper_cpp",
         "audio_cpp"
       ]
     }
   ],
   "connections": [
+    {
+      "from": "tarkark",
+      "to": "rinthel_tui",
+      "label": "starts (terminal, host machine)"
+    },
+    {
+      "from": "tarkark",
+      "to": "browser_client",
+      "label": "uses (separate from the TUI)"
+    },
     {
       "from": "rinthel_tui",
       "to": "llama_server",
@@ -251,7 +216,7 @@
       "from": "rinthel_tui",
       "to": "understory",
       "label": "docker compose up/down",
-      "labelDy": 49
+      "labelDy": 122
     },
     {
       "from": "rinthel_tui",
@@ -278,13 +243,8 @@
     {
       "from": "understory",
       "to": "llama_server",
-      "label": "host.docker.internal -> NAT -> 127.0.0.1:8080"
-    },
-    {
-      "from": "net_fix",
-      "to": "understory",
-      "label": "enables",
-      "variant": "dashed"
+      "label": "HTTP :8080, loopback (host-networked)",
+      "labelDy": 47
     },
     {
       "from": "pithagoras",
@@ -299,24 +259,6 @@
     {
       "from": "pithagoras",
       "to": "tailscale",
-      "variant": "dashed"
-    },
-    {
-      "from": "pithagoras",
-      "to": "discord",
-      "label": "optional channel",
-      "variant": "dashed"
-    },
-    {
-      "from": "pithagoras",
-      "to": "slack",
-      "label": "optional channel",
-      "variant": "dashed"
-    },
-    {
-      "from": "pithagoras",
-      "to": "telegram",
-      "label": "optional channel",
       "variant": "dashed"
     },
     {

@@ -1,48 +1,43 @@
 title: Rinthel Runtime Architecture
 direction: right
 
+Tarkark [icon: user, type: client, label: "Tarkark (user)"]
 Browser client [icon: browser]
-External LLM [icon: cloud, type: external, label: "External LLM (OpenRouter/Anthropic)", row: 9, col: 2]
+External LLM [icon: cloud, type: external, label: "External LLM (OpenRouter/Anthropic)", row: 9, col: 3]
 
 Host Machine {
   Rinthel TUI [icon: python, label: "Rinthel TUI (orchestrator)"]
-  llama-server [icon: server, label: "llama-server (CUDA) 127.0.0.1:8080", row: 2, col: 1]
-  net-fix [icon: firewall, type: security, label: "understory-net-fix.service (systemd, NAT/iptables)"]
+  llama-server [icon: server, label: "llama-server (CUDA) 127.0.0.1:8080", row: 2, col: 2]
 
   Docker Engine {
     Understory stack {
-      Understory [icon: docker, label: "Understory ghcr.io/thecodacus/understory, :3800"]
+      Understory [icon: docker, label: "Understory ghcr.io/thecodacus/understory (network_mode: host, :3800)"]
     }
 
     Pithagoras stack {
       Pithagoras [icon: server, label: "Pithagoras portal (network_mode: host, :4100)"]
       portal-db [icon: sqlite, label: "portal.db (SQLite)"]
       Tailscale [icon: vpn, type: security, label: "Tailscale sidecar (optional)"]
-      Discord [icon: discord]
-      Slack [icon: slack, type: external]
-      Telegram [icon: telegram]
 
       Voice add-on {
-        whisper.cpp [icon: server, label: "whisper.cpp :8178"]
-        audio.cpp [icon: server, label: "breeze / audio.cpp :7861 / :7860"]
+        whisper.cpp [icon: server, label: "whisper.cpp (managed, CPU) :8188"]
+        audio.cpp [icon: server, label: "audio.cpp / Breeze-TTS-2 (managed, GPU) :7862"]
       }
     }
   }
 }
 
+Tarkark > Rinthel TUI: starts (terminal, host machine)
+Tarkark > Browser client: uses (separate from the TUI)
 Rinthel TUI > llama-server: spawns (LocalProcessService)
-Rinthel TUI > Understory: docker compose up/down {labelDy: 49}
+Rinthel TUI > Understory: docker compose up/down {labelDy: 122}
 Rinthel TUI > Pithagoras: docker compose up/down
 Browser client > Pithagoras: HTTPS/SSE :4100
 Pithagoras > llama-server: HTTP :8080, OpenAI-compatible {fromSide: bottom, toSide: top}
 Pithagoras > Understory: MCP :3800, bearer token
-Understory > llama-server: host.docker.internal -> NAT -> 127.0.0.1:8080
-net-fix > Understory: enables {style: dotted}
+Understory > llama-server: HTTP :8080, loopback (host-networked) {labelDy: 47}
 Pithagoras > External LLM: fallback (PI_PROVIDER/PI_MODEL) {style: dashed}
 Pithagoras > portal-db
 Pithagoras > Tailscale {style: dashed}
-Pithagoras > Discord: optional channel {style: dashed}
-Pithagoras > Slack: optional channel {style: dashed}
-Pithagoras > Telegram: optional channel {style: dashed}
 Pithagoras > whisper.cpp: /inference
 Pithagoras > audio.cpp: /v1/audio/speech
