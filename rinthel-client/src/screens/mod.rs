@@ -5,6 +5,7 @@
 //! principal en `app.rs`.
 
 pub mod capture;
+pub mod exit_prompt;
 pub mod farewell;
 pub mod logs;
 pub mod menu;
@@ -26,6 +27,9 @@ pub enum ScreenId {
     Capture,
     /// Checklist + log de BOOT/TERMINATE — sesión 05 del port-map.
     PhaseRunner,
+    /// "¿Apagar también el daemon?" — sesión 12, antes de `Farewell` en el
+    /// camino `[N] SALIR` (`MenuAction::Quit`).
+    ExitPrompt,
     /// Cierre de sesión (mockup sesión 02, cableado sesión 05).
     Farewell,
     /// `[N] CONFIGURAR` — sesión 09 del port-map.
@@ -144,6 +148,10 @@ pub fn draw(id: ScreenId, f: &mut Frame, app: &App) {
         ScreenId::Logs => logs::draw(f, app),
         ScreenId::Capture => capture::draw(f, app),
         ScreenId::PhaseRunner => phase_runner::draw(f, app),
+        ScreenId::ExitPrompt => {
+            let remaining = app.exit_prompt_timer.as_ref().map(|t| t.remaining_secs()).unwrap_or(0);
+            exit_prompt::draw(f, app.colors.fg, app.colors.dim, remaining);
+        }
         ScreenId::Farewell => {
             let now = std::time::Instant::now();
             let text = app.farewell_message.as_ref().map(|g| g.text(now)).unwrap_or(farewell::MESSAGE);
@@ -188,6 +196,7 @@ fn status_line(app: &App) -> Line<'static> {
             ScreenId::Logs => " q/Esc=volver ",
             ScreenId::Capture => " Esc=volver (al terminar) ",
             ScreenId::PhaseRunner => " Esc=volver (al terminar) ",
+            ScreenId::ExitPrompt => " Y/n=elegir  q=salir sin apagar ",
             ScreenId::Farewell => " cerrando sesión… ",
             // Nunca se pinta en la práctica — Settings tiene su propia
             // línea de estado (`settings::draw_status`, save en curso/error

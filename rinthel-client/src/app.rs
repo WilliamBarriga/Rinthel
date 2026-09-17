@@ -22,6 +22,7 @@ use crate::protocol::{
     self, CommandResult, ConfigPayload, ConfigSaveResult, CpuRamSample, DockerContainer, Envelope, GpuSample,
     PhaseLog, PhaseStatus, Theme,
 };
+use crate::screens::exit_prompt::ExitPromptTimer;
 use crate::screens::farewell::FarewellTimer;
 use crate::screens::settings::{self, DetailRow};
 use crate::screens::{self, MenuAction, ScreenId};
@@ -226,6 +227,10 @@ pub struct App {
     pub phase_rows: Vec<(String, String)>,
     /// Log en vivo de la corrida — (kind, message), igual que `phase_log`.
     pub phase_log: VecDeque<(String, String)>,
+    /// `ScreenId::ExitPrompt` (sesión 12) — `Some` mientras se espera la
+    /// elección de apagar o no el daemon, consultado cada vuelta del loop
+    /// igual que `farewell_timer`.
+    pub exit_prompt_timer: Option<ExitPromptTimer>,
     pub farewell_timer: Option<FarewellTimer>,
     pub farewell_next: FarewellNext,
     /// Reveal del mensaje de farewell (`GlitchLabel` en Python) — se crea
@@ -286,6 +291,7 @@ impl App {
             phase_title: "",
             phase_rows: Vec::new(),
             phase_log: VecDeque::new(),
+            exit_prompt_timer: None,
             farewell_timer: None,
             farewell_next: FarewellNext::Quit,
             farewell_message: None,
@@ -461,6 +467,35 @@ impl App {
         }
     }
 
+    /// Resuelve `ScreenId::ExitPrompt` (sesión 12) — llamado tanto por la
+    /// elección explícita (tecla Y/N) como por el timeout (default: apaga).
+    /// Siempre sigue a `FarewellScreen`, nunca la reemplaza (grillado con
+    /// Tarkark, ver doc-comment de `screens::exit_prompt`).
+    fn resolve_exit_prompt(&mut self, shutdown_daemon: bool) {
+        self.exit_prompt_timer = None;
+        if shutdown_daemon {
+            Self::spawn_daemon_stop();
+        }
+        self.screen = ScreenId::Farewell;
+        self.begin_farewell(FarewellNext::Quit);
+    }
+
+    /// `./rinthel-boot.sh --stop` (sesión 12) — apagado del daemon,
+    /// fire-and-forget: no se espera a que termine ni se reporta el
+    /// resultado (grillado con Tarkark: reusa la lógica de sesión 11 — pid
+    /// vivo, poll, pidfile stale — en vez de duplicarla leyendo el pidfile
+    /// desde Rust). Asume cwd = raíz del repo, la misma asunción que ya
+    /// documenta `rinthel-boot.sh` (que a su vez `exec`ea este binario sin
+    /// hacer `cd`). stdout/stderr a `Stdio::null()` para no pisar la
+    /// alternate screen del cliente con los `echo` del script.
+    fn spawn_daemon_stop() {
+        let _ = tokio::process::Command::new("./rinthel-boot.sh")
+            .arg("--stop")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    }
+
     /// `FarewellTimer::start()` + el `GlitchLabel(MESSAGE, frames=14)` que
     /// lo acompaña — mismo instante de arranque para ambos, así el reveal
     /// coincide con el inicio real de los 5s de farewell.
@@ -551,12 +586,14 @@ impl App {
                 self.config_save_in_flight = false;
                 tokio::spawn(fetch_config(tx.clone()));
             }
-            // menu.py:183 — EXIT pasa por FarewellScreen antes de salir,
-            // igual que TERMINATE (grillado con Tarkark, sesión 05). Sin
-            // SignalNoise antes (Python tampoco lo dispara para "exit").
+            // menu.py:183 — EXIT pasaba directo a FarewellScreen (sesión
+            // 05); sesión 12 intercala el prompt de apagado del daemon
+            // antes, sin equivalente en Python (grillado con Tarkark, ver
+            // doc-comment de `screens::exit_prompt`). Sin SignalNoise antes
+            // (Python tampoco lo dispara para "exit").
             MenuAction::Quit => {
-                self.screen = ScreenId::Farewell;
-                self.begin_farewell(FarewellNext::Quit);
+                self.screen = ScreenId::ExitPrompt;
+                self.exit_prompt_timer = Some(ExitPromptTimer::start());
             }
         }
     }
@@ -717,6 +754,15 @@ impl App {
                     self.apply(ev);
                 }
 
+                // Sin elección a tiempo, apaga todo por default (a prueba
+                // de olvidos, ticket 04) — mismo patrón de "consultar el
+                // timer cada vuelta" que `farewell_timer`, abajo.
+                if self.screen == ScreenId::ExitPrompt
+                    && self.exit_prompt_timer.as_ref().is_some_and(|t| t.is_done())
+                {
+                    self.resolve_exit_prompt(true);
+                }
+
                 // `FarewellScreen._finish` de Python (set_timer + dismiss()):
                 // acá no hay callback, así que se consulta el timer cada
                 // vuelta del loop en vez de agendar uno.
@@ -758,6 +804,17 @@ impl App {
                                 // igual que Logs: mientras se edita un campo de
                                 // texto, 'q' es contenido del campo, no salir.
                                 (ScreenId::Settings, code) => self.handle_settings_key(code, &tx),
+                                // Sesión 12 — 'q' sigue cayendo al catch-all
+                                // de abajo desde acá también (sale sin
+                                // apagar el daemon, sin pasar por esta
+                                // elección): no se lo especial-casó, mismo
+                                // criterio que el resto del cliente.
+                                (ScreenId::ExitPrompt, KeyCode::Char('y') | KeyCode::Enter) => {
+                                    self.resolve_exit_prompt(true);
+                                }
+                                (ScreenId::ExitPrompt, KeyCode::Char('n')) => {
+                                    self.resolve_exit_prompt(false);
+                                }
                                 (_, KeyCode::Char('q')) => self.should_quit = true,
                                 (ScreenId::Menu, KeyCode::Up) => {
                                     self.menu_selected = screens::prev_selectable(self.menu_selected);
