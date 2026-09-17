@@ -11,13 +11,15 @@
 *"All those moments will be lost in time, like tears in the rain.*
 *Time to die."*
 
-[![Python 3.13+](https://img.shields.io/badge/python-3.13+-BF00FF?style=flat-square)](https://www.python.org/)
-[![Textual](https://img.shields.io/badge/TUI-textual-FCEE0A?style=flat-square)](https://github.com/Textualize/textual)
+[![Rust](https://img.shields.io/badge/client-ratatui-DEA584?style=flat-square)](https://github.com/ratatui-org/ratatui)
+[![Python 3.13+](https://img.shields.io/badge/daemon-python_3.13+-BF00FF?style=flat-square)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-7CFCFF?style=flat-square)](LICENSE)
 
 </div>
 
-TUI (Textual) for managing the lifecycle of Rinthel's local infrastructure: a
+TUI (Rust/Ratatui client talking to a Python/FastAPI daemon over a local
+WebSocket+REST protocol — see `.scratch/ratatui-migration/`) for managing
+the lifecycle of Rinthel's local infrastructure: a
 `llama-server` (CUDA) serving **Qwen3.6-35B-A3B-MTP** plus the Docker stacks
 for **Understory** (MCP memory layer) and **Pithagoras** (task portal).
 
@@ -39,8 +41,9 @@ git clone <this-repo-url> && cd Rinthel-general && ./install.sh
 ```
 
 `install.sh` detects (or installs, via the `deadsnakes` PPA if needed)
-Python 3.13+, creates the venv and starts the TUI. From there,
-**`[0] INSTALL`** in the menu runs 6 phases:
+Python 3.13+, creates the venv, bootstraps Rust (`rustup`, non-interactive)
+if `cargo` is missing, builds the client (`cargo build --release`), and
+starts the TUI. From there, **`INSTALL`** in the menu runs 6 phases:
 
 | Phase | What it does |
 |------|----------|
@@ -53,10 +56,10 @@ Python 3.13+, creates the venv and starts the TUI. From there,
 
 Rules:
 
-- `NVIDIA driver` + `CUDA toolkit` must already be installed —
-  `[0] INSTALL` detects them but doesn't install them.
+- `NVIDIA driver` + `CUDA toolkit` must already be installed — `INSTALL`
+  detects them but doesn't install them.
 - It's re-runnable: each phase is idempotent, skips what already exists.
-- `INSTALL` configures, it doesn't boot — once it's done, use `[1] BOOT` to
+- `INSTALL` configures, it doesn't boot — once it's done, use `BOOT` to
   bring everything up.
 
 ## Hardware requirements
@@ -68,7 +71,8 @@ Rules:
 
 ## Requirements
 
-- Python 3.13+
+- Python 3.13+ (daemon) + a Rust toolchain (client) — `install.sh`
+  bootstraps both (`rustup`, non-interactive, if `cargo` is missing)
 - A `llama.cpp` build with CUDA support (`llama-server`, and optionally
   `llama-moe-trace` for capturing MoE routing profiles)
 - The GGUF model — default is **Qwen3.6-35B-A3B-MTP** at `Q4_K_XL`
@@ -84,54 +88,50 @@ Rules:
 
 ## Installation
 
-**Dev mode** (recommended if you're going to touch the code):
+`./install.sh` (see above) does the whole thing. To do it by hand:
+
+**Daemon** (Python — dev mode, recommended if you're going to touch the code):
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
 
-**Prod mode** (just to use the `rinthel` command):
+**Client** (Rust):
 
 ```bash
-pip install .
+cd rinthel-client && cargo build --release
 ```
 
 ## Usage
 
-With the dev venv, from the repo root. Full lifecycle details (phases,
-diagram, services) in
+From the repo root. Full lifecycle details (phases, diagram, services) in
 [`docs/01-system-overview.md`](docs/01-system-overview.md):
 
 ```bash
 ./rinthel-boot.sh
 ```
 
-`rinthel-boot.sh` resolves `.venv/bin/python` relative to itself — **it
-must always be run from (or with cwd inside) the repo root**; it's not
-meant to be symlinked or copied elsewhere.
-
-With a `pip install .` installation (no local venv or specific cwd
-required):
-
-```bash
-rinthel
-```
-
-Both start the same `RinthelApp`: `SplashScreen` (duotone banner composing
-itself out of noise, glitch reveal) → `MenuScreen`:
+`rinthel-boot.sh` resolves `.venv/bin/python` and `rinthel-client/target/release/rinthel`
+relative to itself — **it must always be run from (or with cwd inside) the
+repo root**; it's not meant to be symlinked or copied elsewhere. It
+autostarts the daemon if it isn't already listening (pidfile at
+`.rinthel-daemon.pid`, survives the client closing) and then launches the
+Rust client, which opens straight into the menu (no splash screen):
 
 ```
-[0] INSTALL     -- Initial setup (CUDA/model/Pithagoras/Understory)
-[1] BOOT        -- Bring everything up
-[2] RELOAD      -- Full shutdown + restart
-[3] TERMINATE   -- Full shutdown
-[4] LOGS        -- Watch llama-server live
-[5] CAPTURE     -- Capture MoE profile (routing profile)
-[6] MONITOR     -- Services/Docker/GPU/CPU status
-[7] CONFIGURE   -- Active services and parameters
-[8] EXIT        -- Close terminal
+MONITOR     -- Services/Docker/GPU/CPU status
+BOOT        -- Bring everything up
+RELOAD      -- Full shutdown + restart
+TERMINATE   -- Full shutdown
+CONFIGURAR  -- Active services and parameters
+CAPTURE     -- Capture MoE profile (routing profile)
+LOGS        -- Watch llama-server live
+INSTALL     -- Initial setup (CUDA/model/Pithagoras/Understory)
+SALIR       -- Exit (prompts whether to also stop the daemon)
 ```
+
+To stop the daemon without opening the client: `./rinthel-boot.sh --stop`.
 
 ## Configuration
 
