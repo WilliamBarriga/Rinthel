@@ -338,7 +338,13 @@ fn draw_monitor(f: &mut Frame, app: &App) {
         spark_cols[1],
     );
     let gpu_title = if app.gpu.available {
-        format!(" GPU {:.0}% {:.0}°C ", app.gpu.utilization.unwrap_or(0.0), app.gpu.temperature.unwrap_or(0.0))
+        format!(
+            " GPU {:.0}% {:.0}°C  {:.0}/{:.0}MiB ",
+            app.gpu.utilization.unwrap_or(0.0),
+            app.gpu.temperature.unwrap_or(0.0),
+            app.gpu.memory_used.unwrap_or(0.0),
+            app.gpu.memory_total.unwrap_or(0.0),
+        )
     } else {
         " GPU N/A ".to_string()
     };
@@ -396,10 +402,16 @@ fn status_line(app: &App) -> Line<'static> {
         Line::from(Span::styled(format!(" {err} "), Style::default().fg(app.colors.hot)))
     } else if let Some((name, result)) = &app.last_command_result {
         let ok_count = result.results.iter().filter(|r| r.ok).count();
-        Line::from(Span::styled(
-            format!(" {name}: {ok_count}/{} ok ", result.results.len()),
-            Style::default().fg(app.colors.success),
-        ))
+        match result.results.iter().find(|r| !r.ok) {
+            Some(failed) => Line::from(Span::styled(
+                format!(" {name}: {ok_count}/{} ok — {} falló: {} ", result.results.len(), failed.service, failed.message),
+                Style::default().fg(app.colors.hot),
+            )),
+            None => Line::from(Span::styled(
+                format!(" {name}: {ok_count}/{} ok ", result.results.len()),
+                Style::default().fg(app.colors.success),
+            )),
+        }
     } else {
         let hint = match app.screen {
             Screen::Menu => " ↑↓=mover  Enter=elegir  q=salir ",
