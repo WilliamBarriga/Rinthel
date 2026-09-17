@@ -107,7 +107,10 @@ async fn boot_then_terminate_over_real_wire() {
     let text = first.into_text().expect("frame no-texto");
     let env: Envelope = serde_json::from_str(&text).expect("sobre {type,data} inválido");
     assert!(
-        matches!(env.kind.as_str(), "docker_status" | "gpu_sample" | "cpu_ram_sample" | "log_line"),
+        matches!(
+            env.kind.as_str(),
+            "docker_status" | "gpu_sample" | "cpu_ram_sample" | "log_line" | "llama_status"
+        ),
         "tipo de mensaje inesperado: {}",
         env.kind
     );
@@ -161,6 +164,13 @@ async fn boot_then_terminate_over_real_wire() {
     assert!(
         kinds.iter().any(|k| k == "phase_log"),
         "no llegó ningún phase_log durante boot+terminate; vistos: {kinds:?}"
+    );
+    // Sesión 08: llama_status es un estado parado (loop cada 2s mientras haya
+    // cliente conectado, no un evento de la corrida) — boot+terminate contra
+    // los dobles tarda bastante más que eso, así que debería aparecer solo.
+    assert!(
+        kinds.iter().any(|k| k == "llama_status"),
+        "no llegó ningún llama_status durante boot+terminate; vistos: {kinds:?}"
     );
 }
 

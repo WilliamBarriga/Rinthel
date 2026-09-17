@@ -203,6 +203,39 @@ async def test_wait_ready_no_hint_for_services_without_one(monkeypatch, cfg, rep
     assert report.infos == []
 
 
+# ── check_ready (chequeo puntual para telemetría en vivo, sesión 08) ────
+
+
+@pytest.mark.parametrize("service", LOCAL_SERVICES + DOCKER_SERVICES, ids=_ids(LOCAL_SERVICES + DOCKER_SERVICES))
+async def test_check_ready_true_when_http_ok(monkeypatch, cfg, service):
+    monkeypatch.setattr(managed_service, "_http_ok", _async_true)
+    assert await managed_service.check_ready(cfg, service) is True
+
+
+@pytest.mark.parametrize("service", LOCAL_SERVICES + DOCKER_SERVICES, ids=_ids(LOCAL_SERVICES + DOCKER_SERVICES))
+async def test_check_ready_false_when_http_fails(monkeypatch, cfg, service):
+    monkeypatch.setattr(managed_service, "_http_ok", _async_false)
+    assert await managed_service.check_ready(cfg, service) is False
+
+
+async def test_check_ready_false_without_ready_url(cfg):
+    service = dataclasses.replace(services.UNDERSTORY_SERVICE, ready_url_of=None)
+    assert await managed_service.check_ready(cfg, service) is False
+
+
+async def test_check_ready_does_not_retry(monkeypatch, cfg):
+    calls = 0
+
+    async def fake_http_ok(url, timeout=2.0):
+        nonlocal calls
+        calls += 1
+        return False
+
+    monkeypatch.setattr(managed_service, "_http_ok", fake_http_ok)
+    await managed_service.check_ready(cfg, services.LLAMA_SERVICE)
+    assert calls == 1
+
+
 # ── backoff exponencial del polling de wait_ready ─────────────────────────
 
 

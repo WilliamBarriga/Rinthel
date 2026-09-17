@@ -6,7 +6,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-use rinthel_client_spike::protocol::{CommandResult, CpuRamSample, DockerStatus, Envelope, GpuSample, LogLine, Theme};
+use rinthel_client_spike::protocol::{
+    CommandResult, CpuRamSample, DockerStatus, Envelope, GpuSample, LlamaStatus, LogLine, Theme,
+};
 
 fn fixture(name: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -50,6 +52,13 @@ fn log_line_shape() {
     let env: Envelope = serde_json::from_str(&fixture("log_line.json")).unwrap();
     assert_eq!(env.kind, "log_line");
     let _: LogLine = serde_json::from_value(env.data).expect("log_line.json no matchea LogLine");
+}
+
+#[test]
+fn llama_status_shape() {
+    let env: Envelope = serde_json::from_str(&fixture("llama_status.json")).unwrap();
+    assert_eq!(env.kind, "llama_status");
+    let _: LlamaStatus = serde_json::from_value(env.data).expect("llama_status.json no matchea LlamaStatus");
 }
 
 #[test]

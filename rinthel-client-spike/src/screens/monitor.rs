@@ -12,15 +12,19 @@ use crate::app::{App, Colors};
 use crate::protocol::DockerContainer;
 use crate::widgets::log_tail;
 
-fn badge(containers: &[DockerContainer], name_contains: &str, colors: &Colors) -> Span<'static> {
-    let running = containers
-        .iter()
-        .any(|c| c.name.contains(name_contains) && c.state == "running");
-    if running {
+fn online_badge(online: bool, colors: &Colors) -> Span<'static> {
+    if online {
         Span::styled(" ONLINE ", Style::default().fg(colors.bg).bg(colors.success))
     } else {
         Span::styled(" OFFLINE ", Style::default().fg(colors.bg).bg(colors.hot))
     }
+}
+
+fn badge(containers: &[DockerContainer], name_contains: &str, colors: &Colors) -> Span<'static> {
+    let running = containers
+        .iter()
+        .any(|c| c.name.contains(name_contains) && c.state == "running");
+    online_badge(running, colors)
 }
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -38,7 +42,7 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     let badges = Paragraph::new(Line::from(vec![
         Span::raw(" llama-server "),
-        Span::styled(" N/A (spike) ", Style::default().fg(app.colors.dim)),
+        online_badge(app.llama_ready, &app.colors),
         Span::raw("   understory "),
         badge(&app.containers, "understory", &app.colors),
         Span::raw("   pithagoras "),

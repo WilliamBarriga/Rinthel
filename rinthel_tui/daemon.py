@@ -59,6 +59,18 @@ mensajes de progreso para la UI, no el resultado — perder uno (cliente
 desconectado a mitad de un boot) no afecta el ``ServiceOutcome`` final que
 sigue viajando por la respuesta del POST. Sin cliente conectado a
 ``/ws/monitor``, `broadcast` no hace nada (set vacío).
+
+Sesión 08 agrega ``llama_status`` — mismo patrón periódico que
+``docker_status``/``gpu_sample``/``cpu_ram_sample`` (un task que manda y
+duerme en loop mientras dure la conexión), no el trío phase_status/phase_log
+de arriba (eso es telemetría de una corrida puntual; esto es un estado
+parado que existe siempre que haya un cliente conectado, corriendo BOOT o
+no). ``{"ready": bool}`` — un solo GET puntual (``managed_service.check_ready``,
+sin backoff) contra el mismo ``ready_url_of`` que ya usa ``phase_wait_ready``
+en boot/reload: en llama-server (llama.cpp), ese endpoint queda detrás de un
+único gate de "server listo" que solo se levanta después de cargar el modelo
+(confirmado en el propio server.cpp) — así que "ready" ya significa server
+arriba + modelo cargado, no hace falta un segundo chequeo.
 """
 
 from __future__ import annotations
@@ -73,8 +85,9 @@ from fastapi.responses import JSONResponse
 
 from rinthel_tui.config import default_config
 from rinthel_tui.lifecycle import phases, specs
+from rinthel_tui.lifecycle.managed_service import check_ready
 from rinthel_tui.lifecycle.runner import PhaseFailed, run_phase_list
-from rinthel_tui.lifecycle.services import DOCKER_SERVICES, LOCAL_SERVICES
+from rinthel_tui.lifecycle.services import DOCKER_SERVICES, LLAMA_SERVICE, LOCAL_SERVICES
 from rinthel_tui.lifecycle.specs import PhaseSpec
 from rinthel_tui.monitoring.resources import read_cpu_ram, read_gpu
 from rinthel_tui.monitoring.services import docker_compose_ps
@@ -208,11 +221,17 @@ async def ws_monitor(ws: WebSocket) -> None:
         async for line in _log_line_source():
             await send("log_line", {"line": line})
 
+    async def llama_status_task():
+        while True:
+            await send("llama_status", {"ready": await check_ready(cfg, LLAMA_SERVICE)})
+            await asyncio.sleep(2.0)
+
     tasks = [
         asyncio.create_task(docker_status_task()),
         asyncio.create_task(gpu_task()),
         asyncio.create_task(cpu_ram_task()),
         asyncio.create_task(log_task()),
+        asyncio.create_task(llama_status_task()),
     ]
     try:
         while True:

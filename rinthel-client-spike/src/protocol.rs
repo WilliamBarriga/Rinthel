@@ -76,6 +76,16 @@ pub struct LogLine {
     pub line: String,
 }
 
+/// Sobre `llama_status` (amendment de docs/adr/0001, sesión 08): estado
+/// parado, transmitido en loop mientras haya un cliente conectado — no un
+/// evento puntual de una corrida como `phase_status`/`phase_log`. `ready`
+/// ya significa "servidor arriba + modelo cargado" (un solo GET contra el
+/// mismo `ready_url_of` que usa boot/reload), no hace falta más granularidad.
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct LlamaStatus {
+    pub ready: bool,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServiceOutcome {
     pub service: String,

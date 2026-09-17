@@ -57,6 +57,12 @@ def test_log_line_shape():
     assert isinstance(envelope["data"]["line"], str)
 
 
+def test_llama_status_shape():
+    envelope = _load("llama_status.json")
+    assert envelope["type"] == "llama_status"
+    assert isinstance(envelope["data"]["ready"], bool)
+
+
 def _assert_command_result_shape(result: dict) -> None:
     assert result["results"]
     for outcome in result["results"]:

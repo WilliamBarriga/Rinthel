@@ -37,6 +37,8 @@ pub enum AppEvent {
     PhaseStatus(String, String),
     /// `phase_log`: (kind, message).
     PhaseLog(String, String),
+    /// `llama_status` (sesión 08): estado parado, no un evento de corrida.
+    LlamaStatus(bool),
 }
 
 /// A qué pantalla vuelve `FarewellScreen` al terminar sus 5s — reemplaza el
@@ -86,6 +88,10 @@ pub struct App {
     pub menu_selected: usize,
     pub colors: Colors,
     pub containers: Vec<DockerContainer>,
+    /// `llama_status` en vivo (sesión 08) — reemplaza el badge hardcodeado
+    /// "N/A (spike)" que tenía `MonitorScreen` (llama-server no es un
+    /// contenedor Docker, así que no sale de `containers`).
+    pub llama_ready: bool,
     pub gpu: GpuSample,
     pub cpu_ram: CpuRamSample,
     pub cpu_hist: VecDeque<u64>,
@@ -115,6 +121,7 @@ impl App {
             menu_selected: screens::first_selectable(),
             colors: Colors::from(theme),
             containers: Vec::new(),
+            llama_ready: false,
             gpu: GpuSample::default(),
             cpu_ram: CpuRamSample::default(),
             cpu_hist: VecDeque::with_capacity(HIST_LEN),
@@ -184,6 +191,7 @@ impl App {
                 }
                 self.phase_log.push_back((kind, message));
             }
+            AppEvent::LlamaStatus(ready) => self.llama_ready = ready,
         }
     }
 
@@ -387,6 +395,9 @@ async fn ws_task(tx: mpsc::UnboundedSender<AppEvent>) {
                 "phase_log" => serde_json::from_value::<PhaseLog>(env.data)
                     .ok()
                     .map(|p| AppEvent::PhaseLog(p.kind, p.message)),
+                "llama_status" => serde_json::from_value::<protocol::LlamaStatus>(env.data)
+                    .ok()
+                    .map(|s| AppEvent::LlamaStatus(s.ready)),
                 _ => None,
             };
             if let Some(ev) = ev {
