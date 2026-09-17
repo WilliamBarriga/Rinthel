@@ -4,14 +4,17 @@ version = "0.1.0"
 description = "TUI para gestionar el ciclo de vida de llama-server + Understory + Pithagoras"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["textual>=0.80", "pyfiglet>=1.0.4", "psutil>=5.9", "python-dotenv>=1.0"]
+dependencies = [
+    "textual>=0.80", "pyfiglet>=1.0.4", "psutil>=5.9", "python-dotenv>=1.0",
+    "fastapi>=0.110", "uvicorn>=0.29",
+]
 classifiers = ["License :: OSI Approved :: MIT License"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 
 [project.scripts]
-rinthel = "rinthel_tui.app:main"
+rinthel-daemon = "rinthel_tui.daemon:main"
 
 [build-system]
 requires = ["setuptools>=68"]

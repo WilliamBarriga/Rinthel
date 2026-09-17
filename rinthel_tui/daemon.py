@@ -1,19 +1,23 @@
-"""SPIKE — daemon FastAPI, no producción.
+"""Daemon FastAPI de Rinthel — infraestructura persistente e independiente
+del cliente (ver issues/04-packaging-entrypoint.md: el daemon Python es lo
+que sobrevive entre sesiones de la TUI, el binario Rust es el cliente
+reemplazable).
 
-Prototipo del ticket "Construir el spike MVP" (.scratch/ratatui-migration/
-issues/05-mvp-spike.md), tirado en una rama throwaway (`spike/ratatui-mvp-05`).
-Valida el protocolo diseñado en el ticket 03 (ver docs/adr/0001-daemon-protocol-shape.md)
-contra un cliente Ratatui real. Si el diseño se valida, esto se refunda como
-``rinthel_tui/daemon.py`` de verdad (ticket 04) — hasta entonces es código
-descartable, sin tests, sin manejo de errores más allá de lo que hace falta
-para que corra.
+Nace como ``daemon_spike.py`` (ticket "Construir el spike MVP",
+.scratch/ratatui-migration/issues/05-mvp-spike.md) para validar el
+protocolo diseñado en el ticket 03 (docs/adr/0001-daemon-protocol-shape.md)
+contra un cliente Ratatui real. Sesión 04 del port-map lo promueve acá y
+reemplaza el boot/terminate simulado por llamadas reales a
+``lifecycle/runner.py`` + ``lifecycle/specs.py``.
 
-Corré con:  .venv/bin/python -m rinthel_tui.daemon_spike
+Corré con:  .venv/bin/python -m rinthel_tui.daemon   (o el entry point
+``rinthel-daemon``, ver pyproject.toml)
 
-A propósito NO ejecuta boot/terminate reales (no arranca/mata llama-server,
-Understory ni Pithagoras de verdad) — el spike valida forma de protocolo y
-UX de streaming, no re-implementa lifecycle/runner.py. Todo lo demás (GPU,
-CPU/RAM, docker ps, tail de log) es de solo lectura contra el sistema real.
+``/capture`` sigue SIMULADO a propósito (mismo motivo que tenía boot/
+terminate antes de esta sesión) — no hay todavía una sesión de hardening
+que lo vuelva real (ver "Not yet specified" en port-map.md). Todo lo demás
+(GPU, CPU/RAM, docker ps, tail de log) es de solo lectura contra el sistema
+real, sin cambios respecto al spike original.
 """
 
 from __future__ import annotations
@@ -21,13 +25,16 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from rinthel_tui.config import default_config
+from rinthel_tui.lifecycle import phases, specs
+from rinthel_tui.lifecycle.runner import PhaseFailed, run_phase_list
 from rinthel_tui.lifecycle.services import DOCKER_SERVICES, LOCAL_SERVICES
+from rinthel_tui.lifecycle.specs import PhaseSpec
 from rinthel_tui.monitoring.resources import read_cpu_ram, read_gpu
 from rinthel_tui.monitoring.services import docker_compose_ps
 from rinthel_tui.theme import palette
@@ -97,7 +104,7 @@ async def _log_line_source():
         while True:
             await asyncio.sleep(1.0)
             i += 1
-            yield f"[spike] sin {path} real — línea sintética #{i}"
+            yield f"[daemon] sin {path} real — línea sintética #{i}"
         return
     pos = path.stat().st_size
     while True:
@@ -160,46 +167,77 @@ async def ws_monitor(ws: WebSocket) -> None:
             t.cancel()
 
 
-async def _simulate_service(name: str, seconds: float, ok: bool, message: str) -> dict:
-    await asyncio.sleep(seconds)
-    return {"service": name, "ok": ok, "message": message}
+@dataclass
+class _Collected:
+    """``PhaseReport`` que junta los mensajes terminales (success/warn/error)
+    de una unidad de servicio en un solo ``ServiceOutcome`` — ver
+    docs/adr/0001. ``info()`` se descarta a propósito: es ruido de proceso
+    (stdout de ``docker compose``, hints supletorios como el de
+    ``on_timeout_hint``), no el resultado en sí; cada fase de
+    ``managed_service.py`` siempre termina con un success/warn/error real,
+    así que no se pierde la señal que importa. Decisión de Tarkark (sesión
+    04 del port-map): concatenar en vez de quedarse con el último mensaje —
+    spawn y wait son eventos distintos y los dos aportan contexto."""
+
+    ok: bool = True
+    messages: list[str] = field(default_factory=list)
+
+    def info(self, msg: str) -> None:
+        pass
+
+    def success(self, msg: str) -> None:
+        self.messages.append(msg)
+
+    def warn(self, msg: str) -> None:
+        self.messages.append(msg)
+
+    def error(self, msg: str) -> None:
+        self.ok = False
+        self.messages.append(msg)
+
+
+async def _run_unit(service: str, unit_specs: list[PhaseSpec]) -> dict:
+    collected = _Collected()
+    try:
+        await run_phase_list(cfg, unit_specs, collected)
+    except PhaseFailed:
+        pass  # collected.ok ya quedó en False vía report.error
+    return {
+        "service": service,
+        "ok": collected.ok,
+        "message": " — ".join(collected.messages) or "sin mensaje",
+    }
 
 
 @app.post("/boot")
 async def boot() -> JSONResponse:
-    # SIMULADO a propósito — no toca lifecycle/runner.py real. Ver docstring.
-    plan = [
-        ("llama-server", 2.0, True, "listo en 2s (simulado)"),
-        ("understory", 1.0, True, "listo (simulado)"),
-        ("pithagoras", 1.0, True, "listo (simulado)"),
-    ]
-    results = []
-    for name, secs, ok, msg in plan:
-        outcome = await _simulate_service(name, secs, ok, msg)
-        results.append(outcome)
-        if not outcome["ok"]:
-            break  # boot corta en el primer fallo
+    results = [await _run_unit("docker", [PhaseSpec("◈ DOCKER", phases.phase_check_docker)])]
+    if results[0]["ok"]:
+        for service, unit_specs in specs.boot_units(cfg):
+            outcome = await _run_unit(service, unit_specs)
+            results.append(outcome)
+            if not outcome["ok"]:
+                break  # boot corta en el primer fallo
     return JSONResponse({"results": results})
 
 
 @app.post("/terminate")
 async def terminate() -> JSONResponse:
-    plan = [
-        ("llama-server", 0.5, True, "detenido (simulado)"),
-        ("understory", 0.5, True, "detenido (simulado)"),
-        ("pithagoras", 0.5, True, "detenido (simulado)"),
-    ]
-    results = [await _simulate_service(name, secs, ok, msg) for name, secs, ok, msg in plan]
+    results = [await _run_unit(service, unit_specs) for service, unit_specs in specs.down_units(cfg)]
     return JSONResponse({"results": results})
+
+
+async def _simulate_service(name: str, seconds: float, ok: bool, message: str) -> dict:
+    await asyncio.sleep(seconds)
+    return {"service": name, "ok": ok, "message": message}
 
 
 @app.post("/capture")
 async def capture() -> JSONResponse:
-    # SIMULADO a propósito, mismo criterio que boot/terminate arriba — no
-    # corre lifecycle/capture_profile.py real (no dispara llama-moe-trace
-    # contra la GPU). Decisión de Tarkark 2026-09-16 (sesión 03 del
-    # port-map); a diferencia de boot/terminate, todavía no hay sesión de
-    # hardening que lo vuelva real (anotado en port-map.md).
+    # SIMULADO a propósito — a diferencia de boot/terminate (ya reales desde
+    # sesión 04), capture todavía no tiene sesión de hardening asignada (ver
+    # "Not yet specified" en port-map.md). No corre lifecycle/capture_profile.py
+    # real (no dispara llama-moe-trace contra la GPU).
     # `results[].service` reusa el campo de `ServiceOutcome` para nombrar
     # cada sub-paso de `capture_profile` ("código"/"chat"), no un servicio.
     plan = [
@@ -218,9 +256,9 @@ async def capture() -> JSONResponse:
 def main() -> None:
     import uvicorn
 
-    port = 8765  # spike: puerto fijo, distinto de los 3 servicios reales
-    print(f"[daemon_spike] {time.strftime('%H:%M:%S')} arrancando en http://127.0.0.1:{port}")
-    print(f"[daemon_spike] tail real de: {cfg.llama.log}")
+    port = 8765  # puerto fijo, distinto de los 3 servicios reales
+    print(f"[daemon] {time.strftime('%H:%M:%S')} arrancando en http://127.0.0.1:{port}")
+    print(f"[daemon] tail real de: {cfg.llama.log}")
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 

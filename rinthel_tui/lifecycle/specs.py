@@ -110,6 +110,40 @@ def down_phases(cfg: RinthelConfig) -> list[PhaseSpec]:
     ]
 
 
+# ── BOOT/DOWN agrupados por servicio (daemon FastAPI, ticket 04) ─────────
+# boot_phases/down_phases de arriba dan una lista PLANA de fases — le sirve
+# a phase_runner.py (TUI) para pintar un checklist fase por fase. El daemon
+# necesita lo contrario: un solo ServiceOutcome por servicio en la respuesta
+# de POST /boot y /terminate (wire shape fijado en docs/adr/0001), aunque
+# boot corra 2 fases por servicio (spawn+wait / up+wait) y down corra 1
+# (kill / down). *_units agrupa eso — (slug, [fases del servicio]) — sin
+# duplicar la lógica de habilitado/orden que ya vive arriba.
+def boot_units(cfg: RinthelConfig) -> list[tuple[str, list[PhaseSpec]]]:
+    """Como boot_phases, pero agrupada por servicio en vez de en una lista
+    plana. No incluye el chequeo de DOCKER (phases.phase_check_docker): ese
+    no es de ningún servicio — el caller (daemon.py) lo corre aparte, antes
+    de esto, y le da su propio ServiceOutcome (service="docker")."""
+    local = [s for s in services.LOCAL_SERVICES if s.enabled_of(cfg)]
+    docker = [s for s in services.DOCKER_SERVICES if s.enabled_of(cfg)]
+    return [
+        *[(svc.display_name.lower(), [_spawn_spec(svc), _wait_spec(svc)]) for svc in local],
+        *[(svc.display_name.lower(), [_up_spec(svc), _wait_spec(svc)]) for svc in docker],
+    ]
+
+
+def down_units(cfg: RinthelConfig) -> list[tuple[str, list[PhaseSpec]]]:
+    """Igual que down_phases, agrupada por servicio — acá ya es 1:1 (una
+    sola fase por servicio), pero se expone así para que el daemon use la
+    misma forma (slug, [fases]) que boot_units en vez de dos formatos
+    distintos según el comando."""
+    local = [s for s in services.LOCAL_SERVICES if s.enabled_of(cfg)]
+    docker = [s for s in services.DOCKER_SERVICES if s.enabled_of(cfg)]
+    return [
+        *[(svc.display_name.lower(), [_kill_spec(svc)]) for svc in local],
+        *[(svc.display_name.lower(), [_down_spec(svc)]) for svc in docker],
+    ]
+
+
 # ── RELOAD (rinthel-reload.sh) — 3 tandas: shutdown → boot → rebuild+up ───
 def _reload_raw_groups(cfg: RinthelConfig) -> tuple[list[PhaseSpec], list[PhaseSpec], list[PhaseSpec]]:
     local = [s for s in services.LOCAL_SERVICES if s.enabled_of(cfg)]

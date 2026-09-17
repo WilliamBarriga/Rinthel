@@ -6,12 +6,13 @@ cliente y un daemon reales. Vive en la rama `spike/ratatui-mvp-05`.
 
 ## Qué es cada parte
 
-- **Daemon** — `../rinthel_tui/daemon_spike.py`. FastAPI, reusa de verdad
+- **Daemon** — `../rinthel_tui/daemon.py` (promovido desde `daemon_spike.py`
+  en sesión 04 del port-map). FastAPI, reusa de verdad
   `monitoring/resources.py` (GPU/CPU/RAM), `monitoring/services.py` (docker
-  ps) y `theme/palette.py` — todo de solo lectura. `boot`/`terminate` están
-  **simulados** a propósito (no arrancan/matan llama-server, Understory ni
-  Pithagoras reales — el spike valida forma de protocolo, no reimplementa
-  `lifecycle/runner.py`).
+  ps) y `theme/palette.py` — todo de solo lectura. `boot`/`terminate` corren
+  `lifecycle/runner.py` **real** (arrancan/matan llama-server, Understory y
+  Pithagoras de verdad). `capture` sigue **simulado** (sin sesión de
+  hardening asignada todavía).
 - **Cliente** — este directorio, `rinthel-client-spike`. Ratatui + tokio +
   `tokio-tungstenite` (WebSocket) + `reqwest` (REST) + `ratatui-sci-fi`
   (tema Cyberpunk, widget `EnergyGauge`).
@@ -26,7 +27,7 @@ cliente y un daemon reales. Vive en la rama `spike/ratatui-mvp-05`.
 2. **Levantar el daemon** (deja la terminal ocupada, corre en foreground):
    ```bash
    cd ~/Rinthel-general
-   .venv/bin/python -m rinthel_tui.daemon_spike
+   .venv/bin/python -m rinthel_tui.daemon
    ```
    Imprime el puerto (8765) y el archivo de log que está taileando. `Ctrl+C`
    para pararlo.
@@ -51,8 +52,9 @@ cliente y un daemon reales. Vive en la rama `spike/ratatui-mvp-05`.
   coloreado con la paleta que sirve `GET /theme`) — son dos caminos
   distintos al mismo dato, para comparar estética con estética.
   Tabla docker + tail de `logs/llama-server.log` en vivo.
-  `b` = boot, `t` = terminate (simulados, ~2-4s de espera bloqueante — así
-  se siente la latencia real del protocolo), `Esc` = volver al menú, `q` =
+  `b` = boot, `t` = terminate (reales desde sesión 04 — arrancan/matan
+  llama-server, Understory y Pithagoras de verdad, bloqueante hasta ~90s+ si
+  llama-server tarda en cargar el modelo), `Esc` = volver al menú, `q` =
   salir.
 - **Matá el daemon con el cliente abierto**: el cliente debería quedarse
   vivo y reconectar solo cuando lo levantes de nuevo (sin replay — estado
@@ -82,7 +84,6 @@ cliente y un daemon reales. Vive en la rama `spike/ratatui-mvp-05`.
 
 ## Simplificaciones deliberadas (no son bugs, son alcance de spike)
 
-- `boot`/`terminate` no tocan servicios reales (ver arriba).
 - Badge de `llama-server` no está wireado (no hay contenedor Docker que
   chequear con el `docker_status` que ya existe).
 - No hay reconexión visible en pantalla (el cliente reconecta solo, pero no

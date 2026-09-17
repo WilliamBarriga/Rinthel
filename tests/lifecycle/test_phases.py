@@ -42,4 +42,47 @@ async def test_check_docker_raises_when_daemon_inactive(monkeypatch, cfg, report
         raised = True
 
     assert raised
-    assert any("DOCKER DAEMON INACTIVO" in msg for msg in report.errors)
+    assert any("no hay sudo passwordless" in msg for msg in report.errors)
+
+
+async def test_check_docker_auto_starts_with_passwordless_sudo(monkeypatch, cfg, report):
+    """Docker inactivo + `sudo -n systemctl start docker` disponible: sesión
+    04 del port-map — el daemon lo levanta solo en vez de solo avisar."""
+    calls: list[tuple[str, ...]] = []
+
+    async def fake_exec(*args, **kwargs):
+        calls.append(args)
+
+        class _Proc:
+            async def wait(self):
+                # is-active (1ra vez): inactivo. sudo -n start: éxito.
+                # is-active (recheck): ya activo.
+                return 1 if args == ("systemctl", "is-active", "--quiet", "docker") and len(calls) == 1 else 0
+
+        return _Proc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+
+    await phases.phase_check_docker(cfg, report)
+
+    assert not report.errors
+    assert any("levantado solo" in msg for msg in report.successes)
+    assert ("sudo", "-n", "systemctl", "start", "docker") in calls
+
+
+async def test_check_docker_reports_actionable_command_without_passwordless_sudo(monkeypatch, cfg, report):
+    async def fake_exec(*args, **kwargs):
+        class _Proc:
+            async def wait(self):
+                return 1  # nunca activo, sudo -n tampoco anda
+
+        return _Proc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+
+    try:
+        await phases.phase_check_docker(cfg, report)
+    except PhaseError:
+        pass
+
+    assert any("sudo systemctl start docker" in msg for msg in report.errors)

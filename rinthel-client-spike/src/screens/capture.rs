@@ -21,10 +21,10 @@
 //! "chat") en vez de un servicio real — mismo truco de "pedir prestado un
 //! tipo" que el propio ticket ya aprobaba para `ScreenPhaseReport`.
 //!
-//! `daemon_spike.py::/capture` está simulado (delays fijos, sin tocar la
-//! GPU), igual que `/boot`/`/terminate` — decisión de Tarkark 2026-09-16.
-//! A diferencia de boot/terminate, no hay sesión de hardening "capture
-//! real" en el port-map todavía; anotado en "Not yet specified".
+//! `daemon.py::/capture` está simulado (delays fijos, sin tocar la GPU) —
+//! decisión de Tarkark 2026-09-16. A diferencia de boot/terminate (ya
+//! reales desde sesión 04 de hardening), no hay sesión de hardening
+//! "capture real" en el port-map todavía; anotado en "Not yet specified".
 
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::Style;

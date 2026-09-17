@@ -52,6 +52,45 @@ def test_down_phases_excludes_disabled_service(cfg):
     assert any("UNDERSTORY" in l for l in labels)
 
 
+# ── boot_units / down_units (daemon FastAPI, ticket 04) ───────────────────
+# Vista agrupada por servicio de boot_phases/down_phases — un ServiceOutcome
+# por servicio en vez de un resultado por fase (ver docs/adr/0001).
+
+
+def test_boot_units_groups_two_phases_per_service(cfg):
+    units = dict(specs.boot_units(cfg))
+    assert set(units) == {"llama-server", "understory", "pithagoras"}
+    for service_specs in units.values():
+        assert len(service_specs) == 2  # spawn/up + wait, siempre en pares
+
+
+def test_boot_units_does_not_include_the_docker_check(cfg):
+    # phases.phase_check_docker no es de ningún servicio — el caller
+    # (daemon.py) lo corre aparte, con su propio ServiceOutcome("docker").
+    units = specs.boot_units(cfg)
+    all_labels = [s.label for _, unit_specs in units for s in unit_specs]
+    assert not any("DOCKER" in l for l in all_labels)
+
+
+def test_boot_units_excludes_disabled_service(cfg):
+    disabled = _disable(cfg, "understory")
+    units = dict(specs.boot_units(disabled))
+    assert set(units) == {"llama-server", "pithagoras"}
+
+
+def test_down_units_groups_one_phase_per_service(cfg):
+    units = dict(specs.down_units(cfg))
+    assert set(units) == {"llama-server", "understory", "pithagoras"}
+    for service_specs in units.values():
+        assert len(service_specs) == 1
+
+
+def test_down_units_excludes_disabled_service(cfg):
+    disabled = _disable(cfg, "pithagoras")
+    units = dict(specs.down_units(disabled))
+    assert set(units) == {"llama-server", "understory"}
+
+
 # ── reload_phases ─────────────────────────────────────────────────────────
 
 

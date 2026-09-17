@@ -15,15 +15,36 @@ from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle.types import PhaseError, PhaseReport
 
 
-async def phase_check_docker(cfg: RinthelConfig, report: PhaseReport) -> None:
+async def _systemctl_is_active(unit: str) -> bool:
     proc = await asyncio.create_subprocess_exec(
-        "systemctl", "is-active", "--quiet", "docker",
+        "systemctl", "is-active", "--quiet", unit,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
     )
-    rc = await proc.wait()
-    if rc != 0:
-        report.error("DOCKER DAEMON INACTIVO")
-        report.info("Ejecuta primero: sudo systemctl start docker")
-        raise PhaseError("docker daemon inactive")
-    report.success("Docker daemon activo")
+    return await proc.wait() == 0
+
+
+async def phase_check_docker(cfg: RinthelConfig, report: PhaseReport) -> None:
+    if await _systemctl_is_active("docker"):
+        report.success("Docker daemon activo")
+        return
+    # Intento de auto-levante no interactivo (`sudo -n`): si ya hay una regla
+    # NOPASSWD para este comando, boot sigue solo; si no, `sudo` falla al
+    # toque en vez de colgarse esperando una contraseña que nunca va a llegar
+    # (este proceso no tiene TTY). Decisión de Tarkark (sesión 04 del
+    # port-map): sin NOPASSWD configurado, el daemon nunca lo levanta solo —
+    # solo le pasa al usuario el comando exacto para que lo corra a mano y el
+    # PRÓXIMO boot ya encuentre Docker activo.
+    proc = await asyncio.create_subprocess_exec(
+        "sudo", "-n", "systemctl", "start", "docker",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    if await proc.wait() == 0 and await _systemctl_is_active("docker"):
+        report.success("Docker daemon estaba inactivo — levantado solo (sudo -n systemctl start docker)")
+        return
+    report.error(
+        "DOCKER DAEMON INACTIVO — no hay sudo passwordless para levantarlo solo. "
+        "Corré a mano: sudo systemctl start docker (el próximo boot ya arranca solo)"
+    )
+    raise PhaseError("docker daemon inactive, auto-start unavailable (no passwordless sudo)")
