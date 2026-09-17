@@ -116,3 +116,53 @@ pub struct PhaseLog {
     pub kind: String,
     pub message: String,
 }
+
+/// Un campo editable de `[N] CONFIGURAR` (amendment de docs/adr/0001,
+/// sesión 09) — `value` viaja como string (mismo criterio que un `Input` de
+/// Textual) y `kind` le dice al cliente qué widget pintar ("bool" ->
+/// checkbox, el resto -> texto) sin que el cliente conozca los tipos de
+/// Python. `group` agrupa visualmente (ver `screens::settings`) — "" para
+/// sub-configs con pocos campos que no lo necesitan.
+#[derive(Debug, Deserialize, Clone)]
+pub struct ConfigField {
+    pub attr: String,
+    pub env: String,
+    pub kind: String,
+    pub group: String,
+    pub value: String,
+}
+
+/// Una sub-config de `RinthelConfig` (`llama`/`moe`/`understory`/
+/// `pithagoras`/`install`) — `enabled`/`enabled_env` son `None` para las que
+/// no tienen ese campo (`moe`/`install`: no son un
+/// `LocalProcessService`/`DockerComposeService`, no hay on/off).
+#[derive(Debug, Deserialize, Clone)]
+pub struct ConfigService {
+    pub attr: String,
+    pub display_name: String,
+    pub enabled: Option<bool>,
+    pub enabled_env: Option<String>,
+    pub fields: Vec<ConfigField>,
+}
+
+/// `GET /config` — shape genérico a propósito (mismo espíritu "genérico"
+/// que ya tenía `rinthel_tui/tui/screens/settings.py`): sumar un `Field`
+/// nuevo del lado daemon lo hace aparecer acá sin tocar este struct.
+#[derive(Debug, Deserialize, Clone)]
+pub struct ConfigPayload {
+    pub services: Vec<ConfigService>,
+}
+
+/// Respuesta de `POST /config` — `errors` viene de `RinthelConfig.validate()`
+/// (ConfigError, bloquea el write); `warnings` son los paths-no-existen-
+/// todavía de `validate()`, no bloquean (mismo criterio que boot/terminate).
+#[derive(Debug, Deserialize)]
+pub struct ConfigSaveResult {
+    pub ok: bool,
+    #[serde(default)]
+    pub written: u32,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+    #[serde(default)]
+    pub errors: Vec<String>,
+}

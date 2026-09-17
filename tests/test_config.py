@@ -8,7 +8,16 @@ import dataclasses
 
 import pytest
 
-from rinthel_tui.config import ConfigError, _bool_env, _int_env, default_config
+from rinthel_tui.config import (
+    KIND_NAMES,
+    ConfigError,
+    _bool_env,
+    _int_env,
+    default_config,
+    diff_overrides,
+    stringify,
+    with_overrides,
+)
 
 
 def test_int_env_uses_default_when_unset(monkeypatch):
@@ -105,3 +114,87 @@ def test_validate_no_warnings_when_all_paths_exist(tmp_path):
         llama=dataclasses.replace(base.llama, bin=existing, model=existing),
     )
     assert cfg.validate() == []
+
+
+# ── stringify/diff_overrides/with_overrides ─────────────────────────────
+# Movidas acá desde tests/tui/test_settings.py (sesión 09 del port-map):
+# esta lógica pasó de vivir solo en la screen Textual a ser compartida con
+# el daemon (GET/POST /config), así que ya no es específica de la UI.
+
+
+def test_stringify_bool_uses_lowercase_true_false():
+    assert stringify(True) == "true"
+    assert stringify(False) == "false"
+
+
+def test_stringify_other_types_use_str():
+    assert stringify(8080) == "8080"
+    assert stringify("mlock") == "mlock"
+
+
+def test_diff_overrides_excludes_values_that_match_current_config(cfg):
+    edits = {
+        "RINTHEL_LLAMA_PORT": str(cfg.llama.port),  # sin cambios reales
+        "RINTHEL_PITHAGORAS_ENABLED": "false",  # sí cambió (default es true)
+    }
+    overrides = diff_overrides(cfg, edits)
+    assert overrides == {"RINTHEL_PITHAGORAS_ENABLED": "false"}
+
+
+def test_diff_overrides_empty_when_nothing_changed(cfg):
+    edits = {"RINTHEL_UNDERSTORY_PORT": str(cfg.understory.port)}
+    assert diff_overrides(cfg, edits) == {}
+
+
+def test_diff_overrides_ignores_env_vars_not_in_any_field(cfg):
+    edits = {"RINTHEL_NOT_A_REAL_FIELD": "whatever"}
+    assert diff_overrides(cfg, edits) == {}
+
+
+def test_diff_overrides_reflects_a_cfg_already_disabled(cfg):
+    disabled = dataclasses.replace(cfg, pithagoras=dataclasses.replace(cfg.pithagoras, enabled=False))
+    # Re-habilitar en la UI, contra un cfg que ya está deshabilitado, debe
+    # contar como cambio.
+    edits = {"RINTHEL_PITHAGORAS_ENABLED": "true"}
+    assert diff_overrides(disabled, edits) == {"RINTHEL_PITHAGORAS_ENABLED": "true"}
+    # Pero "false" contra ese mismo cfg ya deshabilitado no es un cambio.
+    assert diff_overrides(disabled, {"RINTHEL_PITHAGORAS_ENABLED": "false"}) == {}
+
+
+def test_with_overrides_parses_each_kind_from_a_raw_string(cfg):
+    updated = with_overrides(
+        cfg,
+        {
+            "RINTHEL_LLAMA_PORT": "9090",  # int
+            "RINTHEL_TEMPERATURE": "0.55",  # float
+            "RINTHEL_LLAMA_ENABLED": "false",  # bool
+            "RINTHEL_NGL": "42",  # str (se queda como string)
+        },
+    )
+    assert updated.llama.port == 9090
+    assert updated.llama.temperature == 0.55
+    assert updated.llama.enabled is False
+    assert updated.llama.ngl == "42"
+
+
+def test_with_overrides_does_not_mutate_the_original_cfg(cfg):
+    with_overrides(cfg, {"RINTHEL_LLAMA_PORT": "9090"})
+    assert cfg.llama.port != 9090
+
+
+def test_with_overrides_leaves_untouched_sub_configs_alone(cfg):
+    updated = with_overrides(cfg, {"RINTHEL_LLAMA_PORT": "9090"})
+    assert updated.understory == cfg.understory
+    assert updated.pithagoras == cfg.pithagoras
+
+
+def test_with_overrides_result_can_fail_validate(cfg):
+    updated = with_overrides(cfg, {"RINTHEL_LLAMA_PORT": str(cfg.understory.port)})
+    with pytest.raises(ConfigError, match="choca con"):
+        updated.validate()
+
+
+def test_kind_names_cover_every_field_kind_in_use():
+    from pathlib import Path
+
+    assert KIND_NAMES == {bool: "bool", int: "int", float: "float", str: "str", Path: "path"}

@@ -18,7 +18,7 @@ def _llama_argv(cfg: RinthelConfig) -> list[str]:
         "-ngl", cfg.llama.ngl,
         "-c", str(cfg.llama.context_window),
         "-fa", "on" if cfg.llama.flash_attention else "off",
-        "-fit", "on" if cfg.llama.flash_inference else "off",
+        "-fit", "on" if cfg.llama.fit_to_memory else "off",
         "--port", str(cfg.llama.port),
         "--n-cpu-moe", str(cfg.llama.n_cpu_moe),
         "--threads-batch", str(cfg.llama.threads_batch),

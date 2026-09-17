@@ -7,7 +7,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use rinthel_client_spike::protocol::{
-    CommandResult, CpuRamSample, DockerStatus, Envelope, GpuSample, LlamaStatus, LogLine, Theme,
+    CommandResult, ConfigPayload, ConfigSaveResult, CpuRamSample, DockerStatus, Envelope, GpuSample, LlamaStatus,
+    LogLine, Theme,
 };
 
 fn fixture(name: &str) -> String {
@@ -80,4 +81,27 @@ fn capture_result_shape() {
     let result: CommandResult =
         serde_json::from_str(&fixture("capture_result.json")).expect("capture_result.json no matchea CommandResult");
     assert!(!result.results.is_empty());
+}
+
+#[test]
+fn config_payload_shape() {
+    let payload: ConfigPayload = serde_json::from_str(&fixture("config_payload.json"))
+        .expect("config_payload.json no matchea ConfigPayload");
+    assert!(!payload.services.is_empty());
+    // moe: sin enabled/enabled_env (no es un LocalProcessService/DockerComposeService).
+    let moe = payload.services.iter().find(|s| s.attr == "moe").expect("fixture sin moe");
+    assert!(moe.enabled.is_none());
+    assert!(moe.enabled_env.is_none());
+    // llama: campos de al menos 2 grupos distintos (ver screens::settings::detail_rows).
+    let llama = payload.services.iter().find(|s| s.attr == "llama").expect("fixture sin llama");
+    let groups: std::collections::HashSet<_> = llama.fields.iter().map(|f| f.group.as_str()).collect();
+    assert!(groups.len() > 1);
+}
+
+#[test]
+fn config_save_result_shape() {
+    let result: ConfigSaveResult = serde_json::from_str(&fixture("config_save_result.json"))
+        .expect("config_save_result.json no matchea ConfigSaveResult");
+    assert!(!result.ok);
+    assert!(!result.errors.is_empty());
 }

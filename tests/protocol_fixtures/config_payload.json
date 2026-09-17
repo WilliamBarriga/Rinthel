@@ -1,0 +1,36 @@
+{
+  "services": [
+    {
+      "attr": "llama",
+      "display_name": "llama-server",
+      "enabled": true,
+      "enabled_env": "RINTHEL_LLAMA_ENABLED",
+      "fields": [
+        {"attr": "port", "env": "RINTHEL_LLAMA_PORT", "kind": "int", "group": "general", "value": "8080"},
+        {"attr": "model", "env": "RINTHEL_LLAMA_MODEL_PATH", "kind": "path", "group": "general", "value": "/home/rinthel/llama.cpp/models/model.gguf"},
+        {"attr": "temperature", "env": "RINTHEL_TEMPERATURE", "kind": "float", "group": "sampling", "value": "0.7"},
+        {"attr": "cache_reuse", "env": "RINTHEL_CACHE_REUSE", "kind": "int", "group": "cache", "value": "256"},
+        {"attr": "fit_to_memory", "env": "RINTHEL_FIT_TO_MEMORY", "kind": "bool", "group": "compute", "value": "false"},
+        {"attr": "spec_type", "env": "RINTHEL_SPEC_TYPE", "kind": "str", "group": "speculative", "value": "draft-mtp"}
+      ]
+    },
+    {
+      "attr": "moe",
+      "display_name": "MOE",
+      "enabled": null,
+      "enabled_env": null,
+      "fields": [
+        {"attr": "cache_slots", "env": "RINTHEL_MOE_CACHE_SLOTS", "kind": "int", "group": "", "value": "0"}
+      ]
+    },
+    {
+      "attr": "understory",
+      "display_name": "Understory",
+      "enabled": true,
+      "enabled_env": "RINTHEL_UNDERSTORY_ENABLED",
+      "fields": [
+        {"attr": "port", "env": "RINTHEL_UNDERSTORY_PORT", "kind": "int", "group": "", "value": "3800"}
+      ]
+    }
+  ]
+}

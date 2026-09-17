@@ -2,7 +2,7 @@
 //! separado de `main.rs` en la sesión 00 del porteo (ver
 //! .scratch/ratatui-migration/port-issues/00-scaffolding-testing-and-crate-skeleton.md).
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::time::Duration;
 
@@ -16,8 +16,12 @@ use ratatui::widgets::Block;
 use ratatui::{Frame, Terminal};
 use tokio::sync::mpsc;
 
-use crate::protocol::{self, CommandResult, CpuRamSample, DockerContainer, Envelope, GpuSample, PhaseLog, PhaseStatus, Theme};
+use crate::protocol::{
+    self, CommandResult, ConfigPayload, ConfigSaveResult, CpuRamSample, DockerContainer, Envelope, GpuSample,
+    PhaseLog, PhaseStatus, Theme,
+};
 use crate::screens::farewell::FarewellTimer;
+use crate::screens::settings::{self, DetailRow};
 use crate::screens::{self, MenuAction, ScreenId};
 
 pub const DAEMON: &str = "http://127.0.0.1:8765";
@@ -39,6 +43,15 @@ pub enum AppEvent {
     PhaseLog(String, String),
     /// `llama_status` (sesión 08): estado parado, no un evento de corrida.
     LlamaStatus(bool),
+    /// `GET /config` resuelto (sesión 09) — disparado al entrar a
+    /// `ScreenId::Settings`, mismo trigger-on-entry que `MenuAction::Capture`.
+    ConfigLoaded(ConfigPayload),
+    ConfigLoadFailed(String),
+    /// `POST /config` resuelto con `ok: true`.
+    ConfigSaved { written: u32, warnings: Vec<String> },
+    /// `ok: false` (errores de `RinthelConfig.validate()`) o falla de red —
+    /// ambos se muestran igual (lista de líneas de error).
+    ConfigSaveFailed(Vec<String>),
 }
 
 /// A qué pantalla vuelve `FarewellScreen` al terminar sus 5s — reemplaza el
@@ -49,6 +62,24 @@ pub enum AppEvent {
 pub enum FarewellNext {
     BackToPhaseRunner,
     Quit,
+}
+
+/// Qué panel de `SettingsScreen` recibe las teclas de navegación —
+/// reemplaza el foco de widget que Textual manejaba solo (`Checkbox`/
+/// `Button`/`Input` tenían cada uno su propio `on_*` en `settings.py`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ConfigFocus {
+    Services,
+    Detail,
+}
+
+/// Resultado del último `POST /config` — separado de
+/// `last_command_result`/`last_command_error` (que asumen el shape
+/// `CommandResult` de boot/terminate/reload/install) porque `/config`
+/// tiene su propio shape (`ok`/`written`/`warnings`/`errors`).
+pub enum ConfigSaveStatus {
+    Saved(String),
+    Failed(String),
 }
 
 pub struct Colors {
@@ -111,6 +142,26 @@ pub struct App {
     pub phase_log: VecDeque<(String, String)>,
     pub farewell_timer: Option<FarewellTimer>,
     pub farewell_next: FarewellNext,
+    /// `GET /config` en curso o ya resuelto — `None` mientras carga (ver
+    /// `screens::settings::draw`, que pinta "cargando…" en ese caso).
+    pub config: Option<ConfigPayload>,
+    pub config_selected_service: usize,
+    /// Índice dentro de `settings::detail_rows(&service.fields)` del
+    /// servicio seleccionado — se resetea a la primera fila seleccionable
+    /// cada vez que cambia `config_selected_service`.
+    pub config_selected_row: usize,
+    pub config_focus: ConfigFocus,
+    /// `Some(buffer)` mientras se edita el campo de texto seleccionado —
+    /// reemplaza el `Input`/`Checkbox` con estado propio que tenía Textual;
+    /// `None` en modo navegación.
+    pub config_editing: Option<String>,
+    /// env var -> valor nuevo (string), todo lo tocado en esta sesión de
+    /// settings — mismo shape y mismo criterio que `self._edits` en
+    /// `settings.py` (`config.diff_overrides`, del lado daemon, filtra qué
+    /// de esto es un cambio real recién al guardar).
+    pub config_edits: HashMap<String, String>,
+    pub config_save_in_flight: bool,
+    pub config_status: Option<ConfigSaveStatus>,
     should_quit: bool,
 }
 
@@ -136,6 +187,14 @@ impl App {
             phase_log: VecDeque::new(),
             farewell_timer: None,
             farewell_next: FarewellNext::Quit,
+            config: None,
+            config_selected_service: 0,
+            config_selected_row: 0,
+            config_focus: ConfigFocus::Services,
+            config_editing: None,
+            config_edits: HashMap::new(),
+            config_save_in_flight: false,
+            config_status: None,
             should_quit: false,
         }
     }
@@ -192,6 +251,30 @@ impl App {
                 self.phase_log.push_back((kind, message));
             }
             AppEvent::LlamaStatus(ready) => self.llama_ready = ready,
+            AppEvent::ConfigLoaded(payload) => {
+                self.config = Some(payload);
+                self.config_selected_service = 0;
+                self.config_selected_row = 0;
+                self.config_focus = ConfigFocus::Services;
+            }
+            AppEvent::ConfigLoadFailed(err) => {
+                self.config_status = Some(ConfigSaveStatus::Failed(format!("GET /config falló: {err}")));
+            }
+            AppEvent::ConfigSaved { written, warnings } => {
+                self.config_save_in_flight = false;
+                self.config_edits.clear();
+                let msg = if written == 0 {
+                    "nada para guardar — no tocaste ningún valor".to_string()
+                } else {
+                    format!("guardado ({written} cambio(s)) — aplica en el próximo BOOT/RELOAD")
+                };
+                let msg = if warnings.is_empty() { msg } else { format!("{msg} — {}", warnings.join("; ")) };
+                self.config_status = Some(ConfigSaveStatus::Saved(msg));
+            }
+            AppEvent::ConfigSaveFailed(errors) => {
+                self.config_save_in_flight = false;
+                self.config_status = Some(ConfigSaveStatus::Failed(errors.join("; ")));
+            }
         }
     }
 
@@ -250,6 +333,15 @@ impl App {
                 tokio::spawn(run_command("capture", "/capture", tx.clone()));
             }
             MenuAction::Install => self.start_phase_run("install", "/install", "INSTALL — SETUP INICIAL", tx),
+            MenuAction::Settings => {
+                self.screen = ScreenId::Settings;
+                self.config = None;
+                self.config_edits.clear();
+                self.config_editing = None;
+                self.config_status = None;
+                self.config_save_in_flight = false;
+                tokio::spawn(fetch_config(tx.clone()));
+            }
             // menu.py:183 — EXIT pasa por FarewellScreen antes de salir,
             // igual que TERMINATE (grillado con Tarkark, sesión 05).
             MenuAction::Quit => {
@@ -257,6 +349,106 @@ impl App {
                 self.farewell_timer = Some(FarewellTimer::start());
                 self.farewell_next = FarewellNext::Quit;
             }
+        }
+    }
+
+    /// Toda la lógica de teclado de `ScreenId::Settings` vive acá (no en
+    /// `screens::settings`, que es solo dibujo + helpers puros) porque
+    /// necesita mutar `App` y disparar `POST /config` — mismo criterio que
+    /// `dispatch_menu_action`/`start_phase_run`. Consume la tecla entera, no
+    /// cae al catch-all `q`=salir del loop principal: mientras se edita un
+    /// campo de texto, cualquier char (incluido 'q') es contenido del
+    /// campo, no un atajo — `settings.py` bindea igual `q`/Escape a
+    /// "Volver" (no a salir de la app), mismo criterio que `LogsScreen`.
+    fn handle_settings_key(&mut self, code: KeyCode, tx: &mpsc::UnboundedSender<AppEvent>) {
+        if self.config_editing.is_none() && matches!(code, KeyCode::Char('q') | KeyCode::Esc) {
+            self.screen = ScreenId::Menu;
+            return;
+        }
+        let Some(payload) = self.config.clone() else { return }; // todavía cargando (GET /config)
+
+        if self.config_editing.is_some() {
+            match code {
+                KeyCode::Enter | KeyCode::Esc => {
+                    let buffer = self.config_editing.take().unwrap();
+                    let svc = &payload.services[self.config_selected_service];
+                    let rows = settings::detail_rows(&svc.fields);
+                    if let DetailRow::Field(field_i) = rows[self.config_selected_row] {
+                        self.config_edits.insert(svc.fields[field_i].env.clone(), buffer);
+                    }
+                }
+                KeyCode::Backspace => {
+                    if let Some(buffer) = &mut self.config_editing {
+                        buffer.pop();
+                    }
+                }
+                KeyCode::Char(c) => {
+                    if let Some(buffer) = &mut self.config_editing {
+                        buffer.push(c);
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        match code {
+            KeyCode::Left => self.config_focus = ConfigFocus::Services,
+            KeyCode::Up => match self.config_focus {
+                ConfigFocus::Services => {
+                    self.config_selected_service = self.config_selected_service.saturating_sub(1);
+                    self.config_selected_row = 0;
+                }
+                ConfigFocus::Detail => {
+                    let svc = &payload.services[self.config_selected_service];
+                    let rows = settings::detail_rows(&svc.fields);
+                    self.config_selected_row = settings::prev_row(&rows, self.config_selected_row);
+                }
+            },
+            KeyCode::Down => match self.config_focus {
+                ConfigFocus::Services => {
+                    self.config_selected_service =
+                        (self.config_selected_service + 1).min(payload.services.len() - 1);
+                    self.config_selected_row = 0;
+                }
+                ConfigFocus::Detail => {
+                    let svc = &payload.services[self.config_selected_service];
+                    let rows = settings::detail_rows(&svc.fields);
+                    self.config_selected_row = settings::next_row(&rows, self.config_selected_row);
+                }
+            },
+            KeyCode::Right | KeyCode::Enter if self.config_focus == ConfigFocus::Services => {
+                let svc = &payload.services[self.config_selected_service];
+                let rows = settings::detail_rows(&svc.fields);
+                self.config_focus = ConfigFocus::Detail;
+                self.config_selected_row = settings::first_row(&rows);
+            }
+            KeyCode::Char(' ') if self.config_focus == ConfigFocus::Services => {
+                let svc = &payload.services[self.config_selected_service];
+                if let (Some(orig), Some(env)) = (svc.enabled, &svc.enabled_env) {
+                    let effective = self.config_edits.get(env).map(|v| v == "true").unwrap_or(orig);
+                    self.config_edits.insert(env.clone(), (!effective).to_string());
+                }
+            }
+            KeyCode::Enter | KeyCode::Char(' ') if self.config_focus == ConfigFocus::Detail => {
+                let svc = &payload.services[self.config_selected_service];
+                let rows = settings::detail_rows(&svc.fields);
+                if let DetailRow::Field(field_i) = rows[self.config_selected_row] {
+                    let field = &svc.fields[field_i];
+                    if field.kind == "bool" {
+                        let current = settings::field_value(self, field) == "true";
+                        self.config_edits.insert(field.env.clone(), (!current).to_string());
+                    } else {
+                        self.config_editing = Some(settings::field_value(self, field).to_string());
+                    }
+                }
+            }
+            KeyCode::Char('s') if !self.config_save_in_flight => {
+                self.config_save_in_flight = true;
+                self.config_status = None;
+                tokio::spawn(save_config(self.config_edits.clone(), tx.clone()));
+            }
+            _ => {}
         }
     }
 
@@ -323,6 +515,12 @@ impl App {
                             (ScreenId::Logs, KeyCode::Char('q') | KeyCode::Esc) => {
                                 self.screen = ScreenId::Menu;
                             }
+                            // Settings maneja su propia tecla entera (ver
+                            // doc-comment de `handle_settings_key`) — tiene
+                            // que resolverse antes del catch-all de abajo,
+                            // igual que Logs: mientras se edita un campo de
+                            // texto, 'q' es contenido del campo, no salir.
+                            (ScreenId::Settings, code) => self.handle_settings_key(code, &tx),
                             (_, KeyCode::Char('q')) => self.should_quit = true,
                             (ScreenId::Menu, KeyCode::Up) => {
                                 self.menu_selected = screens::prev_selectable(self.menu_selected);
@@ -427,4 +625,34 @@ async fn run_command(name: &'static str, path: &str, tx: mpsc::UnboundedSender<A
             let _ = tx.send(AppEvent::CommandFailed(name, e.to_string()));
         }
     }
+}
+
+/// `GET /config` (sesión 09) — disparado al entrar a `ScreenId::Settings`,
+/// mismo trigger-on-entry que `run_command("capture", ...)`.
+async fn fetch_config(tx: mpsc::UnboundedSender<AppEvent>) {
+    let ev = match reqwest::get(format!("{DAEMON}/config")).await {
+        Ok(resp) => match resp.json::<ConfigPayload>().await {
+            Ok(payload) => AppEvent::ConfigLoaded(payload),
+            Err(e) => AppEvent::ConfigLoadFailed(e.to_string()),
+        },
+        Err(e) => AppEvent::ConfigLoadFailed(e.to_string()),
+    };
+    let _ = tx.send(ev);
+}
+
+/// `POST /config` con el dict de overrides tocados en esta sesión de
+/// settings (mismo shape que `config.diff_overrides` del lado daemon,
+/// que hace el filtrado real). `ok: false` (validación) y falla de red
+/// terminan ambas en `ConfigSaveFailed`, mostradas igual (líneas de error).
+async fn save_config(overrides: HashMap<String, String>, tx: mpsc::UnboundedSender<AppEvent>) {
+    let body = serde_json::json!({ "overrides": overrides });
+    let ev = match reqwest::Client::new().post(format!("{DAEMON}/config")).json(&body).send().await {
+        Ok(resp) => match resp.json::<ConfigSaveResult>().await {
+            Ok(result) if result.ok => AppEvent::ConfigSaved { written: result.written, warnings: result.warnings },
+            Ok(result) => AppEvent::ConfigSaveFailed(result.errors),
+            Err(e) => AppEvent::ConfigSaveFailed(vec![e.to_string()]),
+        },
+        Err(e) => AppEvent::ConfigSaveFailed(vec![e.to_string()]),
+    };
+    let _ = tx.send(ev);
 }

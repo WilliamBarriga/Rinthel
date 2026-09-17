@@ -82,3 +82,23 @@ def test_terminate_result_shape():
 
 def test_capture_result_shape():
     _assert_command_result_shape(_load("capture_result.json"))
+
+
+def test_config_payload_shape():
+    payload = _load("config_payload.json")
+    assert payload["services"]
+    by_attr = {s["attr"]: s for s in payload["services"]}
+    # moe: sin enabled/enabled_env (no es un LocalProcessService/DockerComposeService).
+    assert by_attr["moe"]["enabled"] is None
+    assert by_attr["moe"]["enabled_env"] is None
+    for svc in payload["services"]:
+        for f in svc["fields"]:
+            assert f.keys() == {"attr", "env", "kind", "group", "value"}
+            assert f["kind"] in {"bool", "int", "float", "str", "path"}
+            assert isinstance(f["value"], str)  # siempre stringificado, ver config.stringify
+
+
+def test_config_save_result_shape():
+    result = _load("config_save_result.json")
+    assert result["ok"] is False
+    assert result["errors"]

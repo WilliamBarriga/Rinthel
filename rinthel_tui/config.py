@@ -25,7 +25,7 @@ Si existe un ``.env`` en la raíz de este repo, se carga automáticamente vía
 
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -87,6 +87,12 @@ class Field:
     port: bool = False
     positive: bool = False
     exists: bool = False
+    # Categoría para agrupar visualmente en [N] CONFIGURAR (sesión 09 del
+    # port-map) — "" para sub-configs con pocos campos que no lo necesitan
+    # (understory/pithagoras/moe). Identificador plano (sin acentos) porque
+    # cruza a JSON/Rust vía GET /config; el label mostrado es responsabilidad
+    # del cliente.
+    group: str = ""
 
 
 _LOADERS: dict[type, Callable[[str, Any], Any]] = {
@@ -95,6 +101,29 @@ _LOADERS: dict[type, Callable[[str, Any], Any]] = {
     float: _float_env,
     bool: _bool_env,
     str: _str_env,
+}
+
+# Parsers de un valor crudo (string, ej. lo que llega en un override de
+# POST /config) al tipo del campo — hermano de `_LOADERS`, que en cambio lee
+# desde una env var. Mismo criterio de verdad que `_bool_env` para bool.
+_PARSERS: dict[type, Callable[[str], Any]] = {
+    Path: _p,
+    int: int,
+    float: float,
+    bool: lambda raw: raw.strip().lower() in ("1", "on", "true", "yes"),
+    str: lambda raw: raw,
+}
+
+# Nombre de tipo servido en GET /config (``kind``) para que el cliente sepa
+# qué widget renderizar (checkbox vs. input) sin tener que conocer los tipos
+# de Python — mismo criterio que "sin codegen" de ADR 0001, un dict chico en
+# vez de una herramienta de schema.
+KIND_NAMES: dict[type, str] = {
+    Path: "path",
+    int: "int",
+    float: "float",
+    bool: "bool",
+    str: "str",
 }
 
 
@@ -118,7 +147,7 @@ class LlamaConfig:
     ngl: str
     context_window: int
     flash_attention: bool
-    flash_inference: bool
+    fit_to_memory: bool
     n_cpu_moe: int
     threads_batch: int
     threads: int
@@ -142,35 +171,46 @@ class LlamaConfig:
 
 # ``env`` queda afuera — se sintetiza a partir de ``moe_cache_profile``
 # (ver ``default_config()``), no sale de una env var propia.
+#
+# Grupos revisados sesión 09 del port-map contra el `--help` real del build
+# custom (`~/codacus/llama.cpp-perf-latest`, el que corre esta máquina, no
+# el default de `bin` acá abajo): 26 de 27 campos (todos salvo `enabled`,
+# que no es un flag) mapean 1:1 a flags vigentes de ese fork. Único
+# desfasaje encontrado y corregido en esa
+# sesión: este campo se llamaba `flash_inference`/`RINTHEL_FLASH_INFERENCE`
+# pero arma `-fit` (`services.py::_llama_argv`), que es "ajustar args no
+# seteados para entrar en memoria del device" — no tiene nada que ver con
+# flash attention ni con inference. Renombrado a `fit_to_memory` para que la
+# screen de settings no muestre un nombre engañoso.
 LLAMA_FIELDS: list[Field] = [
-    Field("bin", "RINTHEL_LLAMA_BIN", Path, "~/codacus/llama.cpp/build-cuda/bin/llama-server", exists=True),
-    Field("model", "RINTHEL_LLAMA_MODEL_PATH", Path, "~/llama.cpp/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", exists=True),
-    Field("port", "RINTHEL_LLAMA_PORT", int, 8080, port=True),
-    Field("log", "RINTHEL_LLAMA_LOG_PATH", Path, "~/Rinthel-general/logs/llama-server.log"),
-    Field("enabled", "RINTHEL_LLAMA_ENABLED", bool, True),
-    Field("ngl", "RINTHEL_NGL", str, "all"),
-    Field("context_window", "RINTHEL_CONTEXT_WINDOW", int, 112000, positive=True),
-    Field("flash_attention", "RINTHEL_FLASH_ATTENTION", bool, True),
-    Field("flash_inference", "RINTHEL_FLASH_INFERENCE", bool, False),
-    Field("n_cpu_moe", "RINTHEL_N_CPU_MOE", int, 60),
-    Field("threads_batch", "RINTHEL_THREADS_BATCH", int, 7, positive=True),
-    Field("threads", "RINTHEL_THREADS", int, 8, positive=True),
-    Field("ubatch_size", "RINTHEL_UBATCH_SIZE", int, 512),
-    Field("batch_size", "RINTHEL_BATCH_SIZE", int, 512),
-    Field("parallel", "RINTHEL_PARALLEL", int, 1, positive=True),
-    Field("temperature", "RINTHEL_TEMPERATURE", float, 0.7),
-    Field("top_p", "RINTHEL_TOP_P", float, 0.8),
-    Field("top_k", "RINTHEL_TOP_K", int, 20),
-    Field("min_p", "RINTHEL_MIN_P", float, 0.1),
-    Field("repeat_penalty", "RINTHEL_REPEAT_PENALTY", float, 1.05),
-    Field("cache_reuse", "RINTHEL_CACHE_REUSE", int, 256),
-    Field("cache_ram", "RINTHEL_CACHE_RAM", int, -1),
-    Field("load_mode", "RINTHEL_LOAD_MODE", str, "mlock"),
-    Field("spec_type", "RINTHEL_SPEC_TYPE", str, "draft-mtp"),
-    Field("spec_draft_n_max", "RINTHEL_SPEC_DRAFT_N_MAX", int, 2),
-    Field("sched_async_cpu", "RINTHEL_SCHED_ASYNC_CPU", bool, True),
-    Field("cache_type_k", "RINTHEL_CACHE_TYPE_K", str, "f16"),
-    Field("cache_type_v", "RINTHEL_CACHE_TYPE_V", str, "f16"),
+    Field("bin", "RINTHEL_LLAMA_BIN", Path, "~/codacus/llama.cpp/build-cuda/bin/llama-server", exists=True, group="general"),
+    Field("model", "RINTHEL_LLAMA_MODEL_PATH", Path, "~/llama.cpp/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", exists=True, group="general"),
+    Field("port", "RINTHEL_LLAMA_PORT", int, 8080, port=True, group="general"),
+    Field("log", "RINTHEL_LLAMA_LOG_PATH", Path, "~/Rinthel-general/logs/llama-server.log", group="general"),
+    Field("enabled", "RINTHEL_LLAMA_ENABLED", bool, True, group="general"),
+    Field("ngl", "RINTHEL_NGL", str, "all", group="compute"),
+    Field("context_window", "RINTHEL_CONTEXT_WINDOW", int, 112000, positive=True, group="general"),
+    Field("flash_attention", "RINTHEL_FLASH_ATTENTION", bool, True, group="compute"),
+    Field("fit_to_memory", "RINTHEL_FIT_TO_MEMORY", bool, False, group="compute"),
+    Field("n_cpu_moe", "RINTHEL_N_CPU_MOE", int, 60, group="compute"),
+    Field("threads_batch", "RINTHEL_THREADS_BATCH", int, 7, positive=True, group="compute"),
+    Field("threads", "RINTHEL_THREADS", int, 8, positive=True, group="compute"),
+    Field("ubatch_size", "RINTHEL_UBATCH_SIZE", int, 512, group="compute"),
+    Field("batch_size", "RINTHEL_BATCH_SIZE", int, 512, group="compute"),
+    Field("parallel", "RINTHEL_PARALLEL", int, 1, positive=True, group="compute"),
+    Field("temperature", "RINTHEL_TEMPERATURE", float, 0.7, group="sampling"),
+    Field("top_p", "RINTHEL_TOP_P", float, 0.8, group="sampling"),
+    Field("top_k", "RINTHEL_TOP_K", int, 20, group="sampling"),
+    Field("min_p", "RINTHEL_MIN_P", float, 0.1, group="sampling"),
+    Field("repeat_penalty", "RINTHEL_REPEAT_PENALTY", float, 1.05, group="sampling"),
+    Field("cache_reuse", "RINTHEL_CACHE_REUSE", int, 256, group="cache"),
+    Field("cache_ram", "RINTHEL_CACHE_RAM", int, -1, group="cache"),
+    Field("load_mode", "RINTHEL_LOAD_MODE", str, "mlock", group="general"),
+    Field("spec_type", "RINTHEL_SPEC_TYPE", str, "draft-mtp", group="speculative"),
+    Field("spec_draft_n_max", "RINTHEL_SPEC_DRAFT_N_MAX", int, 2, group="speculative"),
+    Field("sched_async_cpu", "RINTHEL_SCHED_ASYNC_CPU", bool, True, group="compute"),
+    Field("cache_type_k", "RINTHEL_CACHE_TYPE_K", str, "f16", group="cache"),
+    Field("cache_type_v", "RINTHEL_CACHE_TYPE_V", str, "f16", group="cache"),
 ]
 
 
@@ -327,6 +367,50 @@ class RinthelConfig:
                 if not path.exists():
                     warnings.append(f"{f.env}={path} no existe todavía")
         return warnings
+
+
+# ── Lectura/escritura genérica de campos — usado por GET/POST /config
+# (sesión 09 del port-map, amendment de docs/adr/0001) y por [N] CONFIGURAR
+# del lado Textual (rinthel_tui/tui/screens/settings.py). Vive acá y no en
+# la screen porque el daemon (no Textual) también lo necesita ahora que es
+# dueño de la config — ver Decision Q1 de esa sesión. ──────────────────────
+
+
+def stringify(value: object) -> str:
+    """Misma representación de texto que terminaría en el .env — bool va
+    como "true"/"false" (lo que ``_bool_env``/``_PARSERS[bool]`` aceptan),
+    no "True"/"False"."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def diff_overrides(cfg: RinthelConfig, edits: dict[str, str]) -> dict[str, str]:
+    """De todo lo tocado (``edits``: env var -> valor nuevo como string),
+    devuelve solo lo que de verdad difiere del valor actual en ``cfg`` — lo
+    mínimo que hay que escribir en el .env."""
+    overrides: dict[str, str] = {}
+    for attr, fields in _ENTRIES:
+        sub = getattr(cfg, attr)
+        for f in fields:
+            if f.env not in edits:
+                continue
+            if edits[f.env] != stringify(getattr(sub, f.attr)):
+                overrides[f.env] = edits[f.env]
+    return overrides
+
+
+def with_overrides(cfg: RinthelConfig, overrides: dict[str, str]) -> RinthelConfig:
+    """Aplica ``overrides`` (env var -> string, mismo shape que
+    ``diff_overrides``/``update_env_file``) sobre una copia de ``cfg`` sin
+    tocar el .env — usado por ``POST /config`` para validar el estado
+    resultante (``RinthelConfig.validate()``) antes de escribir de verdad."""
+    kwargs: dict[str, Any] = {}
+    for attr, fields in _ENTRIES:
+        sub = getattr(cfg, attr)
+        changes = {f.attr: _PARSERS[f.kind](overrides[f.env]) for f in fields if f.env in overrides}
+        kwargs[attr] = replace(sub, **changes) if changes else sub
+    return replace(cfg, **kwargs)
 
 
 def default_config() -> RinthelConfig:

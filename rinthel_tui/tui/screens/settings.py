@@ -21,7 +21,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Button, Checkbox, Input, Static
 
-from rinthel_tui.config import CONFIG, RinthelConfig, _ENTRIES
+from rinthel_tui.config import CONFIG, RinthelConfig, _ENTRIES, diff_overrides, stringify
 from rinthel_tui.env_file import update_env_file
 from rinthel_tui.lifecycle import services
 from rinthel_tui.lifecycle.managed_service import DockerComposeService, LocalProcessService
@@ -47,31 +47,6 @@ _SETTINGS_SERVICES: list[tuple[str, LocalProcessService | DockerComposeService]]
 _FIELDS_BY_ATTR = dict(_ENTRIES)
 
 
-def _stringify(value: object) -> str:
-    """Misma representación de texto que terminaría en el .env — bool va
-    como "true"/"false" (lo que ``_bool_env`` acepta), no "True"/"False"."""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return str(value)
-
-
-def _diff_overrides(cfg: RinthelConfig, edits: dict[str, str]) -> dict[str, str]:
-    """De todo lo tocado durante la sesión (``edits``: env var -> valor
-    nuevo como string), devuelve solo lo que de verdad difiere del valor
-    actual en ``cfg`` — lo mínimo que hay que escribir en el .env. Función
-    pura (sin Textual) para poder testear la lógica de guardado sin
-    levantar la screen."""
-    overrides: dict[str, str] = {}
-    for attr, fields in _ENTRIES:
-        sub = getattr(cfg, attr)
-        for f in fields:
-            if f.env not in edits:
-                continue
-            if edits[f.env] != _stringify(getattr(sub, f.attr)):
-                overrides[f.env] = edits[f.env]
-    return overrides
-
-
 class SettingsScreen(Screen):
     BINDINGS = [("q", "close", "Volver"), ("escape", "close", "Volver")]
 
@@ -79,7 +54,7 @@ class SettingsScreen(Screen):
         super().__init__()
         self.cfg = cfg or CONFIG
         # env var -> valor nuevo (string) de todo lo tocado en esta sesión,
-        # sin importar si coincide con lo que ya había — _diff_overrides
+        # sin importar si coincide con lo que ya había — diff_overrides
         # filtra eso recién al guardar. Sobrevive a cambiar de servicio
         # seleccionado (el detail panel se reconstruye desde acá, no al
         # revés), así que no se pierden ediciones al ir y volver.
@@ -122,7 +97,7 @@ class SettingsScreen(Screen):
         for f in _FIELDS_BY_ATTR[self._selected_attr]:
             if f.attr == "enabled":
                 continue  # ya está arriba, en la lista de servicios
-            current = self._edits.get(f.env, _stringify(getattr(sub, f.attr)))
+            current = self._edits.get(f.env, stringify(getattr(sub, f.attr)))
             widgets.append(Static(f.attr, classes="settings-field-label"))
             if f.kind is bool:
                 widgets.append(Checkbox(f.env, value=current == "true", id=f"field-{f.env}"))
@@ -155,7 +130,7 @@ class SettingsScreen(Screen):
             await self._render_detail()
 
     def _save(self) -> None:
-        overrides = _diff_overrides(self.cfg, self._edits)
+        overrides = diff_overrides(self.cfg, self._edits)
         status = self.query_one("#settings-status", Static)
         if not overrides:
             status.update("Nada para guardar — no tocaste ningún valor.")

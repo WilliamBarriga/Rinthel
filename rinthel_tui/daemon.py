@@ -60,6 +60,45 @@ desconectado a mitad de un boot) no afecta el ``ServiceOutcome`` final que
 sigue viajando por la respuesta del POST. Sin cliente conectado a
 ``/ws/monitor``, `broadcast` no hace nada (set vacío).
 
+Sesión 09 agrega ``GET``/``POST /config`` — puerto de ``[N] CONFIGURAR``
+(``rinthel_tui/tui/screens/settings.py``). Grillado con Tarkark 2026-09-16:
+el daemon pasa a ser dueño de toda la config (``RinthelConfig`` completo,
+las 5 sub-configs incluyendo ``install``); el cliente Rust no duplica
+``config._ENTRIES`` ni parsea ``.env``. ``GET /config`` es un fetch único
+fuera del túnel WS (mismo criterio que ``GET /theme``: no cambia en
+runtime salvo que el usuario lo edite) y devuelve un shape genérico —
+``{"services": [{"attr", "display_name", "enabled", "fields": [{"attr",
+"env", "kind", "group", "value"}, ...]}, ...]}`` — en vez de un struct fijo
+por sub-config: mismo espíritu "genérico a propósito" que ya tenía
+``settings.py`` (agregar un ``Field`` en ``config.py`` lo hace aparecer acá
+solo, sin tocar el daemon ni el cliente Rust). ``enabled`` es ``None``
+para sub-configs sin ese campo (``moe``/``install`` no son un
+``LocalProcessService``/``DockerComposeService``, no tienen on/off).
+``value``/``kind`` reusan ``config.stringify``/``config.KIND_NAMES`` — el
+valor viaja como string (igual que un ``Input`` de Textual), el cliente
+decide qué widget pintar según ``kind`` ("bool"→checkbox, resto→input).
+
+``POST /config`` recibe ``{"overrides": {<env var>: <string>, ...}}``
+(mismo shape que ``config.diff_overrides``/``env_file.update_env_file``).
+A diferencia de la screen Textual original (que nunca validaba antes de
+guardar), acá sí: arma un ``RinthelConfig`` hipotético con
+``config.with_overrides`` y corre ``.validate()`` antes de escribir — si
+salta ``ConfigError`` (puertos duplicados/inválidos, numéricos ≤0), no
+toca el ``.env`` y devuelve los errores. Si el write sale bien, ``cfg``
+(el módulo-global, no solo el archivo) se reemplaza en el momento por el
+``RinthelConfig`` ya validado — corrección post-prueba-en-vivo (sesión 09):
+la primera versión dejaba ``cfg`` congelado hasta el próximo restart del
+daemon completo, lo que además de dejar ``GET /config`` mostrando el valor
+viejo, hacía que "revertir" un campo a su valor original vía la UI
+comparara contra ese mismo valor viejo y no escribiera nada — silencioso y
+confuso. Con el fix: un `BOOT`/`RELOAD` posterior a un `GUARDAR` ya usa los
+valores nuevos sin reiniciar el daemon (el proceso ya corriendo de
+llama-server/etc. no se toca retroactivamente, como es esperable — el
+cambio aplica en el próximo *spawn*, no en caliente sobre un proceso vivo).
+No hay watching del `.env` en disco: un cambio hecho por fuera de
+`POST /config` (edición manual del archivo) sigue necesitando reiniciar el
+daemon para que `cfg` lo vea.
+
 Sesión 08 agrega ``llama_status`` — mismo patrón periódico que
 ``docker_status``/``gpu_sample``/``cpu_ram_sample`` (un task que manda y
 duerme en loop mientras dure la conexión), no el trío phase_status/phase_log
@@ -79,15 +118,24 @@ import asyncio
 import json
 import time
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
-from rinthel_tui.config import default_config
+from rinthel_tui import config
+from rinthel_tui.config import ConfigError, default_config
+from rinthel_tui.env_file import update_env_file
 from rinthel_tui.lifecycle import phases, specs
 from rinthel_tui.lifecycle.managed_service import check_ready
+from rinthel_tui.lifecycle.services import (
+    DOCKER_SERVICES,
+    LLAMA_SERVICE,
+    LOCAL_SERVICES,
+    PITHAGORAS_SERVICE,
+    UNDERSTORY_SERVICE,
+)
 from rinthel_tui.lifecycle.runner import PhaseFailed, run_phase_list
-from rinthel_tui.lifecycle.services import DOCKER_SERVICES, LLAMA_SERVICE, LOCAL_SERVICES
 from rinthel_tui.lifecycle.specs import PhaseSpec
 from rinthel_tui.monitoring.resources import read_cpu_ram, read_gpu
 from rinthel_tui.monitoring.services import docker_compose_ps
@@ -95,6 +143,21 @@ from rinthel_tui.theme import palette
 
 cfg = default_config()
 app = FastAPI()
+
+# rinthel_tui/daemon.py -> repo root (mismo criterio que config.py para
+# ubicar el .env de la raíz).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_ENV_PATH = _REPO_ROOT / ".env"
+_ENV_EXAMPLE_PATH = _REPO_ROOT / ".env.example"
+
+# display_name de cada sub-config con instancia de servicio real — moe/install
+# no tienen una (no son LocalProcessService/DockerComposeService), caen al
+# fallback `attr.upper()` en `_config_payload`.
+_CONFIG_DISPLAY_NAMES = {
+    "llama": LLAMA_SERVICE.display_name,
+    "understory": UNDERSTORY_SERVICE.display_name,
+    "pithagoras": PITHAGORAS_SERVICE.display_name,
+}
 
 MANAGED_SERVICES = [*LOCAL_SERVICES, *DOCKER_SERVICES]  # mismo orden que boot/terminate reales
 
@@ -142,6 +205,69 @@ def get_theme() -> JSONResponse:
             "frame_chars": list(palette.FRAME_CHARS),
         }
     )
+
+
+def _config_payload() -> dict:
+    """Shape genérico de ``GET /config`` — ver docstring del módulo. Itera
+    ``config._ENTRIES`` en vez de listar sub-configs a mano, así que sumar
+    un ``Field``/sub-config nuevo en ``config.py`` alcanza para que aparezca
+    acá sin tocar el daemon."""
+    services = []
+    for attr, fields in config._ENTRIES:
+        sub = getattr(cfg, attr)
+        enabled_field = next((f for f in fields if f.attr == "enabled"), None)
+        services.append(
+            {
+                "attr": attr,
+                "display_name": _CONFIG_DISPLAY_NAMES.get(attr, attr.upper()),
+                "enabled": getattr(sub, "enabled") if enabled_field else None,
+                # env var del toggle — separado de "enabled" porque el
+                # cliente lo necesita para armar el override al tildar/
+                # destildar (mismo dict env->string que el resto de POST
+                # /config), y no está en "fields" (se filtra abajo).
+                "enabled_env": enabled_field.env if enabled_field else None,
+                "fields": [
+                    {
+                        "attr": f.attr,
+                        "env": f.env,
+                        "kind": config.KIND_NAMES[f.kind],
+                        "group": f.group,
+                        "value": config.stringify(getattr(sub, f.attr)),
+                    }
+                    for f in fields
+                    if f.attr != "enabled"  # ya sale en el "enabled" de arriba
+                ],
+            }
+        )
+    return {"services": services}
+
+
+@app.get("/config")
+def get_config() -> JSONResponse:
+    return JSONResponse(_config_payload())
+
+
+@app.post("/config")
+async def post_config(payload: dict) -> JSONResponse:
+    # Actualiza `cfg` en memoria tras un write propio (no watching del
+    # archivo — un cambio externo al .env todavía requiere reiniciar el
+    # daemon). Sin esto, un GET inmediatamente después de guardar seguía
+    # mostrando el valor viejo, y peor: "revertir" un campo a su valor
+    # original vía la UI quedaba comparado contra el propio valor viejo de
+    # `cfg` y no escribía nada (encontrado en vivo, sesión 09 del port-map).
+    global cfg
+    edits = payload.get("overrides", {})
+    to_write = config.diff_overrides(cfg, edits)
+    if not to_write:
+        return JSONResponse({"ok": True, "written": 0, "warnings": []})
+    try:
+        updated = config.with_overrides(cfg, to_write)
+        warnings = updated.validate()
+    except ConfigError as e:
+        return JSONResponse({"ok": False, "written": 0, "errors": str(e).split("; ")})
+    update_env_file(_ENV_PATH, to_write, seed_from=_ENV_EXAMPLE_PATH)
+    cfg = updated
+    return JSONResponse({"ok": True, "written": len(to_write), "warnings": warnings})
 
 
 def _tail_lines(path, n: int) -> list[str]:
