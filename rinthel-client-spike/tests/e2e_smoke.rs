@@ -28,6 +28,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use rinthel_client_spike::protocol::{CommandResult, Envelope, Theme};
+use tokio::sync::mpsc;
 
 const DAEMON: &str = "http://127.0.0.1:8765";
 const WS: &str = "ws://127.0.0.1:8765/ws/monitor";
@@ -111,6 +112,20 @@ async fn boot_then_terminate_over_real_wire() {
         env.kind
     );
 
+    // Amendment de docs/adr/0001 (sesión 05): boot/terminate real también
+    // debe transmitir phase_status/phase_log por el mismo túnel mientras
+    // corre — se recolectan en paralelo a los POST de abajo.
+    let (kind_tx, mut kind_rx) = mpsc::unbounded_channel::<String>();
+    tokio::spawn(async move {
+        while let Some(Ok(msg)) = read.next().await {
+            if let Ok(text) = msg.into_text() {
+                if let Ok(env) = serde_json::from_str::<Envelope>(&text) {
+                    let _ = kind_tx.send(env.kind);
+                }
+            }
+        }
+    });
+
     // Comandos bloqueantes reales, en el orden boot→terminate→cerrar.
     let client = reqwest::Client::new();
     let boot: CommandResult = client
@@ -132,4 +147,19 @@ async fn boot_then_terminate_over_real_wire() {
         .await
         .expect("respuesta de /terminate no matchea CommandResult");
     assert!(terminate.results.iter().all(|r| r.ok), "terminate real (contra dobles) no debería fallar");
+
+    // Deja que el reader procese los últimos frames en vuelo antes de leer.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let mut kinds = Vec::new();
+    while let Ok(kind) = kind_rx.try_recv() {
+        kinds.push(kind);
+    }
+    assert!(
+        kinds.iter().any(|k| k == "phase_status"),
+        "no llegó ningún phase_status durante boot+terminate; vistos: {kinds:?}"
+    );
+    assert!(
+        kinds.iter().any(|k| k == "phase_log"),
+        "no llegó ningún phase_log durante boot+terminate; vistos: {kinds:?}"
+    );
 }

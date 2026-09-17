@@ -9,6 +9,7 @@ pub mod farewell;
 pub mod logs;
 pub mod menu;
 pub mod monitor;
+pub mod phase_runner;
 
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
@@ -16,15 +17,16 @@ use ratatui::Frame;
 
 use crate::app::App;
 
-// `farewell` (sesión 02) no tiene variante acá a propósito — es un mockup
-// sin cablear, ver el doc-comment de `farewell.rs` para el porqué y lo
-// pendiente de sesión 05.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScreenId {
     Menu,
     Monitor,
     Logs,
     Capture,
+    /// Checklist + log de BOOT/TERMINATE — sesión 05 del port-map.
+    PhaseRunner,
+    /// Cierre de sesión (mockup sesión 02, cableado sesión 05).
+    Farewell,
 }
 
 #[derive(Clone, Copy)]
@@ -59,6 +61,8 @@ pub fn draw(id: ScreenId, f: &mut Frame, app: &App) {
         ScreenId::Monitor => monitor::draw(f, app),
         ScreenId::Logs => logs::draw(f, app),
         ScreenId::Capture => capture::draw(f, app),
+        ScreenId::PhaseRunner => phase_runner::draw(f, app),
+        ScreenId::Farewell => farewell::draw(f, app.colors.fg),
     }
 }
 
@@ -93,9 +97,11 @@ fn status_line(app: &App) -> Line<'static> {
     } else {
         let hint = match app.screen {
             ScreenId::Menu => " ↑↓=mover  Enter=elegir  q=salir ",
-            ScreenId::Monitor => " b=boot  t=terminate  Esc=menu  q=salir ",
+            ScreenId::Monitor => " Esc=menu  q=salir ",
             ScreenId::Logs => " q/Esc=volver ",
             ScreenId::Capture => " Esc=volver (al terminar) ",
+            ScreenId::PhaseRunner => " Esc=volver (al terminar) ",
+            ScreenId::Farewell => " cerrando sesión… ",
         };
         Line::from(Span::styled(hint, Style::default().fg(app.colors.dim)))
     }

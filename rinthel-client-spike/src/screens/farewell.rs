@@ -1,19 +1,20 @@
 //! Screen de cierre — puerto de `rinthel_tui/tui/screens/farewell.py`
-//! (sesión 02 del port-map). Mockup sin cablear a propósito (grillado con
-//! Tarkark 2026-09-16): sesión 05 (`phase_runner`) decide cómo se dispara
-//! y construye — por eso este módulo no toca `ScreenId`/`MENU_ENTRIES` ni
-//! `app.rs`.
+//! (mockup construido en sesión 02, cableado en sesión 05 del port-map).
+//!
+//! Cableado (sesión 05, grillado con Tarkark 2026-09-16): los dos callers
+//! de Python — `phase_runner.py:110` (tras un TERMINATE exitoso) y
+//! `menu.py:183` (opción EXIT del menú) — están wireados acá vía
+//! `App::farewell_next` (`app.rs`): `MenuAction::Quit` entra a esta screen
+//! en vez de salir directo, y `App::finish_phase_sequence` hace lo mismo
+//! tras un TERMINATE sin fallas. El atajo global `q` del spike (invención
+//! pre-port, no existe en `farewell.py`) sigue matando la app incluso
+//! durante estos 5s — decisión explícita de Tarkark, no se lo especial-casó
+//! en el loop de `app.rs`. `farewell.py` tampoco bindea Esc, así que acá
+//! tampoco hay guard de salida temprana: los 5s corren completos siempre.
 //!
 //! El `GlitchLabel` real (`rinthel_tui/tui/effects/flicker.py`) queda
 //! stubbeado — texto directo, sin animación — confirmado en el ticket de
 //! esta sesión; se retrofitea en sesión 10.
-//!
-//! NOTA PARA SESIÓN 05: Python tiene un segundo caller de `FarewellScreen`
-//! además de `phase_runner.py:110` — `menu.py:183`, la opción "exit" del
-//! menú (hoy `MenuAction::Quit` acá, que sale sin pasar por nada). Revisar
-//! ahí si corresponde cablearlo también, y qué hace el atajo global `q`
-//! del spike (no existe en Python) mientras corre este timer — anotado
-//! como pendiente en el port-map, no decidido en esta sesión.
 
 use std::time::{Duration, Instant};
 

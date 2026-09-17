@@ -7,3 +7,12 @@ Decidimos: un único WebSocket (`/ws/monitor`) multiplexa los cuatro streams en 
 Se descartó gRPC/JSON-RPC sobre socket Unix por ser más pesado (tooling de protobuf, o un framework JSON-RPC) para un daemon local de un solo usuario sin necesidad de auth/TLS — FastAPI + WebSocket estándar es más legible y tiene menos curva para alguien recién empezando con Rust.
 
 Ver [.scratch/ratatui-migration/issues/03-fastapi-protocol-design.md](../../.scratch/ratatui-migration/issues/03-fastapi-protocol-design.md) para las formas exactas de mensaje.
+
+## Amendment (sesión 05 del port-map, 2026-09-16): progreso en vivo de boot/terminate por WS
+
+`POST /boot`/`POST /terminate` siguen siendo bloqueantes y su respuesta (`{"results": [ServiceOutcome]}`) sigue siendo la única fuente de verdad — esto no cambia. Lo que se agrega es telemetría adicional por `/ws/monitor` mientras la secuencia corre, para que el cliente pueda pintar un checklist/log en vivo (paridad con `PhaseChecklist`/`ScreenPhaseReport` del lado Textual, que sí actualizaban en vivo por estar in-process) en vez de solo un resumen post-hoc:
+
+- `phase_status`: `{"label": str, "status": "running"|"done"|"error"}` por cada `PhaseSpec` (granularidad de `boot_phases()`/`down_phases()`, no de `boot_units`/`down_units`).
+- `phase_log`: `{"kind": "info"|"success"|"warn"|"error", "message": str}` por cada llamada a `report.*` dentro de una fase.
+
+Decisión explícita de Tarkark: construir este canal ahora en vez de dejarlo pendiente — la alternativa (checklist "resuelto de una vez" al llegar la respuesta del POST, sin fila por fila en vivo) quedaba coja frente al widget que se estaba porteando. Fire-and-forget (`asyncio.create_task`, sin awaitear): son mensajes de progreso para la UI, no el resultado — no hay corrección que proteger si uno se pierde. Sin cliente conectado, el broadcast es un no-op.

@@ -16,7 +16,8 @@ use ratatui::widgets::Block;
 use ratatui::{Frame, Terminal};
 use tokio::sync::mpsc;
 
-use crate::protocol::{self, CommandResult, CpuRamSample, DockerContainer, Envelope, GpuSample, Theme};
+use crate::protocol::{self, CommandResult, CpuRamSample, DockerContainer, Envelope, GpuSample, PhaseLog, PhaseStatus, Theme};
+use crate::screens::farewell::FarewellTimer;
 use crate::screens::{self, MenuAction, ScreenId};
 
 pub const DAEMON: &str = "http://127.0.0.1:8765";
@@ -32,6 +33,20 @@ pub enum AppEvent {
     Log(String),
     CommandDone(&'static str, CommandResult),
     CommandFailed(&'static str, String),
+    /// `phase_status` (amendment de docs/adr/0001, sesión 05): (label, status).
+    PhaseStatus(String, String),
+    /// `phase_log`: (kind, message).
+    PhaseLog(String, String),
+}
+
+/// A qué pantalla vuelve `FarewellScreen` al terminar sus 5s — reemplaza el
+/// `await push_screen_wait(FarewellScreen())` de Python (`app.rs` no tiene
+/// stack de screens): `phase_runner.py:110` vuelve al checklist ya cerrado,
+/// `menu.py:183` (EXIT) sale de la app.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum FarewellNext {
+    BackToPhaseRunner,
+    Quit,
 }
 
 pub struct Colors {
@@ -80,6 +95,16 @@ pub struct App {
     pub command_in_flight: Option<&'static str>,
     pub last_command_result: Option<(&'static str, CommandResult)>,
     pub last_command_error: Option<String>,
+    /// Título de `PhaseRunnerScreen` para la corrida en curso — "EXECUTE —
+    /// FAST BOOT" / "SHUTDOWN SEQUENCE", mismos textos que `menu.py`.
+    pub phase_title: &'static str,
+    /// Filas del checklist, en el orden en que llegó su primer evento
+    /// `phase_status` — ver doc-comment de `widgets/checklist.rs`.
+    pub phase_rows: Vec<(String, String)>,
+    /// Log en vivo de la corrida — (kind, message), igual que `phase_log`.
+    pub phase_log: VecDeque<(String, String)>,
+    pub farewell_timer: Option<FarewellTimer>,
+    pub farewell_next: FarewellNext,
     should_quit: bool,
 }
 
@@ -99,6 +124,11 @@ impl App {
             command_in_flight: None,
             last_command_result: None,
             last_command_error: None,
+            phase_title: "",
+            phase_rows: Vec::new(),
+            phase_log: VecDeque::new(),
+            farewell_timer: None,
+            farewell_next: FarewellNext::Quit,
             should_quit: false,
         }
     }
@@ -133,11 +163,59 @@ impl App {
             AppEvent::CommandDone(name, result) => {
                 self.command_in_flight = None;
                 self.last_command_error = None;
+                if name == "boot" || name == "terminate" {
+                    self.finish_phase_sequence(name, &result);
+                }
                 self.last_command_result = Some((name, result));
             }
             AppEvent::CommandFailed(name, err) => {
                 self.command_in_flight = None;
                 self.last_command_error = Some(format!("{name} falló: {err}"));
+            }
+            AppEvent::PhaseStatus(label, status) => {
+                match self.phase_rows.iter_mut().find(|(l, _)| *l == label) {
+                    Some(row) => row.1 = status,
+                    None => self.phase_rows.push((label, status)),
+                }
+            }
+            AppEvent::PhaseLog(kind, message) => {
+                if self.phase_log.len() == 200 {
+                    self.phase_log.pop_front();
+                }
+                self.phase_log.push_back((kind, message));
+            }
+        }
+    }
+
+    /// Puerto de `PhaseSequenceScreen._run_all`/`_run_closing`
+    /// (`phase_runner.py`): al llegar la respuesta bloqueante de
+    /// `/boot`/`/terminate`, cierra el log de la corrida — "Secuencia
+    /// completa." + banner si todo salió bien (y dispara farewell si fue
+    /// TERMINATE), o "secuencia cortada" si algo falló. Los banners son los
+    /// mismos textos que `_BOOT_CLOSING`/`_TERMINATE_CLOSING` en `menu.py`;
+    /// el efecto de transición que los precedía en Python queda stubbeado
+    /// (sesión 10 lo retrofitea) — acá es directamente una línea más del log.
+    fn finish_phase_sequence(&mut self, name: &'static str, result: &CommandResult) {
+        match result.results.iter().find(|r| !r.ok) {
+            Some(failed) => {
+                self.phase_log.push_back((
+                    "error".to_string(),
+                    format!("secuencia cortada: {}: {}", failed.service, failed.message),
+                ));
+            }
+            None => {
+                self.phase_log.push_back(("success".to_string(), "Secuencia completa.".to_string()));
+                let banner = if name == "boot" {
+                    "TODO EN LINEA — Understory + Pithagoras activos"
+                } else {
+                    "SYSTEM OFFLINE — TODOS LOS SERVICIOS DETENIDOS"
+                };
+                self.phase_log.push_back(("success".to_string(), format!("◈ {banner}")));
+                if name == "terminate" {
+                    self.screen = ScreenId::Farewell;
+                    self.farewell_timer = Some(FarewellTimer::start());
+                    self.farewell_next = FarewellNext::BackToPhaseRunner;
+                }
             }
         }
     }
@@ -148,21 +226,40 @@ impl App {
     fn dispatch_menu_action(&mut self, tx: &mpsc::UnboundedSender<AppEvent>) {
         match screens::MENU_ENTRIES[self.menu_selected].action {
             MenuAction::Navigate(id) => self.screen = id,
-            MenuAction::Boot => {
-                self.command_in_flight = Some("boot");
-                tokio::spawn(run_command("boot", "/boot", tx.clone()));
-            }
-            MenuAction::Terminate => {
-                self.command_in_flight = Some("terminate");
-                tokio::spawn(run_command("terminate", "/terminate", tx.clone()));
-            }
+            MenuAction::Boot => self.start_phase_run("boot", "/boot", "EXECUTE — FAST BOOT", tx),
+            MenuAction::Terminate => self.start_phase_run("terminate", "/terminate", "SHUTDOWN SEQUENCE", tx),
             MenuAction::Capture => {
                 self.screen = ScreenId::Capture;
                 self.command_in_flight = Some("capture");
                 tokio::spawn(run_command("capture", "/capture", tx.clone()));
             }
-            MenuAction::Quit => self.should_quit = true,
+            // menu.py:183 — EXIT pasa por FarewellScreen antes de salir,
+            // igual que TERMINATE (grillado con Tarkark, sesión 05).
+            MenuAction::Quit => {
+                self.screen = ScreenId::Farewell;
+                self.farewell_timer = Some(FarewellTimer::start());
+                self.farewell_next = FarewellNext::Quit;
+            }
         }
+    }
+
+    /// Boot/Terminate comparten el mismo arranque: limpiar el checklist/log
+    /// de la corrida anterior, pasar a `PhaseRunnerScreen` y disparar el
+    /// POST bloqueante — mismo trío que `menu.py`'s `_handle_selection`
+    /// hace con `push_screen`/`run_worker`.
+    fn start_phase_run(
+        &mut self,
+        name: &'static str,
+        path: &'static str,
+        title: &'static str,
+        tx: &mpsc::UnboundedSender<AppEvent>,
+    ) {
+        self.phase_title = title;
+        self.phase_rows.clear();
+        self.phase_log.clear();
+        self.screen = ScreenId::PhaseRunner;
+        self.command_in_flight = Some(name);
+        tokio::spawn(run_command(name, path, tx.clone()));
     }
 
     /// Loop principal: terminal alternate-screen, tick de eventos + polling
@@ -185,6 +282,21 @@ impl App {
                     self.apply(ev);
                 }
 
+                // `FarewellScreen._finish` de Python (set_timer + dismiss()):
+                // acá no hay callback, así que se consulta el timer cada
+                // vuelta del loop en vez de agendar uno.
+                if self.screen == ScreenId::Farewell {
+                    if let Some(timer) = &self.farewell_timer {
+                        if timer.is_done() {
+                            self.farewell_timer = None;
+                            match self.farewell_next {
+                                FarewellNext::Quit => self.should_quit = true,
+                                FarewellNext::BackToPhaseRunner => self.screen = ScreenId::PhaseRunner,
+                            }
+                        }
+                    }
+                }
+
                 if event::poll(Duration::from_millis(80))? {
                     if let Event::Key(key) = event::read()? {
                         match (self.screen, key.code) {
@@ -204,19 +316,15 @@ impl App {
                             }
                             (ScreenId::Menu, KeyCode::Enter) => self.dispatch_menu_action(&tx),
                             (ScreenId::Monitor, KeyCode::Esc) => self.screen = ScreenId::Menu,
-                            // CaptureScreen bloquea "volver" hasta terminar
-                            // (`action_dismiss_if_done` en capture.py) — acá
-                            // eso es "no hay POST /capture en vuelo".
+                            // CaptureScreen/PhaseRunnerScreen bloquean "volver"
+                            // hasta terminar (`action_dismiss_if_done` en
+                            // capture.py/phase_runner.py) — acá eso es "no hay
+                            // POST en vuelo".
                             (ScreenId::Capture, KeyCode::Esc) if screens::capture::done(&self) => {
                                 self.screen = ScreenId::Menu;
                             }
-                            (ScreenId::Monitor, KeyCode::Char('b')) => {
-                                self.command_in_flight = Some("boot");
-                                tokio::spawn(run_command("boot", "/boot", tx.clone()));
-                            }
-                            (ScreenId::Monitor, KeyCode::Char('t')) => {
-                                self.command_in_flight = Some("terminate");
-                                tokio::spawn(run_command("terminate", "/terminate", tx.clone()));
+                            (ScreenId::PhaseRunner, KeyCode::Esc) if screens::phase_runner::done(&self) => {
+                                self.screen = ScreenId::Menu;
                             }
                             _ => {}
                         }
@@ -265,6 +373,12 @@ async fn ws_task(tx: mpsc::UnboundedSender<AppEvent>) {
                 "log_line" => serde_json::from_value::<protocol::LogLine>(env.data)
                     .ok()
                     .map(|l| AppEvent::Log(l.line)),
+                "phase_status" => serde_json::from_value::<PhaseStatus>(env.data)
+                    .ok()
+                    .map(|p| AppEvent::PhaseStatus(p.label, p.status)),
+                "phase_log" => serde_json::from_value::<PhaseLog>(env.data)
+                    .ok()
+                    .map(|p| AppEvent::PhaseLog(p.kind, p.message)),
                 _ => None,
             };
             if let Some(ev) = ev {

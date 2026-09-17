@@ -87,3 +87,22 @@ pub struct ServiceOutcome {
 pub struct CommandResult {
     pub results: Vec<ServiceOutcome>,
 }
+
+/// Sobre `phase_status` (amendment de docs/adr/0001, sesión 05): un mensaje
+/// por cada `PhaseSpec` que corre `run_phase_list` del lado daemon — misma
+/// granularidad fina que `boot_phases()`/`down_phases()`, no la agrupación
+/// por servicio de la respuesta de `/boot`/`/terminate`.
+#[derive(Debug, Deserialize)]
+pub struct PhaseStatus {
+    pub label: String,
+    pub status: String,
+}
+
+/// Sobre `phase_log` — un mensaje por cada llamada a `report.*` dentro de
+/// una fase (incluye `info`, a diferencia del `message` agregado que sí lo
+/// descarta en `ServiceOutcome`).
+#[derive(Debug, Deserialize)]
+pub struct PhaseLog {
+    pub kind: String,
+    pub message: String,
+}

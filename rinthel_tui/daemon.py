@@ -18,6 +18,29 @@ terminate antes de esta sesión) — no hay todavía una sesión de hardening
 que lo vuelva real (ver "Not yet specified" en port-map.md). Todo lo demás
 (GPU, CPU/RAM, docker ps, tail de log) es de solo lectura contra el sistema
 real, sin cambios respecto al spike original.
+
+Sesión 05 (phase_runner) agrega dos tipos de sobre a ``/ws/monitor``, para
+que el checklist/log en vivo de BOOT/TERMINATE tenga de dónde sacar
+progreso sin romper ADR 0001 (``/boot``/``/terminate`` siguen siendo POST
+bloqueantes y su respuesta sigue siendo la fuente de verdad; el WS es
+telemetría best-effort, igual que docker_status/gpu_sample/etc.):
+
+- ``phase_status``: ``{"label": str, "status": "running"|"done"|"error"}``
+  — un mensaje por cada ``PhaseSpec`` que corre ``run_phase_list``, vía su
+  parámetro ``on_phase`` (ver lifecycle/runner.py). Misma granularidad fina
+  que ``boot_phases()``/``down_phases()`` (spawn y wait son filas
+  separadas), no la agrupación por servicio de ``boot_units``/``down_units``
+  que sí usa la respuesta final.
+- ``phase_log``: ``{"kind": "info"|"success"|"warn"|"error", "message": str}``
+  — un mensaje por cada llamada a ``report.info/success/warn/error`` dentro
+  de una fase, para el panel de log en vivo (mismo rol que ``ScreenPhaseReport``
+  tenía del lado Textual).
+
+Fire-and-forget a propósito (``asyncio.create_task``, no awaited): son
+mensajes de progreso para la UI, no el resultado — perder uno (cliente
+desconectado a mitad de un boot) no afecta el ``ServiceOutcome`` final que
+sigue viajando por la respuesta del POST. Sin cliente conectado a
+``/ws/monitor``, `broadcast` no hace nada (set vacío).
 """
 
 from __future__ import annotations
@@ -43,6 +66,21 @@ cfg = default_config()
 app = FastAPI()
 
 MANAGED_SERVICES = [*LOCAL_SERVICES, *DOCKER_SERVICES]  # mismo orden que boot/terminate reales
+
+# Clientes /ws/monitor conectados ahora mismo — Rinthel es monousuario así
+# que en la práctica hay 0 o 1, pero el set soporta más sin cambios.
+_ws_clients: set[WebSocket] = set()
+
+
+async def broadcast(type_: str, data: dict) -> None:
+    dead = []
+    for ws in _ws_clients:
+        try:
+            await ws.send_text(json.dumps({"type": type_, "data": data}))
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        _ws_clients.discard(ws)
 
 
 @app.get("/theme")
@@ -125,6 +163,7 @@ async def _log_line_source():
 @app.websocket("/ws/monitor")
 async def ws_monitor(ws: WebSocket) -> None:
     await ws.accept()
+    _ws_clients.add(ws)
 
     async def send(type_: str, data: dict) -> None:
         await ws.send_text(json.dumps({"type": type_, "data": data}))
@@ -163,6 +202,7 @@ async def ws_monitor(ws: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
+        _ws_clients.discard(ws)
         for t in tasks:
             t.cancel()
 
@@ -196,10 +236,40 @@ class _Collected:
         self.messages.append(msg)
 
 
+@dataclass
+class _BroadcastingCollected(_Collected):
+    """``_Collected`` + un ``phase_log`` por ``/ws/monitor`` en cada llamada
+    — a diferencia de ``_Collected.info()``, acá sí se transmite (es ruido
+    para el ``message`` final del ``ServiceOutcome``, pero es justo lo que
+    ``ScreenPhaseReport`` mostraba en vivo del lado Textual). Broadcast es
+    fire-and-forget (ver docstring del módulo); las llamadas base siguen
+    alimentando ``ok``/``messages`` sin cambios."""
+
+    def info(self, msg: str) -> None:
+        super().info(msg)
+        asyncio.create_task(broadcast("phase_log", {"kind": "info", "message": msg}))
+
+    def success(self, msg: str) -> None:
+        super().success(msg)
+        asyncio.create_task(broadcast("phase_log", {"kind": "success", "message": msg}))
+
+    def warn(self, msg: str) -> None:
+        super().warn(msg)
+        asyncio.create_task(broadcast("phase_log", {"kind": "warn", "message": msg}))
+
+    def error(self, msg: str) -> None:
+        super().error(msg)
+        asyncio.create_task(broadcast("phase_log", {"kind": "error", "message": msg}))
+
+
+async def _on_phase(spec: PhaseSpec, status: str) -> None:
+    await broadcast("phase_status", {"label": spec.label, "status": status})
+
+
 async def _run_unit(service: str, unit_specs: list[PhaseSpec]) -> dict:
-    collected = _Collected()
+    collected = _BroadcastingCollected()
     try:
-        await run_phase_list(cfg, unit_specs, collected)
+        await run_phase_list(cfg, unit_specs, collected, on_phase=_on_phase)
     except PhaseFailed:
         pass  # collected.ok ya quedó en False vía report.error
     return {

@@ -10,7 +10,8 @@ depender de que la anterior haya funcionado (ej. no tiene sentido esperar
 a que llama-server responda si nunca se lo pudo lanzar).
 """
 
-from typing import Callable, Sequence
+import inspect
+from typing import Awaitable, Callable, Sequence, Union
 
 from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle.specs import PhaseSpec
@@ -18,8 +19,11 @@ from rinthel_tui.lifecycle.types import PhaseError, PhaseReport
 
 # status: "running" | "done" | "error" — avisa a quien llama antes/después de
 # cada fase para que pueda reflejarlo en un checklist (PhaseSequenceScreen)
-# sin que este módulo sepa nada de Textual.
-PhaseCallback = Callable[[PhaseSpec, str], None]
+# sin que este módulo sepa nada de Textual. Puede devolver un awaitable (sesión
+# 05 del port-map: el daemon lo usa para transmitir por /ws/monitor) o nada
+# (Textual, que actualiza el widget de forma sincrónica) — se espera el
+# resultado solo si hace falta, así los dos callers conviven sin wrapper.
+PhaseCallback = Callable[[PhaseSpec, str], Union[Awaitable[None], None]]
 
 
 class PhaseFailed(Exception):
@@ -31,6 +35,12 @@ class PhaseFailed(Exception):
         self.cause = cause
 
 
+async def _notify(on_phase: PhaseCallback, spec: PhaseSpec, status: str) -> None:
+    result = on_phase(spec, status)
+    if inspect.isawaitable(result):
+        await result
+
+
 async def run_phase_list(
     cfg: RinthelConfig,
     specs: Sequence[PhaseSpec],
@@ -39,12 +49,12 @@ async def run_phase_list(
 ) -> None:
     for spec in specs:
         if on_phase:
-            on_phase(spec, "running")
+            await _notify(on_phase, spec, "running")
         try:
             await spec.run(cfg, report)
         except PhaseError as exc:
             if on_phase:
-                on_phase(spec, "error")
+                await _notify(on_phase, spec, "error")
             raise PhaseFailed(spec.label, exc) from exc
         if on_phase:
-            on_phase(spec, "done")
+            await _notify(on_phase, spec, "done")

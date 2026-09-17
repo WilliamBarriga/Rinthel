@@ -2,4 +2,5 @@
 //! adivinar la abstracción correcta antes de que haga falta (ver
 //! port-map.md). `log_tail` es el primero (sesión 01).
 
+pub mod checklist;
 pub mod log_tail;
