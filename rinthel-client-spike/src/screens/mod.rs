@@ -144,7 +144,11 @@ pub fn draw(id: ScreenId, f: &mut Frame, app: &App) {
         ScreenId::Logs => logs::draw(f, app),
         ScreenId::Capture => capture::draw(f, app),
         ScreenId::PhaseRunner => phase_runner::draw(f, app),
-        ScreenId::Farewell => farewell::draw(f, app.colors.fg),
+        ScreenId::Farewell => {
+            let now = std::time::Instant::now();
+            let text = app.farewell_message.as_ref().map(|g| g.text(now)).unwrap_or(farewell::MESSAGE);
+            farewell::draw(f, app.colors.fg, text);
+        }
         ScreenId::Settings => settings::draw(f, app),
     }
 }

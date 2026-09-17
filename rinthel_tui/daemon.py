@@ -23,11 +23,16 @@ Sesión 06 agrega ``/reload`` — puerto real de ``ReloadScreen``
 (``rinthel_tui/tui/screens/reload.py``), mismo mecanismo bloqueante +
 ``phase_status``/``phase_log`` que boot/terminate, corriendo las 3 tandas
 de ``specs.reload_units`` (shutdown → boot → rebuild) en secuencia y
-cortando en el primer fallo. Las 3 transiciones entre tandas que Python
-dispara entre grupos (``DatamoshEffect``/``VignetteEffect``/``RippleEffect``)
-no dejan ningún rastro en el protocolo — ni siquiera un marcador de
-boundary entre tandas — quedan puramente del lado cliente para cuando la
-sesión 10 las retrofitee.
+cortando en el primer fallo.
+
+Sesión 10 agrega ``phase_batch`` (amendment de docs/adr/0001): grillado con
+Tarkark — las 2 transiciones entre tandas que el cliente retrofitea
+(``DatamoshEffect``/``VignetteEffect``) necesitan saber cuándo termina
+"shutdown" y empieza "boot", y cuándo termina "boot" y empieza "rebuild";
+sin eso no tenían de dónde dispararse (`/reload` corre las 3 tandas de un
+tirón, sin ningún marcador de límite). ``{"batch": "boot"|"rebuild"}``, uno
+antes de cada una de esas 2 tandas — ``"shutdown"`` no se emite (nada la
+escucha, no hay transición antes de la primera tanda).
 
 Sesión 07 agrega ``/install`` — puerto de ``[0] INSTALL`` (`menu.py`), mismo
 mecanismo bloqueante + phase_status/phase_log, corriendo ``specs.
@@ -465,15 +470,27 @@ async def reload() -> JSONResponse:
     # Sesión 06 del port-map: shutdown → DOCKER → boot(solo local) →
     # rebuild(solo docker, no_cache) — mismo trío phase_status/phase_log
     # que boot/terminate, corta en el primer fallo (grillado con Tarkark:
-    # mismo criterio que /boot, replica _run_all de reload.py).
+    # mismo criterio que /boot, replica _run_all de reload.py). Sesión 10:
+    # un ``phase_batch`` antes de "boot" y antes de "rebuild" — ver
+    # docstring del módulo — para que el cliente sepa cuándo disparar
+    # Datamosh/Vignette (las 2 transiciones entre tandas de reload.py que
+    # antes no tenían de dónde engancharse).
     shutdown, boot, rebuild = specs.reload_units(cfg)
     docker_check = ("docker", [PhaseSpec("◈ DOCKER", phases.phase_check_docker)])
+    groups: list[tuple[str | None, list[tuple[str, list[PhaseSpec]]]]] = [
+        (None, shutdown),
+        ("boot", [docker_check, *boot]),
+        ("rebuild", rebuild),
+    ]
     results = []
-    for service, unit_specs in [*shutdown, docker_check, *boot, *rebuild]:
-        outcome = await _run_unit(service, unit_specs)
-        results.append(outcome)
-        if not outcome["ok"]:
-            break
+    for batch, units in groups:
+        if batch is not None:
+            await broadcast("phase_batch", {"batch": batch})
+        for service, unit_specs in units:
+            outcome = await _run_unit(service, unit_specs)
+            results.append(outcome)
+            if not outcome["ok"]:
+                return JSONResponse({"results": results})
     return JSONResponse({"results": results})
 
 

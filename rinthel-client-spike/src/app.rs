@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::io;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode};
 use crossterm::execute;
@@ -16,6 +16,7 @@ use ratatui::widgets::Block;
 use ratatui::{Frame, Terminal};
 use tokio::sync::mpsc;
 
+use crate::effects::{self, ActiveEffect};
 use crate::protocol::{
     self, CommandResult, ConfigPayload, ConfigSaveResult, CpuRamSample, DockerContainer, Envelope, GpuSample,
     PhaseLog, PhaseStatus, Theme,
@@ -23,6 +24,23 @@ use crate::protocol::{
 use crate::screens::farewell::FarewellTimer;
 use crate::screens::settings::{self, DetailRow};
 use crate::screens::{self, MenuAction, ScreenId};
+
+/// Puerto de `branding/taglines.py` — solo contenido, ver docstring de ese
+/// módulo (mezcla status técnico con líneas de peso narrativo, mismo
+/// registro que la cita de Blade Runner del banner).
+pub const TAGLINES: &[&str] = &[
+    "Like tears in the rain.",
+    "Have you ever retired a human by mistake?",
+    "It's too bad she won't live. But then again, who does?",
+    "The sky above the port was the color of television, tuned to a dead channel.",
+    "Your effort to remain what you are is what limits you.",
+    "The passion to build has cooled, and the joy of construction has forgotten.",
+    "I don't know if it's me or Tyrell's niece.",
+    "And can you offer me proof of your existence?",
+    "Fear isn't a weakness. It's here to protect you.",
+    "It's the code you live by that defines who you are.",
+    "Your body can be chrome, but the heart never changes.",
+];
 
 pub const DAEMON: &str = "http://127.0.0.1:8765";
 const WS: &str = "ws://127.0.0.1:8765/ws/monitor";
@@ -41,6 +59,11 @@ pub enum AppEvent {
     PhaseStatus(String, String),
     /// `phase_log`: (kind, message).
     PhaseLog(String, String),
+    /// `phase_batch` (amendment de docs/adr/0001, sesión 10): límite entre
+    /// tandas de `/reload` — dispara Datamosh ("boot") o Vignette
+    /// ("rebuild"). `"shutdown"` nunca llega (nadie la emite, ver
+    /// protocol::PhaseBatch).
+    PhaseBatch(String),
     /// `llama_status` (sesión 08): estado parado, no un evento de corrida.
     LlamaStatus(bool),
     /// `GET /config` resuelto (sesión 09) — disparado al entrar a
@@ -73,6 +96,25 @@ pub enum ConfigFocus {
     Detail,
 }
 
+/// Qué hacer cuando `App::active_effect` termina — reemplaza el `await
+/// push_screen_wait(effect); <lo que sigue>` secuencial de Python: acá el
+/// efecto y su continuación viven separados (el loop principal no puede
+/// bloquearse), así que la continuación se guarda como dato en vez de
+/// código que sigue inline.
+pub enum EffectFollowUp {
+    None,
+    /// SignalNoise antes de BOOT/RELOAD/TERMINATE/INSTALL — dispara el POST
+    /// recién cuando termina, igual que `menu.py:154-176`.
+    StartPhaseRun { name: &'static str, path: &'static str, title: &'static str },
+    /// SignalNoise antes de CAPTURE (`menu.py:175-177`).
+    StartCapture,
+    /// Cierre de BOOT/TERMINATE/RELOAD/INSTALL exitosos: banner al log +
+    /// farewell si corresponde (TERMINATE) — recién acá se libera
+    /// `command_in_flight` (Esc queda bloqueado hasta este punto, igual que
+    /// `_done = True` recién después de `_run_closing` en Python).
+    FinishClosing { banner: String, show_farewell: bool },
+}
+
 /// Resultado del último `POST /config` — separado de
 /// `last_command_result`/`last_command_error` (que asumen el shape
 /// `CommandResult` de boot/terminate/reload/install) porque `/config`
@@ -90,6 +132,21 @@ pub struct Colors {
     pub hot: Color,
     pub dim: Color,
     pub bg: Color,
+    /// Resto de la paleta canónica — sin uso hasta sesión 10 (efectos de
+    /// transición): `electric`/`glow` (`ChromaticAberrationEffect`).
+    pub electric: Color,
+    pub glow: Color,
+    /// Paleta "extended" (`theme/palette.py`) — solo la usan los efectos de
+    /// transición (sesión 10).
+    pub cool: Color,
+    pub cool_dim: Color,
+    pub hot_dim: Color,
+    pub electric_dim: Color,
+    pub steel: Color,
+    pub steel_dim: Color,
+    /// `palette.FRAME_CHARS` — glifos de corrupción/banner compartidos por
+    /// varios efectos (`random.choice(palette.FRAME_CHARS)` en Python).
+    pub frame_chars: Vec<char>,
 }
 
 fn hex(s: &str) -> Color {
@@ -110,6 +167,15 @@ impl From<&Theme> for Colors {
             hot: hex(&t.canonical.hot),
             dim: hex(&t.canonical.dim),
             bg: hex(&t.canonical.bg),
+            electric: hex(&t.canonical.electric),
+            glow: hex(&t.canonical.glow),
+            cool: hex(&t.extended.cool),
+            cool_dim: hex(&t.extended.cool_dim),
+            hot_dim: hex(&t.extended.hot_dim),
+            electric_dim: hex(&t.extended.electric_dim),
+            steel: hex(&t.extended.steel),
+            steel_dim: hex(&t.extended.steel_dim),
+            frame_chars: t.frame_chars.iter().filter_map(|s| s.chars().next()).collect(),
         }
     }
 }
@@ -142,6 +208,21 @@ pub struct App {
     pub phase_log: VecDeque<(String, String)>,
     pub farewell_timer: Option<FarewellTimer>,
     pub farewell_next: FarewellNext,
+    /// Reveal del mensaje de farewell (`GlitchLabel` en Python) — se crea
+    /// junto con `farewell_timer` (mismo instante de arranque, ver
+    /// `begin_farewell`), no en `App::new` (recién sabemos el texto/momento
+    /// cuando se entra a la screen).
+    pub farewell_message: Option<effects::flicker::GlitchReveal>,
+    /// Efecto de transición modal en curso (sesión 10) — `Some` mientras
+    /// esté activo, se dibuja encima de la screen de siempre (ver
+    /// `effects::GridWidget`) y consume todo el input salvo `q`.
+    pub active_effect: Option<ActiveEffect>,
+    pub effect_followup: EffectFollowUp,
+    /// Reveal del título del menú (`GlitchLabel` en Python) — arranca una
+    /// sola vez al crear `App` (el menú no tiene "on_mount" propio acá, es
+    /// la screen inicial y vive todo el proceso).
+    pub menu_title: effects::flicker::GlitchReveal,
+    pub menu_tagline: effects::tagline::RotatingTagline,
     /// `GET /config` en curso o ya resuelto — `None` mientras carga (ver
     /// `screens::settings::draw`, que pinta "cargando…" en ese caso).
     pub config: Option<ConfigPayload>,
@@ -187,6 +268,15 @@ impl App {
             phase_log: VecDeque::new(),
             farewell_timer: None,
             farewell_next: FarewellNext::Quit,
+            farewell_message: None,
+            active_effect: None,
+            effect_followup: EffectFollowUp::None,
+            menu_title: effects::flicker::GlitchReveal::start(
+                "◈ RINTHEL.AI -- NIGHT CITY COMMAND TERMINAL",
+                12,
+                50,
+            ),
+            menu_tagline: effects::tagline::RotatingTagline::new(TAGLINES, 6.0, 6, 40),
             config: None,
             config_selected_service: 0,
             config_selected_row: 0,
@@ -227,10 +317,15 @@ impl App {
                 self.log_lines.push_back(line);
             }
             AppEvent::CommandDone(name, result) => {
-                self.command_in_flight = None;
                 self.last_command_error = None;
                 if name == "boot" || name == "terminate" || name == "reload" || name == "install" {
+                    // `finish_phase_sequence` decide cuándo se libera
+                    // `command_in_flight` — recién al cerrar el efecto de
+                    // cierre en un éxito (ver `EffectFollowUp::FinishClosing`),
+                    // de una si la secuencia falló.
                     self.finish_phase_sequence(name, &result);
+                } else {
+                    self.command_in_flight = None;
                 }
                 self.last_command_result = Some((name, result));
             }
@@ -249,6 +344,21 @@ impl App {
                     self.phase_log.pop_front();
                 }
                 self.phase_log.push_back((kind, message));
+            }
+            AppEvent::PhaseBatch(batch) => {
+                let effect = match batch.as_str() {
+                    "boot" => Some(ActiveEffect::Datamosh(effects::DatamoshEffect::new(2.0, 2))),
+                    "rebuild" => Some(ActiveEffect::Vignette(effects::VignetteEffect::new(2.0, 2))),
+                    _ => None,
+                };
+                if let Some(effect) = effect {
+                    // Sin followup: `phase_status`/`phase_log` de la tanda
+                    // que ya está corriendo del lado daemon siguen
+                    // llegando y aplicándose (ver loop de `run()`) aunque
+                    // la pantalla esté mostrando el efecto encima — al
+                    // terminar, el checklist ya está al día solo.
+                    self.begin_effect(effect, EffectFollowUp::None);
+                }
             }
             AppEvent::LlamaStatus(ready) => self.llama_ready = ready,
             AppEvent::ConfigLoaded(payload) => {
@@ -281,13 +391,12 @@ impl App {
     /// Puerto de `PhaseSequenceScreen._run_all`/`_run_closing`
     /// (`phase_runner.py`/`reload.py`): al llegar la respuesta bloqueante de
     /// `/boot`/`/terminate`/`/reload`/`/install`, cierra el log de la
-    /// corrida — mensaje de cierre + banner si todo salió bien (y dispara
-    /// farewell si fue TERMINATE), o "secuencia cortada" si algo falló. Los
-    /// textos son los mismos que `_BOOT_CLOSING`/`_TERMINATE_CLOSING`/
-    /// `_INSTALL_CLOSING`/el remate de `ReloadScreen._run_all` en Python; el
-    /// efecto de transición que los precedía (y las 3 transiciones entre
-    /// tandas de reload) quedan stubbeados (sesión 10 los retrofitea) — acá
-    /// son líneas más del log.
+    /// corrida — mensaje de cierre, el `ClosingSequence`/Ripple real de
+    /// sesión 10 (`begin_effect`), y recién cuando ese efecto termina el
+    /// banner + farewell si corresponde (`EffectFollowUp::FinishClosing`) —
+    /// o "secuencia cortada" de una si algo falló (sin efecto, igual que
+    /// Python: `_run_closing` nunca se llama si `_run_spec` devolvió
+    /// `False`).
     fn finish_phase_sequence(&mut self, name: &'static str, result: &CommandResult) {
         match result.results.iter().find(|r| !r.ok) {
             Some(failed) => {
@@ -295,21 +404,85 @@ impl App {
                     "error".to_string(),
                     format!("secuencia cortada: {}: {}", failed.service, failed.message),
                 ));
+                self.command_in_flight = None;
             }
             None => {
-                let (done_msg, banner) = match name {
-                    "reload" => ("Reboot completo.", "SYSTEM REBOOTED — TODOS LOS SERVICIOS ACTIVOS"),
-                    "boot" => ("Secuencia completa.", "TODO EN LINEA — Understory + Pithagoras activos"),
-                    "install" => ("Setup listo.", "SETUP LISTO — elegí [1] BOOT para levantar todo"),
-                    _ => ("Secuencia completa.", "SYSTEM OFFLINE — TODOS LOS SERVICIOS DETENIDOS"),
+                let (done_msg, banner, effect): (&str, &str, ActiveEffect) = match name {
+                    // Ripple original retirado (session 10, probando en vivo:
+                    // "demasiado largo y feo") — ver doc-comment de
+                    // `effects::SyncSweepEffect`.
+                    "reload" => (
+                        "Reboot completo.",
+                        "SYSTEM REBOOTED — TODOS LOS SERVICIOS ACTIVOS",
+                        ActiveEffect::SyncSweep(effects::SyncSweepEffect::new(1.2)),
+                    ),
+                    "boot" => (
+                        "Secuencia completa.",
+                        "TODO EN LINEA — Understory + Pithagoras activos",
+                        ActiveEffect::ChromaticAberration(effects::ChromaticAberrationEffect::new("SYSTEM ONLINE", 1.0)),
+                    ),
+                    "install" => (
+                        "Setup listo.",
+                        "SETUP LISTO — elegí [1] BOOT para levantar todo",
+                        ActiveEffect::ChromaticAberration(effects::ChromaticAberrationEffect::new("SETUP LISTO", 1.0)),
+                    ),
+                    _ => (
+                        "Secuencia completa.",
+                        "SYSTEM OFFLINE — TODOS LOS SERVICIOS DETENIDOS",
+                        ActiveEffect::Afterimage(effects::AfterimageEffect::new("SYSTEM OFFLINE")),
+                    ),
                 };
                 self.phase_log.push_back(("success".to_string(), done_msg.to_string()));
+                self.begin_effect(
+                    effect,
+                    EffectFollowUp::FinishClosing { banner: banner.to_string(), show_farewell: name == "terminate" },
+                );
+            }
+        }
+    }
+
+    /// `FarewellTimer::start()` + el `GlitchLabel(MESSAGE, frames=14)` que
+    /// lo acompaña — mismo instante de arranque para ambos, así el reveal
+    /// coincide con el inicio real de los 5s de farewell.
+    fn begin_farewell(&mut self, next: FarewellNext) {
+        self.farewell_timer = Some(FarewellTimer::start());
+        self.farewell_message = Some(effects::flicker::GlitchReveal::start(screens::farewell::MESSAGE, 14, 60));
+        self.farewell_next = next;
+    }
+
+    /// `SignalNoiseEffect(1, 3, 20)` — mismos parámetros que los 5 call
+    /// sites de `menu.py`, siempre seguido de la transición real que dio
+    /// `followup`.
+    fn begin_pre_transition(&mut self, followup: EffectFollowUp) {
+        self.begin_effect(ActiveEffect::SignalNoise(effects::SignalNoiseEffect::new(1.0, 3, 20)), followup);
+    }
+
+    fn begin_effect(&mut self, effect: ActiveEffect, followup: EffectFollowUp) {
+        self.active_effect = Some(effect);
+        self.effect_followup = followup;
+    }
+
+    /// Se llama cuando `active_effect` termina (ver loop de `run()`) — puerto
+    /// de lo que en Python seguía inline después de un
+    /// `await push_screen_wait(effect)`.
+    fn run_effect_followup(&mut self, tx: &mpsc::UnboundedSender<AppEvent>) {
+        match std::mem::replace(&mut self.effect_followup, EffectFollowUp::None) {
+            EffectFollowUp::None => {}
+            EffectFollowUp::StartPhaseRun { name, path, title } => self.start_phase_run(name, path, title, tx),
+            EffectFollowUp::StartCapture => {
+                self.screen = ScreenId::Capture;
+                self.command_in_flight = Some("capture");
+                tokio::spawn(run_command("capture", "/capture", tx.clone()));
+            }
+            EffectFollowUp::FinishClosing { banner, show_farewell } => {
                 self.phase_log.push_back(("success".to_string(), format!("◈ {banner}")));
-                if name == "terminate" {
+                if show_farewell {
                     self.screen = ScreenId::Farewell;
-                    self.farewell_timer = Some(FarewellTimer::start());
-                    self.farewell_next = FarewellNext::BackToPhaseRunner;
+                    self.begin_farewell(FarewellNext::BackToPhaseRunner);
                 }
+                // Recién acá — Esc queda bloqueado (`screens::phase_runner::done`)
+                // mientras el banner de cierre todavía no se escribió.
+                self.command_in_flight = None;
             }
         }
     }
@@ -324,15 +497,31 @@ impl App {
         let Some(entry) = screens::MENU_ENTRIES[self.menu_selected].as_entry() else { return };
         match entry.action {
             MenuAction::Navigate(id) => self.screen = id,
-            MenuAction::Boot => self.start_phase_run("boot", "/boot", "EXECUTE — FAST BOOT", tx),
-            MenuAction::Reload => self.start_phase_run("reload", "/reload", "SYSTEM REBOOT", tx),
-            MenuAction::Terminate => self.start_phase_run("terminate", "/terminate", "SHUTDOWN SEQUENCE", tx),
-            MenuAction::Capture => {
-                self.screen = ScreenId::Capture;
-                self.command_in_flight = Some("capture");
-                tokio::spawn(run_command("capture", "/capture", tx.clone()));
-            }
-            MenuAction::Install => self.start_phase_run("install", "/install", "INSTALL — SETUP INICIAL", tx),
+            // `menu.py:154-176`: SignalNoise (1s) ANTES de cambiar de
+            // pantalla y disparar el POST — no antes de Navigate/Settings
+            // (Monitor/Logs/Configurar no lo tienen en Python, confirmado
+            // en el ticket de esta sesión).
+            MenuAction::Boot => self.begin_pre_transition(EffectFollowUp::StartPhaseRun {
+                name: "boot",
+                path: "/boot",
+                title: "EXECUTE — FAST BOOT",
+            }),
+            MenuAction::Reload => self.begin_pre_transition(EffectFollowUp::StartPhaseRun {
+                name: "reload",
+                path: "/reload",
+                title: "SYSTEM REBOOT",
+            }),
+            MenuAction::Terminate => self.begin_pre_transition(EffectFollowUp::StartPhaseRun {
+                name: "terminate",
+                path: "/terminate",
+                title: "SHUTDOWN SEQUENCE",
+            }),
+            MenuAction::Capture => self.begin_pre_transition(EffectFollowUp::StartCapture),
+            MenuAction::Install => self.begin_pre_transition(EffectFollowUp::StartPhaseRun {
+                name: "install",
+                path: "/install",
+                title: "INSTALL — SETUP INICIAL",
+            }),
             MenuAction::Settings => {
                 self.screen = ScreenId::Settings;
                 self.config = None;
@@ -343,11 +532,11 @@ impl App {
                 tokio::spawn(fetch_config(tx.clone()));
             }
             // menu.py:183 — EXIT pasa por FarewellScreen antes de salir,
-            // igual que TERMINATE (grillado con Tarkark, sesión 05).
+            // igual que TERMINATE (grillado con Tarkark, sesión 05). Sin
+            // SignalNoise antes (Python tampoco lo dispara para "exit").
             MenuAction::Quit => {
                 self.screen = ScreenId::Farewell;
-                self.farewell_timer = Some(FarewellTimer::start());
-                self.farewell_next = FarewellNext::Quit;
+                self.begin_farewell(FarewellNext::Quit);
             }
         }
     }
@@ -485,6 +674,23 @@ impl App {
 
         let result = (async {
             loop {
+                let now = Instant::now();
+                let size = terminal.size()?;
+                let (width, height) = (size.width as usize, size.height as usize);
+
+                // Reveal del título + rotación de frases — corren siempre
+                // en segundo plano, como el `set_interval` de Python (el
+                // menú no se remonta cada vez que se vuelve a él).
+                self.menu_tagline.advance(now);
+
+                if let Some(effect) = &mut self.active_effect {
+                    effect.advance(now, width, height, &self.colors);
+                }
+                if self.active_effect.as_ref().is_some_and(|e| e.is_done(now)) {
+                    self.active_effect = None;
+                    self.run_effect_followup(&tx);
+                }
+
                 terminal.draw(|f| draw(f, &self))?;
 
                 while let Ok(ev) = rx.try_recv() {
@@ -498,6 +704,7 @@ impl App {
                     if let Some(timer) = &self.farewell_timer {
                         if timer.is_done() {
                             self.farewell_timer = None;
+                            self.farewell_message = None;
                             match self.farewell_next {
                                 FarewellNext::Quit => self.should_quit = true,
                                 FarewellNext::BackToPhaseRunner => self.screen = ScreenId::PhaseRunner,
@@ -508,39 +715,50 @@ impl App {
 
                 if event::poll(Duration::from_millis(80))? {
                     if let Event::Key(key) = event::read()? {
-                        match (self.screen, key.code) {
-                            // LogsScreen (rinthel_tui/tui/screens/logs.py) bindea
-                            // q/Escape a "volver", no a "salir" — tiene que
-                            // resolverse antes del catch-all de abajo.
-                            (ScreenId::Logs, KeyCode::Char('q') | KeyCode::Esc) => {
-                                self.screen = ScreenId::Menu;
+                        // Mientras un efecto de transición está en curso
+                        // consume toda la pantalla (ver `draw`) y bloquea el
+                        // input salvo `q` — mismo trato que ya tenía
+                        // `FarewellScreen` (decisión explícita de Tarkark en
+                        // sesión 05, extendida acá al resto de los efectos).
+                        if self.active_effect.is_some() {
+                            if key.code == KeyCode::Char('q') {
+                                self.should_quit = true;
                             }
-                            // Settings maneja su propia tecla entera (ver
-                            // doc-comment de `handle_settings_key`) — tiene
-                            // que resolverse antes del catch-all de abajo,
-                            // igual que Logs: mientras se edita un campo de
-                            // texto, 'q' es contenido del campo, no salir.
-                            (ScreenId::Settings, code) => self.handle_settings_key(code, &tx),
-                            (_, KeyCode::Char('q')) => self.should_quit = true,
-                            (ScreenId::Menu, KeyCode::Up) => {
-                                self.menu_selected = screens::prev_selectable(self.menu_selected);
+                        } else {
+                            match (self.screen, key.code) {
+                                // LogsScreen (rinthel_tui/tui/screens/logs.py) bindea
+                                // q/Escape a "volver", no a "salir" — tiene que
+                                // resolverse antes del catch-all de abajo.
+                                (ScreenId::Logs, KeyCode::Char('q') | KeyCode::Esc) => {
+                                    self.screen = ScreenId::Menu;
+                                }
+                                // Settings maneja su propia tecla entera (ver
+                                // doc-comment de `handle_settings_key`) — tiene
+                                // que resolverse antes del catch-all de abajo,
+                                // igual que Logs: mientras se edita un campo de
+                                // texto, 'q' es contenido del campo, no salir.
+                                (ScreenId::Settings, code) => self.handle_settings_key(code, &tx),
+                                (_, KeyCode::Char('q')) => self.should_quit = true,
+                                (ScreenId::Menu, KeyCode::Up) => {
+                                    self.menu_selected = screens::prev_selectable(self.menu_selected);
+                                }
+                                (ScreenId::Menu, KeyCode::Down) => {
+                                    self.menu_selected = screens::next_selectable(self.menu_selected);
+                                }
+                                (ScreenId::Menu, KeyCode::Enter) => self.dispatch_menu_action(&tx),
+                                (ScreenId::Monitor, KeyCode::Esc) => self.screen = ScreenId::Menu,
+                                // CaptureScreen/PhaseRunnerScreen bloquean "volver"
+                                // hasta terminar (`action_dismiss_if_done` en
+                                // capture.py/phase_runner.py) — acá eso es "no hay
+                                // POST en vuelo".
+                                (ScreenId::Capture, KeyCode::Esc) if screens::capture::done(&self) => {
+                                    self.screen = ScreenId::Menu;
+                                }
+                                (ScreenId::PhaseRunner, KeyCode::Esc) if screens::phase_runner::done(&self) => {
+                                    self.screen = ScreenId::Menu;
+                                }
+                                _ => {}
                             }
-                            (ScreenId::Menu, KeyCode::Down) => {
-                                self.menu_selected = screens::next_selectable(self.menu_selected);
-                            }
-                            (ScreenId::Menu, KeyCode::Enter) => self.dispatch_menu_action(&tx),
-                            (ScreenId::Monitor, KeyCode::Esc) => self.screen = ScreenId::Menu,
-                            // CaptureScreen/PhaseRunnerScreen bloquean "volver"
-                            // hasta terminar (`action_dismiss_if_done` en
-                            // capture.py/phase_runner.py) — acá eso es "no hay
-                            // POST en vuelo".
-                            (ScreenId::Capture, KeyCode::Esc) if screens::capture::done(&self) => {
-                                self.screen = ScreenId::Menu;
-                            }
-                            (ScreenId::PhaseRunner, KeyCode::Esc) if screens::phase_runner::done(&self) => {
-                                self.screen = ScreenId::Menu;
-                            }
-                            _ => {}
                         }
                     }
                 }
@@ -565,6 +783,13 @@ fn draw(f: &mut Frame, app: &App) {
     let bg = Block::default().style(Style::default().bg(app.colors.bg));
     f.render_widget(bg, f.area());
     screens::draw(app.screen, f, app);
+    // `TransitionEffect` es un `ModalScreen` con `background: $bg 0%` en
+    // Python: se apila SOBRE lo que ya está montado, sin borrarlo — acá es
+    // dibujar la screen de siempre y superponer la grilla del efecto
+    // encima (`GridWidget` deja pasar las celdas que no tocó).
+    if let Some(grid) = app.active_effect.as_ref().and_then(|e| e.grid()) {
+        f.render_widget(effects::GridWidget(grid), f.area());
+    }
 }
 
 async fn ws_task(tx: mpsc::UnboundedSender<AppEvent>) {
@@ -596,6 +821,9 @@ async fn ws_task(tx: mpsc::UnboundedSender<AppEvent>) {
                 "llama_status" => serde_json::from_value::<protocol::LlamaStatus>(env.data)
                     .ok()
                     .map(|s| AppEvent::LlamaStatus(s.ready)),
+                "phase_batch" => serde_json::from_value::<protocol::PhaseBatch>(env.data)
+                    .ok()
+                    .map(|b| AppEvent::PhaseBatch(b.batch)),
                 _ => None,
             };
             if let Some(ev) = ev {

@@ -186,6 +186,29 @@ async fn reload_over_real_wire() {
     let _daemon = spawn_daemon();
     let _theme = wait_for_theme().await;
 
+    // Amendment de docs/adr/0001 (sesión 10): /reload real también debe
+    // transmitir phase_batch("boot")/phase_batch("rebuild") por el mismo
+    // túnel — sin esto el cliente no tiene forma de disparar Datamosh/
+    // Vignette en el límite entre tandas.
+    let (ws_stream, _) = tokio_tungstenite::connect_async(WS).await.expect("no pude conectar a /ws/monitor");
+    let (_write, mut read) = ws_stream.split();
+    let (batch_tx, mut batch_rx) = mpsc::unbounded_channel::<String>();
+    tokio::spawn(async move {
+        while let Some(Ok(msg)) = read.next().await {
+            if let Ok(text) = msg.into_text() {
+                if let Ok(env) = serde_json::from_str::<Envelope>(&text) {
+                    if env.kind == "phase_batch" {
+                        if let Ok(batch) = serde_json::from_value::<serde_json::Value>(env.data) {
+                            if let Some(b) = batch.get("batch").and_then(|v| v.as_str()) {
+                                let _ = batch_tx.send(b.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
     let client = reqwest::Client::new();
     let boot: CommandResult = client
         .post(format!("{DAEMON}/boot"))
@@ -215,4 +238,11 @@ async fn reload_over_real_wire() {
     // total que specs.reload_units + el chequeo de DOCKER que daemon.py
     // inserta aparte.
     assert_eq!(reload.results.len(), 8, "resultados: {:?}", reload.results);
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let mut batches = Vec::new();
+    while let Ok(b) = batch_rx.try_recv() {
+        batches.push(b);
+    }
+    assert_eq!(batches, vec!["boot", "rebuild"], "phase_batch visto durante /reload real: {batches:?}");
 }

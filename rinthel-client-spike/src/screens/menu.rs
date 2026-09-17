@@ -1,5 +1,12 @@
 //! Screen de menú — `draw_menu` movido tal cual desde `main.rs` (sesión 00),
 //! con `MENU_ITEMS` reemplazado por el registro `super::MENU_ENTRIES`.
+//!
+//! Título + tagline (sesión 10): reveal `GlitchLabel`/rotación
+//! `RotatingTagline` de `menu.py:129-134`, con estado en `App::menu_title`/
+//! `App::menu_tagline` (avanzado cada vuelta del loop en `App::run`) — acá
+//! solo se lee el texto que corresponde a este instante.
+
+use std::time::Instant;
 
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
@@ -16,15 +23,13 @@ pub fn draw(f: &mut Frame, app: &App) {
         .constraints([Constraint::Length(5), Constraint::Min(0), Constraint::Length(3)])
         .split(area);
 
+    let now = Instant::now();
     let title = Paragraph::new(vec![
         Line::from(Span::styled(
-            "R I N T H E L",
+            app.menu_title.text(now).to_string(),
             Style::default().fg(app.colors.accent).add_modifier(Modifier::BOLD),
         )),
-        Line::from(Span::styled(
-            "ratatui spike — ticket 05",
-            Style::default().fg(app.colors.dim),
-        )),
+        Line::from(Span::styled(app.menu_tagline.text(now).to_string(), Style::default().fg(app.colors.dim))),
     ])
     .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(app.colors.accent)));
     f.render_widget(title, chunks[0]);

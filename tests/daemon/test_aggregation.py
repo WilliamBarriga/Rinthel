@@ -182,6 +182,73 @@ async def test_reload_stops_when_docker_check_fails_before_boot(monkeypatch):
     assert body["results"][-1]["ok"] is False
 
 
+# ── phase_batch (sesión 10) ─────────────────────────────────────────────
+# Amendment de docs/adr/0001: marca el límite entre tandas de /reload — sin
+# esto el cliente no tenía forma de saber cuándo disparar Datamosh/Vignette
+# (las 2 transiciones que reload.py corría client-side, imposibles de
+# replicar contra un solo POST bloqueante orquestado del lado daemon).
+
+
+async def _drain_broadcasts(monkeypatch) -> list[tuple[str, dict]]:
+    seen: list[tuple[str, dict]] = []
+
+    async def fake_broadcast(type_: str, data: dict) -> None:
+        seen.append((type_, data))
+
+    monkeypatch.setattr(daemon, "broadcast", fake_broadcast)
+    return seen
+
+
+async def test_reload_broadcasts_phase_batch_boot_then_rebuild(monkeypatch):
+    monkeypatch.setattr(daemon.phases, "phase_check_docker", _ok_spec("docker", "activo").fn)
+    _patch_reload_units(
+        monkeypatch,
+        shutdown=[("llama-server", [_ok_spec("kill", "parado")])],
+        boot=[("llama-server", [_ok_spec("spawn", "lanzado"), _ok_spec("wait", "respondiendo")])],
+        rebuild=[("understory", [_ok_spec("up", "levantado"), _ok_spec("wait", "respondiendo")])],
+    )
+    seen = await _drain_broadcasts(monkeypatch)
+
+    await daemon.reload()
+
+    batches = [data["batch"] for type_, data in seen if type_ == "phase_batch"]
+    assert batches == ["boot", "rebuild"]
+
+
+async def test_reload_never_broadcasts_a_shutdown_batch_marker(monkeypatch):
+    """Nadie escucha "shutdown" del lado cliente (no hay transición antes de
+    la primera tanda en el original) — no tiene sentido emitirla."""
+    monkeypatch.setattr(daemon.phases, "phase_check_docker", _ok_spec("docker", "activo").fn)
+    _patch_reload_units(
+        monkeypatch,
+        shutdown=[("llama-server", [_ok_spec("kill", "parado")])],
+        boot=[],
+        rebuild=[],
+    )
+    seen = await _drain_broadcasts(monkeypatch)
+
+    await daemon.reload()
+
+    batches = [data["batch"] for type_, data in seen if type_ == "phase_batch"]
+    assert "shutdown" not in batches
+
+
+async def test_reload_never_reaches_rebuild_batch_marker_if_boot_fails(monkeypatch):
+    monkeypatch.setattr(daemon.phases, "phase_check_docker", _ok_spec("docker", "activo").fn)
+    _patch_reload_units(
+        monkeypatch,
+        shutdown=[("llama-server", [_ok_spec("kill", "parado")])],
+        boot=[("llama-server", [_failing_spec("spawn", "murió al instante")])],
+        rebuild=[("understory", [_ok_spec("up", "nunca debería correr")])],
+    )
+    seen = await _drain_broadcasts(monkeypatch)
+
+    await daemon.reload()
+
+    batches = [data["batch"] for type_, data in seen if type_ == "phase_batch"]
+    assert batches == ["boot"]
+
+
 # ── /install (sesión 07) ────────────────────────────────────────────────
 # specs.install_units ya agrupa por InstallUnit (PREFLIGHT + una unidad por
 # InstallUnit habilitada) — corta en el primer fallo, mismo criterio que

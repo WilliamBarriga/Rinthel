@@ -7,9 +7,11 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct Theme {
     pub canonical: Palette,
-    #[allow(dead_code)]
-    pub extended: serde_json::Value,
-    #[allow(dead_code)]
+    /// Sesión 10: los 8 effect_* de `tui/effects/transitions.py` usan estos
+    /// colores además de los 9 canónicos — quedaban sin parsear (`dead_code`)
+    /// desde que `GET /theme` empezó a servirlos (ticket 03), a propósito
+    /// diferido hasta esta sesión.
+    pub extended: ExtendedPalette,
     pub frame_chars: Vec<String>,
 }
 
@@ -17,17 +19,28 @@ pub struct Theme {
 pub struct Palette {
     pub fg: String,
     pub accent: String,
-    #[allow(dead_code)]
     pub electric: String,
     pub warn: String,
     pub success: String,
     pub hot: String,
-    #[allow(dead_code)]
     pub caution: String,
-    #[allow(dead_code)]
     pub glow: String,
     pub dim: String,
     pub bg: String,
+}
+
+/// Paleta "extended" de `theme/palette.py` — no forma parte de los 9 colores
+/// canónicos, la usan exclusivamente los efectos de transición (sesión 10).
+#[derive(Debug, Deserialize)]
+pub struct ExtendedPalette {
+    pub cool: String,
+    pub cool_dim: String,
+    pub hot_dim: String,
+    pub electric_dim: String,
+    pub steel: String,
+    pub steel_dim: String,
+    #[allow(dead_code)]
+    pub accent_dim: String,
 }
 
 /// Envelope `{"type": "...", "data": {...}}` que multiplexa /ws/monitor.
@@ -115,6 +128,18 @@ pub struct PhaseStatus {
 pub struct PhaseLog {
     pub kind: String,
     pub message: String,
+}
+
+/// Sobre `phase_batch` (amendment de docs/adr/0001, sesión 10): marca el
+/// límite entre tandas de `/reload` — sin esto el cliente no tiene forma de
+/// saber cuándo terminó "shutdown" y empezó "boot", o "boot" y "rebuild"
+/// (el daemon corre las 3 tandas de un tirón, `phase_status`/`phase_log`
+/// solo hablan de fases individuales). Dispara Datamosh/Vignette en el
+/// cliente. `"shutdown"` no se emite — nada la escucha (no hay transición
+/// antes de la primera tanda en el original).
+#[derive(Debug, Deserialize)]
+pub struct PhaseBatch {
+    pub batch: String,
 }
 
 /// Un campo editable de `[N] CONFIGURAR` (amendment de docs/adr/0001,

@@ -12,9 +12,11 @@
 //! en el loop de `app.rs`. `farewell.py` tampoco bindea Esc, así que acá
 //! tampoco hay guard de salida temprana: los 5s corren completos siempre.
 //!
-//! El `GlitchLabel` real (`rinthel_tui/tui/effects/flicker.py`) queda
-//! stubbeado — texto directo, sin animación — confirmado en el ticket de
-//! esta sesión; se retrofitea en sesión 10.
+//! El `GlitchLabel` real (`rinthel_tui/tui/effects/flicker.py`) se retrofitea
+//! en sesión 10 — el reveal vive en `App::farewell_message`
+//! (`effects::flicker::GlitchReveal`, creado junto con `FarewellTimer` en
+//! `App::begin_farewell`), acá solo se dibuja el texto que corresponda a
+//! este instante.
 
 use std::time::{Duration, Instant};
 
@@ -45,14 +47,14 @@ impl FarewellTimer {
     }
 }
 
-pub fn draw(f: &mut Frame, fg: Color) {
+pub fn draw(f: &mut Frame, fg: Color, text: &str) {
     let area = f.area();
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(0), Constraint::Length(1), Constraint::Min(0)])
         .split(area);
-    let message = Paragraph::new(Line::from(Span::styled(MESSAGE, Style::default().fg(fg))))
-        .alignment(Alignment::Center);
+    let message =
+        Paragraph::new(Line::from(Span::styled(text.to_string(), Style::default().fg(fg)))).alignment(Alignment::Center);
     f.render_widget(message, rows[1]);
 }
 

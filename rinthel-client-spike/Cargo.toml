@@ -14,3 +14,9 @@ serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 ratatui-sci-fi = "=0.2.1"
 ratatui-style = "=0.2.0"
+# Sesión 10: los 6 effect_* de manifest_{corruption,atmosphere,spatial}.sh
+# generan grillas nuevas al azar en cada frame (SignalNoise/Datamosh/etc) —
+# sin equivalente en las libs ya presentes (ratatui-sci-fi trae su propio
+# xorshift32 interno, no expuesto). Elegido sobre hand-rollear un PRNG propio
+# por ser el estándar de facto del ecosistema, sin fricción para este uso.
+rand = "0.8"

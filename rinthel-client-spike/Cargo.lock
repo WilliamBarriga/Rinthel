@@ -1671,6 +1671,7 @@ version = "0.1.0"
 dependencies = [
  "crossterm 0.28.1",
  "futures-util",
+ "rand 0.8.8",
  "ratatui",
  "ratatui-sci-fi",
  "ratatui-style",

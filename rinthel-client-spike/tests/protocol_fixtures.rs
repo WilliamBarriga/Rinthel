@@ -22,6 +22,10 @@ fn fixture(name: &str) -> String {
 fn theme_shape() {
     let theme: Theme = serde_json::from_str(&fixture("theme.json")).expect("theme.json no matchea Theme");
     assert!(!theme.canonical.fg.is_empty());
+    // `extended`/`frame_chars` — sesión 10: antes `dead_code`, ahora los usan
+    // los efectos de transición.
+    assert!(!theme.extended.cool.is_empty());
+    assert!(!theme.frame_chars.is_empty());
 }
 
 #[test]
