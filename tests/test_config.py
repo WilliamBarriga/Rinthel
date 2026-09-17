@@ -117,9 +117,8 @@ def test_validate_no_warnings_when_all_paths_exist(tmp_path):
 
 
 # ── stringify/diff_overrides/with_overrides ─────────────────────────────
-# Movidas acá desde tests/tui/test_settings.py (sesión 09 del port-map):
-# esta lógica pasó de vivir solo en la screen Textual a ser compartida con
-# el daemon (GET/POST /config), así que ya no es específica de la UI.
+# Esta lógica es compartida entre el daemon (GET/POST /config) y cualquier
+# UI, no específica de una sola.
 
 
 def test_stringify_bool_uses_lowercase_true_false():

@@ -5,7 +5,7 @@ Mismo protocolo que el resto de lifecycle/ (``async def phase_*(cfg, report)
 -> None``, ``PhaseError``); reusa ``_run`` (subprocess) de
 ``managed_service.py`` y ``phase_check_docker`` de ``phases.py`` por import,
 no duplica lógica. INSTALL **configura**, no bootea — nunca hace ``docker
-compose up``; para eso está ``[1] BOOT`` (``specs.boot_phases``). Cada fase
+compose up``; para eso está ``[1] BOOT`` (``specs.boot_units``). Cada fase
 es idempotente: reruns seguros, nunca pisa algo que ya funciona.
 """
 
@@ -237,8 +237,8 @@ async def phase_install_setup_understory(cfg: RinthelConfig, report: PhaseReport
 
 
 # ── unidades instalables — un servicio con enabled=False no aparece en
-# [0] INSTALL (ver specs.install_phases), aunque su INSTALL_PHASES original
-# seguía siendo relevante para BOOT/DOWN/RELOAD vía enabled_of ────────────
+# [0] INSTALL (ver specs.install_units), aunque sigue siendo relevante para
+# BOOT/DOWN/RELOAD vía enabled_of ─────────────────────────────────────────
 
 
 @dataclass(frozen=True, kw_only=True)

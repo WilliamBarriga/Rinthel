@@ -1,23 +1,14 @@
-//! Prompt de confirmación al salir — sesión 12 del port-map, desprendida de
-//! la 11 (ver `.scratch/ratatui-migration/port-issues/12-exit-prompt-daemon-shutdown.md`):
-//! la pieza de [issues/04-packaging-entrypoint.md] que sí toca comportamiento
-//! nuevo de cliente, a diferencia de `rinthel-boot.sh`/pidfile (mecánica de
-//! proceso local, ya cerrada en sesión 11). Sin equivalente 1:1 en
-//! `menu.py` — el daemon Python no existía como proceso separado del
-//! cliente cuando se escribió esa screen.
+//! Prompt de confirmación al salir.
 //!
-//! Grillado con Tarkark antes de esta sesión (3 rondas, ver esa entrada del
-//! port-map): **(1)** alcance — solo el camino `[N] SALIR` del menú
-//! (`MenuAction::Quit`); el atajo global `q` sigue matando la app al
-//! instante desde cualquier pantalla sin pasar por acá y sin tocar el
-//! daemon, mismo comportamiento ya vigente hoy (decisión de sesión 05, no
-//! revisada). **(2)** mecanismo de apagado — invoca `./rinthel-boot.sh
-//! --stop` como subproceso (`App::spawn_daemon_stop`, en `app.rs`) en vez
-//! de que el cliente lea el pidfile y mande la señal él mismo — reusa la
-//! lógica ya probada en sesión 11 (pid vivo, poll, pidfile stale) sin
-//! duplicarla. **(3)** ubicación — antes de `FarewellScreen`, no la
-//! reemplaza: primero se decide si apagar, después corre el mensaje de
-//! cierre de siempre.
+//! Alcance: solo el camino `[N] SALIR` del menú (`MenuAction::Quit`); el
+//! atajo global `q` sigue matando la app al instante desde cualquier
+//! pantalla sin pasar por acá y sin tocar el daemon. Mecanismo de apagado:
+//! invoca `./rinthel-boot.sh --stop` como subproceso
+//! (`App::spawn_daemon_stop`, en `app.rs`) en vez de que el cliente lea el
+//! pidfile y mande la señal él mismo, reusando la lógica ya existente ahí
+//! (pid vivo, poll, pidfile stale). Ubicación: antes de la screen de
+//! farewell, no la reemplaza — primero se decide si apagar, después corre
+//! el mensaje de cierre de siempre.
 
 use std::time::{Duration, Instant};
 
@@ -31,7 +22,7 @@ pub const EXIT_PROMPT_SECONDS: u64 = 5;
 
 /// Mismo patrón que `farewell::FarewellTimer` — `App::run` lo consulta cada
 /// vuelta del loop en vez de un callback; sin elección a tiempo, apaga todo
-/// por default (a prueba de olvidos, ticket 04).
+/// por default (a prueba de olvidos).
 pub struct ExitPromptTimer {
     started: Instant,
 }

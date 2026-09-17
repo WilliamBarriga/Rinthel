@@ -1,7 +1,6 @@
-//! Fixture dorada (sesión 00 del porteo): mismos JSON que
-//! `tests/protocol/test_fixtures.py` del lado Python, leídos por path
-//! relativo desde `../tests/protocol_fixtures/` (fuente única, ver
-//! .scratch/ratatui-migration/issues/08-cross-process-testing-strategy.md).
+//! Fixture dorada: mismos JSON que `tests/protocol/test_fixtures.py` del
+//! lado Python, leídos por path relativo desde `../tests/protocol_fixtures/`
+//! (fuente única).
 
 use std::fs;
 use std::path::PathBuf;
@@ -22,8 +21,7 @@ fn fixture(name: &str) -> String {
 fn theme_shape() {
     let theme: Theme = serde_json::from_str(&fixture("theme.json")).expect("theme.json no matchea Theme");
     assert!(!theme.canonical.fg.is_empty());
-    // `extended`/`frame_chars` — sesión 10: antes `dead_code`, ahora los usan
-    // los efectos de transición.
+    // `extended`/`frame_chars` los usan los efectos de transición.
     assert!(!theme.extended.cool.is_empty());
     assert!(!theme.frame_chars.is_empty());
 }

@@ -1,30 +1,19 @@
-//! Screen de captura de perfil MoE — puerto de
-//! `rinthel_tui/tui/screens/capture.py` (sesión 03 del port-map). A
-//! diferencia de boot/terminate (que solo pintan `status_line` en el pie de
-//! Menu/Monitor), esta sesión sí trae una screen dedicada — así lo pide el
-//! ticket 03, y refleja que `CaptureScreen` en Python bloquea la vuelta al
-//! menú hasta terminar (`action_dismiss_if_done`).
+//! Screen de captura de perfil MoE. A diferencia de boot/terminate (que
+//! solo pintan `status_line` en el pie de Menu/Monitor), esta trae una
+//! screen dedicada que bloquea la vuelta al menú hasta terminar
+//! (`done`/`action_dismiss_if_done`).
 //!
-//! Decisión de protocolo (grillada con Tarkark 2026-09-16, la pregunta que
-//! el propio ticket 03 exigía resolver antes de portar): `POST /capture`
-//! bloqueante, mismo shape `CommandResult`/`ServiceOutcome` que
-//! `/boot`/`/terminate` (Opción A), no un tag nuevo en `/ws/monitor`
-//! (Opción B). Motivo: `managed_service._run` del lado Python ya reporta
-//! stdout/stderr como un solo blob con `proc.communicate()` al terminar
-//! cada sub-paso, no lo streamea línea por línea — el "feedback en vivo"
-//! que ofrecía la Opción B en el ticket eran en realidad los 2 anuncios de
-//! arranque ("Capturando perfil 'código'...", "...'chat'..."), no progreso
-//! fino. Se pierden esos 2 anuncios; a cambio, cero desvío de ADR 0001 y
-//! cero primer-uso-no-comando del túnel WS.
+//! `POST /capture` es bloqueante, mismo shape `CommandResult`/
+//! `ServiceOutcome` que `/boot`/`/terminate` — no un tag nuevo en
+//! `/ws/monitor`, porque el lado daemon reporta stdout/stderr como un solo
+//! blob al terminar cada sub-paso, no lo streamea línea por línea.
 //!
 //! `ServiceOutcome.service` se reusa para nombrar cada sub-paso ("código"/
-//! "chat") en vez de un servicio real — mismo truco de "pedir prestado un
-//! tipo" que el propio ticket ya aprobaba para `ScreenPhaseReport`.
+//! "chat") en vez de un servicio real.
 //!
 //! `daemon.py::/capture` está simulado (delays fijos, sin tocar la GPU) —
-//! decisión de Tarkark 2026-09-16. A diferencia de boot/terminate (ya
-//! reales desde sesión 04 de hardening), no hay sesión de hardening
-//! "capture real" en el port-map todavía; anotado en "Not yet specified".
+//! a diferencia de boot/terminate/reload/install, no hay lifecycle real
+//! detrás todavía.
 
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::Style;
@@ -78,8 +67,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     f.render_widget(log, rows[1]);
 }
 
-/// `action_dismiss_if_done` de `capture.py`: acá no hay callback, así que
-/// `app.rs` consulta esto para decidir si Esc vuelve al menú.
+/// Acá no hay callback de finalización, así que `app.rs` consulta esto para
+/// decidir si Esc vuelve al menú.
 pub fn done(app: &App) -> bool {
     app.command_in_flight.is_none()
 }

@@ -203,7 +203,7 @@ async def test_wait_ready_no_hint_for_services_without_one(monkeypatch, cfg, rep
     assert report.infos == []
 
 
-# ── check_ready (chequeo puntual para telemetría en vivo, sesión 08) ────
+# ── check_ready (chequeo puntual para telemetría en vivo) ───────────────
 
 
 @pytest.mark.parametrize("service", LOCAL_SERVICES + DOCKER_SERVICES, ids=_ids(LOCAL_SERVICES + DOCKER_SERVICES))

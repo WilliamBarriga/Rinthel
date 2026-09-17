@@ -1,23 +1,17 @@
-//! PROTOTYPE — ticket 10 (wayfinder: Ratatui TUI Migration).
-//! Ver .scratch/ratatui-migration/issues/10-cross-widget-cascade-prototype.md
+//! PROTOTYPE — standalone, no requiere el daemon corriendo.
 //!
 //! PREGUNTA QUE ESTE PROTOTIPO RESPONDE:
 //! ¿Puede UNA sola regla CSS de `ratatui-style` apuntar a la vez a dos
 //! widgets custom distintos (`ServiceBadge` y `JackInOptionList`), vía un
 //! ancestro común (`StatusPanel`), de forma que cambiar de tema mueva el
 //! estilo de los dos juntos? Clases aisladas por widget sin selector
-//! compartido NO cuenta como resuelto (ver ticket 10).
-//!
-//! El research del ticket 09 confirmó por separado: combinador de
-//! descendencia (`A B`, ejemplo `03_cascade.rs` del propio crate) y
-//! comma-list (`A, B`, tests unitarios de `selector.rs`). Lo que NADIE
-//! probó en un programa real es la combinación de ambos a la vez:
+//! compartido no cuenta como resuelto:
 //!
 //!     StatusPanel ServiceBadge, StatusPanel JackInOptionList { ... }
 //!
-//! Eso es exactamente lo que este prototipo ejercita en vivo.
-//!
-//! No hace falta el daemon spike corriendo — esto es standalone.
+//! Eso es exactamente lo que este prototipo ejercita en vivo, combinando
+//! combinador de descendencia (`A B`) y comma-list (`A, B`) en un programa
+//! real.
 //!
 //! Corré:
 //!   cargo run --example prototype_cross_widget_cascade
@@ -44,9 +38,9 @@ use ratatui_style::{CascadeContext, OwnedNode, Stylesheet};
 /// pantalla tal cual se está evaluando, no solo en el código.
 const SHARED_RULE: &str = "StatusPanel ServiceBadge, StatusPanel JackInOptionList { color: var(--accent); background: var(--panel-bg); }";
 
-/// Los tres temas contrastantes que pide el ticket 10. Cada uno redefine
-/// los mismos tokens (`--accent`/`--panel-bg`/`--offline`); la regla
-/// compartida de arriba no cambia entre temas — solo lo que resuelve `var()`.
+/// Tres temas contrastantes. Cada uno redefine los mismos tokens
+/// (`--accent`/`--panel-bg`/`--offline`); la regla compartida de arriba no
+/// cambia entre temas — solo lo que resuelve `var()`.
 struct ThemeDef {
     name: &'static str,
     css: &'static str,
@@ -140,11 +134,11 @@ fn draw(f: &mut Frame, theme_idx: usize, list: &JackInOptionList) {
     let badge_online = ServiceBadge { label: "understory", online: true };
     let badge_offline = ServiceBadge { label: "pithagoras", online: false };
 
-    // Verificación explícita del criterio de éxito del ticket 10: los dos
-    // widgets bajo la regla compartida deben resolver EXACTAMENTE el mismo
-    // color, y moverse juntos al cambiar `theme_idx`. El badge offline usa
-    // la regla más específica (`.offline`) y por eso debe DIFERIR — eso
-    // prueba que el selector compartido convive con un override normal.
+    // Verificación explícita del criterio de éxito: los dos widgets bajo la
+    // regla compartida deben resolver EXACTAMENTE el mismo color, y moverse
+    // juntos al cambiar `theme_idx`. El badge offline usa la regla más
+    // específica (`.offline`) y por eso debe DIFERIR — eso prueba que el
+    // selector compartido convive con un override normal.
     let shared_matches = online_style.fg == list_style.fg;
     let override_differs = online_style.fg != offline_style.fg;
     let verdict = if shared_matches && override_differs {
@@ -173,7 +167,7 @@ fn draw(f: &mut Frame, theme_idx: usize, list: &JackInOptionList) {
 
     let intro = Paragraph::new(vec![
         Line::from(Span::styled(
-            "Prototipo — ticket 10: cascade compartido entre widgets custom",
+            "Prototipo — cascade compartido entre widgets custom",
             ratatui::style::Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(format!("Tema activo: {}  (t = siguiente tema)", THEMES[theme_idx].name)),
@@ -262,8 +256,7 @@ fn main() -> io::Result<()> {
 
 /// Modo headless (`--check`, sin raw mode / alt screen): corre la misma
 /// resolución de cascade que `draw()` para los 3 temas y verifica el
-/// criterio de éxito del ticket 10 por código, no a ojo. Pensado para
-/// correr antes de la sesión interactiva con Tarkark.
+/// criterio de éxito por código, no a ojo.
 fn run_check() -> io::Result<()> {
     let list = JackInOptionList { items: ["MONITOR", "BOOT", "TERMINATE", "SALIR"], selected: 0 };
     let mut all_ok = true;

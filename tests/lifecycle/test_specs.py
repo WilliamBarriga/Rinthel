@@ -1,6 +1,6 @@
 """BOOT/DOWN/RELOAD filtrados por ``enabled_of`` (Fase 3 del plan de
 servicios configurables) — un servicio con ``enabled=False`` en su
-sub-config queda afuera de las 3 secuencias, y RELOAD renumera sin saltos.
+sub-config queda afuera de las 3 secuencias.
 """
 
 import dataclasses
@@ -14,47 +14,9 @@ def _disable(cfg, attr):
     return dataclasses.replace(cfg, **{attr: dataclasses.replace(sub, enabled=False)})
 
 
-def _labels(phase_specs):
-    return [s.label for s in phase_specs]
-
-
-# ── boot_phases / down_phases ────────────────────────────────────────────
-
-
-def test_boot_phases_includes_all_services_by_default(cfg):
-    labels = _labels(specs.boot_phases(cfg))
-    assert any("LLAMA-SERVER" in l for l in labels)
-    assert any("UNDERSTORY" in l for l in labels)
-    assert any("PITHAGORAS" in l for l in labels)
-
-
-def test_boot_phases_excludes_disabled_local_service(cfg):
-    disabled = _disable(cfg, "understory")
-    labels = _labels(specs.boot_phases(disabled))
-    assert not any("UNDERSTORY" in l for l in labels)
-    # el resto sigue presente — deshabilitar uno no toca a los demás.
-    assert any("LLAMA-SERVER" in l for l in labels)
-    assert any("PITHAGORAS" in l for l in labels)
-
-
-def test_boot_phases_excludes_disabled_docker_service(cfg):
-    disabled = _disable(cfg, "pithagoras")
-    labels = _labels(specs.boot_phases(disabled))
-    assert not any("PITHAGORAS" in l for l in labels)
-    assert any("UNDERSTORY" in l for l in labels)
-
-
-def test_down_phases_excludes_disabled_service(cfg):
-    disabled = _disable(cfg, "pithagoras")
-    labels = _labels(specs.down_phases(disabled))
-    assert not any("PITHAGORAS" in l for l in labels)
-    assert any("LLAMA-SERVER" in l for l in labels)
-    assert any("UNDERSTORY" in l for l in labels)
-
-
-# ── boot_units / down_units (daemon FastAPI, ticket 04) ───────────────────
-# Vista agrupada por servicio de boot_phases/down_phases — un ServiceOutcome
-# por servicio en vez de un resultado por fase (ver docs/adr/0001).
+# ── boot_units / down_units ───────────────────────────────────────────────
+# Un ServiceOutcome por servicio en vez de un resultado por fase (ver
+# docs/adr/0001).
 
 
 def test_boot_units_groups_two_phases_per_service(cfg):
@@ -91,53 +53,9 @@ def test_down_units_excludes_disabled_service(cfg):
     assert set(units) == {"llama-server", "understory"}
 
 
-# ── reload_phases ─────────────────────────────────────────────────────────
-
-
-def _all_numbers(groups):
-    numbers = []
-    for group in groups:
-        for spec in group:
-            match = re.search(r"\[(\d+)/(\d+)\]", spec.label)
-            assert match is not None
-            numbers.append((int(match.group(1)), int(match.group(2))))
-    return numbers
-
-
-def test_reload_phases_numbers_are_contiguous_by_default(cfg):
-    groups = specs.reload_phases(cfg)
-    numbers = _all_numbers(groups)
-    total = sum(len(g) for g in groups)
-    assert [n for n, _ in numbers] == list(range(1, total + 1))
-    assert all(n_total == total for _, n_total in numbers)
-
-
-def test_reload_phases_renumbers_without_gaps_when_service_disabled(cfg):
-    disabled = _disable(cfg, "understory")
-    groups = specs.reload_phases(disabled)
-    numbers = _all_numbers(groups)
-    total = sum(len(g) for g in groups)
-    assert [n for n, _ in numbers] == list(range(1, total + 1))
-    assert not any("UNDERSTORY" in s.label for group in groups for s in group)
-
-
-def test_reload_phases_excludes_llama_port_wait_when_llama_disabled(cfg):
-    disabled = _disable(cfg, "llama")
-    groups = specs.reload_phases(disabled)
-    all_labels = [s.label for group in groups for s in group]
-    assert not any("PUERTO" in l and "LIBRE" in l for l in all_labels)
-    assert not any("LLAMA-SERVER" in l for l in all_labels)
-
-
-def test_reload_phases_includes_llama_port_wait_by_default(cfg):
-    groups = specs.reload_phases(cfg)
-    all_labels = [s.label for group in groups for s in group]
-    assert any("PUERTO" in l and "LIBRE" in l for l in all_labels)
-
-
-# ── reload_units (daemon FastAPI, sesión 06) ───────────────────────────────
-# Vista agrupada por servicio de las 3 tandas de reload_phases — un
-# ServiceOutcome por unidad, mismo criterio que boot_units/down_units.
+# ── reload_units ───────────────────────────────────────────────────────────
+# Las 3 tandas de RELOAD (shutdown → boot → rebuild), agrupadas por servicio
+# — un ServiceOutcome por unidad, mismo criterio que boot_units/down_units.
 
 
 def test_reload_units_shutdown_groups_kill_and_down(cfg):
@@ -189,10 +107,10 @@ def test_reload_units_excludes_disabled_service(cfg):
     assert "understory" not in dict(rebuild)
 
 
-# ── install_units (daemon FastAPI, sesión 07) ──────────────────────────────
-# Vista agrupada por InstallUnit de install_phases — un ServiceOutcome por
-# unidad instalable (mismo criterio que boot_units/reload_units), más
-# PREFLIGHT como su propia unidad.
+# ── install_units ──────────────────────────────────────────────────────────
+# Vista agrupada por InstallUnit — un ServiceOutcome por unidad instalable
+# (mismo criterio que boot_units/reload_units), más PREFLIGHT como su propia
+# unidad.
 
 
 def test_install_units_groups_preflight_and_every_unit_by_default(cfg):
@@ -218,8 +136,8 @@ def test_install_units_excludes_disabled_service(cfg):
 
 
 def test_install_units_does_not_number_labels(cfg):
-    # A diferencia de install_phases (checklist de Textual), install_units
-    # no numera — el daemon solo necesita qué corrió y si salió bien.
+    # install_units no numera — el daemon solo necesita qué corrió y si
+    # salió bien, no un checklist.
     units = specs.install_units(cfg)
     all_labels = [s.label for _, unit_specs in units for s in unit_specs]
     assert not any(re.search(r"\[\d+/\d+\]", l) for l in all_labels)

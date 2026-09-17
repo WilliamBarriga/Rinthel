@@ -1,11 +1,9 @@
-//! Cliente Ratatui de Rinthel. Ver `rinthel_tui/daemon.py` y
-//! .scratch/ratatui-migration/issues/05-mvp-spike.md para el contrato.
+//! Cliente Ratatui de Rinthel. Ver `rinthel_tui/daemon.py` para el contrato.
 //!
-//! Uso normal: `rinthel-boot.sh` (autostart del daemon + pidfile, sesión 11
-//! del port-map) — corre este binario directo solo para debugging puntual.
-//! Acepta `--port <N>` (default 8765) para apuntar a un daemon en otro
-//! puerto; sin el flag asume que ya está arriba ahí
-//! (`.venv/bin/python -m rinthel_tui.daemon`).
+//! Uso normal: `rinthel-boot.sh` (autostart del daemon + pidfile) — corre
+//! este binario directo solo para debugging puntual. Acepta `--port <N>`
+//! (default 8765) para apuntar a un daemon en otro puerto; sin el flag
+//! asume que ya está arriba ahí (`.venv/bin/python -m rinthel_tui.daemon`).
 
 use std::io;
 

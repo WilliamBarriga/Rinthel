@@ -1,23 +1,18 @@
-//! Puerto de `rinthel_tui/tui/effects/` (sesión 10 del port-map) — los 8
-//! efectos que Rinthel usa: `GlitchLabel`/`RotatingTagline` (texto inline,
-//! no bloqueantes) en [`flicker`]/[`tagline`], y los 6 `TransitionEffect`
-//! (modales bloqueantes) en [`transitions`], unificados acá bajo
-//! [`ActiveEffect`].
+//! Los 8 efectos visuales que Rinthel usa: `GlitchLabel`/`RotatingTagline`
+//! (texto inline, no bloqueantes) en [`flicker`]/[`tagline`], y los 6
+//! `TransitionEffect` (modales bloqueantes) en [`transitions`], unificados
+//! acá bajo [`ActiveEffect`].
 //!
-//! `TransitionEffect` original es un `ModalScreen` con `background: $bg 0%`
-//! — se apila SOBRE lo que esté montado y solo pinta las celdas que toca
-//! (igual que `move_cursor + printf` del bash original: nunca un clear
-//! completo). Acá no hay stack de screens, así que la equivalencia es:
-//! dibujar la screen de siempre y encima, si `active_effect` está `Some`,
-//! superponer su grilla — [`GridWidget`] deja intactas las celdas que la
-//! grilla no tocó (espacio + sin estilo) en vez de pisarlas.
+//! Cada `TransitionEffect` se dibuja SOBRE la screen de siempre y solo pinta
+//! las celdas que toca (nunca un clear completo): `App::run` dibuja la
+//! screen de siempre y, si `active_effect` está `Some`, superpone su grilla
+//! — [`GridWidget`] deja intactas las celdas que la grilla no tocó (espacio
+//! + sin estilo) en vez de pisarlas.
 //!
-//! Cada efecto de transición se guía por reloj de pared (`Instant`), no por
-//! `await asyncio.sleep` — no hay corutinas acá, `App::run` es un loop de
-//! polling. Cada struct guarda cuándo le toca el próximo cambio de frame
-//! (`next_at`) y lo recalcula en `advance()`, replicando la cadencia
-//! `set_frame(...); sleep; clear(); sleep` de cada `run()` de Python paso a
-//! paso, solo que empujada por el tick del loop en vez de una corutina.
+//! Cada efecto de transición se guía por reloj de pared (`Instant`): no hay
+//! corutinas acá, `App::run` es un loop de polling. Cada struct guarda
+//! cuándo le toca el próximo cambio de frame (`next_at`) y lo recalcula en
+//! `advance()`, empujado por el tick del loop en vez de un sleep asíncrono.
 
 pub mod flicker;
 pub mod tagline;
@@ -40,9 +35,8 @@ pub fn blank_grid(width: usize, height: usize) -> Grid {
     vec![vec![(' ', None); width]; height]
 }
 
-/// Puerto de `grid_to_strips` + el compositing de `background: $bg 0%` de
-/// `TransitionEffect`: pinta encima de lo que ya dibujó la screen de abajo,
-/// sin tocar las celdas que la grilla dejó en blanco (`' '`, sin estilo).
+/// Pinta encima de lo que ya dibujó la screen de abajo, sin tocar las
+/// celdas que la grilla dejó en blanco (`' '`, sin estilo).
 pub struct GridWidget<'a>(pub &'a Grid);
 
 impl Widget for GridWidget<'_> {
@@ -84,9 +78,7 @@ pub use transitions::{
 };
 
 /// Envuelve cualquiera de los 6 efectos de transición bajo una sola
-/// interfaz — `App` guarda `Option<ActiveEffect>` sin necesitar saber cuál
-/// es, igual que Python trata cualquier `TransitionEffect` por igual detrás
-/// de `push_screen_wait`.
+/// interfaz — `App` guarda `Option<ActiveEffect>` sin necesitar saber cuál es.
 pub enum ActiveEffect {
     SignalNoise(SignalNoiseEffect),
     ChromaticAberration(ChromaticAberrationEffect),

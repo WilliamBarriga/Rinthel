@@ -1,17 +1,12 @@
-//! Puerto de 5 de los 6 `TransitionEffect` de `tui/effects/transitions.py`
-//! que algún call site usa (`SignalNoiseEffect`/`ChromaticAberrationEffect`/
-//! `AfterimageEffect`/`DatamoshEffect`/`VignetteEffect` — no
-//! `ScreenTearEffect`/`ScanlinesEffect`, sin caller en la app), más
-//! [`SyncSweepEffect`], que no es un puerto: reemplaza a `RippleEffect`
-//! como remate de `/reload` (Tarkark, sesión 10, probando en vivo: el
-//! original resultaba "demasiado largo y feo" en la terminal real).
+//! Los 6 efectos de transición modales: `SignalNoiseEffect`/
+//! `ChromaticAberrationEffect`/`AfterimageEffect`/`DatamoshEffect`/
+//! `VignetteEffect`/[`SyncSweepEffect`].
 //!
 //! Cada uno guarda su propio reloj interno (`next_at`, cuándo le toca el
-//! próximo cambio de frame) y se avanza por `Instant` en vez de
-//! `await asyncio.sleep` — ver doc-comment de `effects::mod` para el porqué.
-//! La matemática generativa replica la de Python; lo que cambia es que acá
-//! cada `run()` se "desenrolla" a mano en un método `advance()` llamado
-//! desde el loop principal.
+//! próximo cambio de frame) y se avanza por `Instant` en vez de un sleep
+//! asíncrono — ver doc-comment de `effects::mod`. Cada uno "desenrolla" a
+//! mano su lógica de frames en un método `advance()` llamado desde el loop
+//! principal.
 
 use std::time::{Duration, Instant};
 
@@ -25,7 +20,7 @@ use crate::app::Colors;
 
 /// Banda de interferencia horizontal que se desplaza hacia abajo — usada
 /// antes de toda transición de menú que dispara un comando (BOOT/RELOAD/
-/// TERMINATE/CAPTURE/INSTALL), igual que `menu.py:154-176`.
+/// TERMINATE/CAPTURE/INSTALL).
 pub struct SignalNoiseEffect {
     duration: Duration,
     band_height: usize,
@@ -174,11 +169,10 @@ impl ChromaticAberrationEffect {
 // ── AfterimageEffect ─────────────────────────────────────────────────────
 
 /// Texto con ghosting tipo fósforo CRT — flash, apagón, fantasma, fade.
-/// Cierre de TERMINATE (`_TERMINATE_CLOSING`). A diferencia de los demás,
-/// es una secuencia FIJA de pasos (no un loop que se re-randomiza) — igual
-/// que Python, cada frame se computa una sola vez y la línea de tiempo se
-/// arma en el primer `advance()` (recién ahí se conoce el `width`/`height`
-/// reales, que `new()` no tiene).
+/// Cierre de TERMINATE. A diferencia de los demás, es una secuencia FIJA de
+/// pasos (no un loop que se re-randomiza): cada frame se computa una sola
+/// vez y la línea de tiempo se arma en el primer `advance()` (recién ahí se
+/// conoce el `width`/`height` reales, que `new()` no tiene).
 pub struct AfterimageEffect {
     text: String,
     started: Instant,
@@ -210,9 +204,7 @@ impl AfterimageEffect {
         grid
     }
 
-    /// `keep_prob` = probabilidad de que un caracter sobreviva — mismo
-    /// signo que los 3 generators de Python (`ch if random() > x else ' '`
-    /// / `< x`), solo reexpresado como "probabilidad de mantener".
+    /// `keep_prob` = probabilidad de que un caracter sobreviva.
     fn corrupt(text: &str, keep_prob: f64, rng: &mut impl Rng) -> String {
         text.chars().map(|ch| if rng.gen::<f64>() < keep_prob { ch } else { ' ' }).collect()
     }
@@ -269,9 +261,9 @@ impl AfterimageEffect {
 // ── DatamoshEffect ───────────────────────────────────────────────────────
 
 /// Bloques rectangulares de basura que aparecen y desaparecen — códec roto.
-/// Primera de las 2 transiciones entre tandas de `/reload` (amendment de
-/// docs/adr/0001, sesión 10): dispara al recibir `phase_batch{batch:"boot"}`
-/// (límite shutdown→boot).
+/// Primera de las 2 transiciones entre tandas de `/reload` (ver
+/// docs/adr/0001): dispara al recibir `phase_batch{batch:"boot"}` (límite
+/// shutdown→boot).
 pub struct DatamoshEffect {
     duration: Duration,
     intensity: u32,
@@ -430,16 +422,9 @@ impl VignetteEffect {
 
 /// Barrido horizontal único, de arriba a abajo, con una cola de 2 renglones
 /// que se apaga detrás — remate de `/reload` tras la última tanda (rebuild)
-/// exitosa, sin protocolo nuevo: dispara sobre `CommandDone`, igual que el
-/// `RippleEffect` (retirado) al que reemplaza.
-///
-/// No es un puerto de ningún `effect_*` de Python — Tarkark, sesión 10,
-/// probando en vivo: el `RippleEffect` original (anillos concéntricos
-/// expandiéndose) resultaba "demasiado largo y feo" en la terminal real.
-/// Reemplazo deliberadamente simple (líneas rectas, sin ruido aleatorio,
-/// nada de geometría de círculo/elipse) y de duración fija corta — mismo
-/// margen "llamativas pero cortas, 3s máximo" que ya había dado para las
-/// transiciones de reload.
+/// exitosa, sin protocolo nuevo: dispara sobre `CommandDone`. Deliberadamente
+/// simple (líneas rectas, sin ruido aleatorio) y de duración fija corta,
+/// igual que el resto de las transiciones de reload.
 pub struct SyncSweepEffect {
     duration: Duration,
     next_at: Instant,

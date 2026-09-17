@@ -1,24 +1,14 @@
-//! Screen genérica de checklist + log para BOOT/TERMINATE/RELOAD — puerto
-//! de `PhaseSequenceScreen`/`PhaseRunnerScreen`
-//! (`rinthel_tui/tui/screens/phase_runner.py`, sesión 05 del port-map).
-//!
-//! RELOAD (sesión 06) reusa esta screen tal cual en vez de tener la suya
-//! propia (`ScreenId::PhaseRunner`, no `ScreenId::Reload`): con las 3
-//! tandas orquestadas del lado daemon (`POST /reload`) y las transiciones
-//! entre tandas stubbeadas a nada, no queda ningún comportamiento propio de
-//! Reload del lado cliente — grillado con Tarkark antes de proceder.
+//! Screen genérica de checklist + log para BOOT/TERMINATE/RELOAD/INSTALL —
+//! las 4 comparten `ScreenId::PhaseRunner` (no una screen por comando)
+//! porque con la orquestación completa del lado daemon no queda ningún
+//! comportamiento propio por comando del lado cliente.
 //!
 //! El estado (`phase_rows`/`phase_log`) vive en `App`, no en un struct de
 //! screen propio — mismo patrón que `capture.rs` (`command_in_flight` +
-//! `last_command_result`), porque `app.rs` no tiene un stack de screens al
-//! estilo Textual. `app::finish_phase_sequence` llena `phase_log` con el
-//! cierre (mensaje/banner de cierre, o "secuencia cortada") cuando llega la
-//! respuesta del POST — acá solo se dibuja.
-//!
-//! Los efectos de cierre (`ChromaticAberrationEffect`/`AfterimageEffect`, y
-//! para reload las 3 transiciones entre tandas) quedan stubbeados: el
-//! banner es una línea más del log, sin transición — confirmado en el
-//! ticket, retrofit real en sesión 10.
+//! `last_command_result`), porque `app.rs` no tiene un stack de screens.
+//! `app::finish_phase_sequence` llena `phase_log` con el cierre (mensaje/
+//! banner de cierre, o "secuencia cortada") cuando llega la respuesta del
+//! POST — acá solo se dibuja.
 
 use std::collections::VecDeque;
 
@@ -69,8 +59,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     f.render_widget(hint, rows[2]);
 }
 
-/// `action_dismiss_if_done` de `phase_runner.py` — acá es "no hay POST
-/// /boot ni /terminate en vuelo", mismo truco que `screens::capture::done`.
+/// "No hay POST /boot/terminate/reload/install en vuelo" — mismo truco que
+/// `screens::capture::done`.
 pub fn done(app: &App) -> bool {
     app.command_in_flight.is_none()
 }

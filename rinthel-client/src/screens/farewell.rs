@@ -1,19 +1,13 @@
-//! Screen de cierre — puerto de `rinthel_tui/tui/screens/farewell.py`
-//! (mockup construido en sesión 02, cableado en sesión 05 del port-map).
+//! Screen de cierre.
 //!
-//! Cableado (sesión 05, grillado con Tarkark 2026-09-16): los dos callers
-//! de Python — `phase_runner.py:110` (tras un TERMINATE exitoso) y
-//! `menu.py:183` (opción EXIT del menú) — están wireados acá vía
-//! `App::farewell_next` (`app.rs`): `MenuAction::Quit` entra a esta screen
-//! en vez de salir directo, y `App::finish_phase_sequence` hace lo mismo
-//! tras un TERMINATE sin fallas. El atajo global `q` del spike (invención
-//! pre-port, no existe en `farewell.py`) sigue matando la app incluso
-//! durante estos 5s — decisión explícita de Tarkark, no se lo especial-casó
-//! en el loop de `app.rs`. `farewell.py` tampoco bindea Esc, así que acá
-//! tampoco hay guard de salida temprana: los 5s corren completos siempre.
+//! Dos callers entran acá vía `App::farewell_next` (`app.rs`):
+//! `MenuAction::Quit` (opción EXIT del menú) entra a esta screen en vez de
+//! salir directo, y `App::finish_phase_sequence` hace lo mismo tras un
+//! TERMINATE sin fallas. El atajo global `q` sigue matando la app incluso
+//! durante estos 5s — no se lo especial-casó en el loop de `app.rs`. Tampoco
+//! hay guard de salida temprana por Esc: los 5s corren completos siempre.
 //!
-//! El `GlitchLabel` real (`rinthel_tui/tui/effects/flicker.py`) se retrofitea
-//! en sesión 10 — el reveal vive en `App::farewell_message`
+//! El reveal del mensaje (`GlitchLabel`) vive en `App::farewell_message`
 //! (`effects::flicker::GlitchReveal`, creado junto con `FarewellTimer` en
 //! `App::begin_farewell`), acá solo se dibuja el texto que corresponda a
 //! este instante.
@@ -29,10 +23,9 @@ use ratatui::Frame;
 pub const FAREWELL_SECONDS: u64 = 5;
 pub const MESSAGE: &str = "RINTHEL.AI — SESSION CLOSED";
 
-/// Reemplaza `set_timer(FAREWELL_SECONDS, self._finish)` + `dismiss()` de
-/// `farewell.py`: quien cablee esta screen guarda un `FarewellTimer` al
-/// entrar y consulta `is_done()` en cada tick de su loop, en vez de un
-/// callback awaiteable (el modelo de `app.rs` no tiene stack de screens).
+/// Quien cablee esta screen guarda un `FarewellTimer` al entrar y consulta
+/// `is_done()` en cada tick de su loop, en vez de un callback awaiteable
+/// (el modelo de `app.rs` no tiene stack de screens).
 pub struct FarewellTimer {
     started: Instant,
 }

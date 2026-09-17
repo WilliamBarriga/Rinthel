@@ -3,6 +3,11 @@ comentarios y valores no tocados (Fase 5 del plan de servicios
 configurables). Migrado de los tests de ``install._write_env_from_example``,
 que generalizó."""
 
+import os
+import stat
+
+import pytest
+
 from rinthel_tui.env_file import update_env_file
 
 
@@ -56,3 +61,39 @@ def test_update_env_file_starts_empty_without_seed_when_path_missing(tmp_path):
     update_env_file(target, overrides={"RINTHEL_TTS_ENABLED": "false"})
 
     assert target.read_text() == "RINTHEL_TTS_ENABLED=false\n"
+
+
+# ── escritura atómica (punto #4 del reporte de robustez) ─────────────────
+
+
+def test_update_env_file_preserves_the_original_file_mode(tmp_path):
+    target = tmp_path / ".env"
+    target.write_text("UNDERSTORY_TOKEN=abc123\n")
+    target.chmod(0o600)
+
+    update_env_file(target, overrides={"UNDERSTORY_TOKEN": "def456"})
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert "UNDERSTORY_TOKEN=def456" in target.read_text()
+
+
+def test_update_env_file_leaves_original_untouched_and_cleans_up_tmp_on_write_failure(tmp_path, monkeypatch):
+    target = tmp_path / ".env"
+    original_content = "PORTAL_PASSWORD=changeme\n"
+    target.write_text(original_content)
+
+    real_replace = os.replace
+
+    def _boom(*args, **kwargs):
+        raise OSError("disco lleno (simulado)")
+
+    monkeypatch.setattr(os, "replace", _boom)
+    try:
+        with pytest.raises(OSError):
+            update_env_file(target, overrides={"PORTAL_PASSWORD": "s3cr3t"})
+    finally:
+        monkeypatch.setattr(os, "replace", real_replace)
+
+    assert target.read_text() == original_content
+    leftover = [p for p in tmp_path.iterdir() if p.name.startswith(".env.") and p.name.endswith(".tmp")]
+    assert leftover == []

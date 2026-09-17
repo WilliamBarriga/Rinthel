@@ -1,8 +1,6 @@
-//! Registro de screens: reemplaza el `match app.menu_selected { 0 => ... }`
-//! hardcodeado y el array fijo de labels que vivían en `main.rs` (ver
-//! sesión 00 del port-map) por un enum de identificadores + una lista de
-//! registro, para que agregar una screen/opción de menú no toque el loop
-//! principal en `app.rs`.
+//! Registro de screens: un enum de identificadores + una lista de registro,
+//! para que agregar una screen/opción de menú no toque el loop principal en
+//! `app.rs`.
 
 pub mod capture;
 pub mod exit_prompt;
@@ -13,11 +11,13 @@ pub mod monitor;
 pub mod phase_runner;
 pub mod settings;
 
+use crossterm::event::KeyCode;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::Frame;
+use tokio::sync::mpsc;
 
-use crate::app::App;
+use crate::app::{App, AppEvent};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScreenId {
@@ -25,14 +25,14 @@ pub enum ScreenId {
     Monitor,
     Logs,
     Capture,
-    /// Checklist + log de BOOT/TERMINATE — sesión 05 del port-map.
+    /// Checklist + log en vivo de BOOT/TERMINATE/RELOAD/INSTALL.
     PhaseRunner,
-    /// "¿Apagar también el daemon?" — sesión 12, antes de `Farewell` en el
-    /// camino `[N] SALIR` (`MenuAction::Quit`).
+    /// "¿Apagar también el daemon?" — antes de `Farewell` en el camino
+    /// `[N] SALIR` (`MenuAction::Quit`).
     ExitPrompt,
-    /// Cierre de sesión (mockup sesión 02, cableado sesión 05).
+    /// Cierre de sesión.
     Farewell,
-    /// `[N] CONFIGURAR` — sesión 09 del port-map.
+    /// `[N] CONFIGURAR`.
     Settings,
 }
 
@@ -41,22 +41,20 @@ pub enum MenuAction {
     Navigate(ScreenId),
     Boot,
     Terminate,
-    /// Puerto de RELOAD (sesión 06 del port-map) — reusa `ScreenId::PhaseRunner`
-    /// tal cual, mismo mecanismo bloqueante que Boot/Terminate contra
-    /// `POST /reload` (las 3 tandas de `specs.reload_units` corren del lado
-    /// daemon; el cliente no distingue reload de un boot/terminate más largo).
+    /// Reusa `ScreenId::PhaseRunner` tal cual, mismo mecanismo bloqueante
+    /// que Boot/Terminate contra `POST /reload` (las 3 tandas de
+    /// `specs.reload_units` corren del lado daemon; el cliente no distingue
+    /// reload de un boot/terminate más largo).
     Reload,
     /// Distinta de `Navigate`: entrar a Capture dispara `POST /capture` de
-    /// una, como `on_mount` en `capture.py` — no es solo cambiar de screen.
+    /// una — no es solo cambiar de screen.
     Capture,
-    /// Puerto de `[0] INSTALL` (sesión 07 del port-map) — reusa
-    /// `ScreenId::PhaseRunner` tal cual, mismo argumento que `Reload`: con
-    /// `specs.install_units` orquestando todo del lado daemon, no queda
+    /// Reusa `ScreenId::PhaseRunner` tal cual, mismo argumento que `Reload`:
+    /// con `specs.install_units` orquestando todo del lado daemon, no queda
     /// comportamiento propio para una screen de Install en el cliente.
     Install,
-    /// Puerto de `[N] CONFIGURAR` (sesión 09 del port-map) — distinta de
-    /// `Navigate`: entrar dispara `GET /config` de una, mismo argumento que
-    /// `Capture` con `POST /capture`.
+    /// Distinta de `Navigate`: entrar dispara `GET /config` de una, mismo
+    /// argumento que `Capture` con `POST /capture`.
     Settings,
     Quit,
 }
@@ -69,11 +67,11 @@ pub struct MenuEntry {
 
 /// Un ítem del menú — o una entrada accionable, o un separador puramente
 /// visual. Separar esto en un enum (en vez de, por ejemplo, un flag
-/// `disabled` en `MenuEntry` o índices de divisor hardcodeados como
-/// `menu.py::_DIVIDER_INDEX_1/2/3`) es lo que permite agregar/sacar/mover
-/// entradas y separadores en `MENU_ENTRIES` sin tocar la navegación: `Up`/
-/// `Down` (`next_selectable`/`prev_selectable`, más abajo) saltan
-/// `Divider` solos, así que ningún índice queda hardcodeado en otro lado.
+/// `disabled` en `MenuEntry` o índices de divisor hardcodeados) es lo que
+/// permite agregar/sacar/mover entradas y separadores en `MENU_ENTRIES` sin
+/// tocar la navegación: `Up`/`Down` (`next_selectable`/`prev_selectable`,
+/// más abajo) saltan `Divider` solos, así que ningún índice queda
+/// hardcodeado en otro lado.
 #[derive(Clone, Copy)]
 pub enum MenuItem {
     Entry(MenuEntry),
@@ -89,12 +87,8 @@ impl MenuItem {
     }
 }
 
-// Orden fijado en la sesión 07 del port-map (grillado con Tarkark) para lo
-// que hoy existía del lado Rust; `CONFIGURAR` (sesión 09) entra acá, entre
-// TERMINATE y CAPTURE, tal cual esa sesión ya lo había reservado. Sin
-// divisores todavía (eso sigue siendo pulido visual de sesión 10): la
-// estructura ya los soporta, agregarlos es sumar `MenuItem::Divider` donde
-// corresponda.
+// Sin divisores todavía (pulido visual pendiente): la estructura ya los
+// soporta, agregarlos es sumar `MenuItem::Divider` donde corresponda.
 pub const MENU_ENTRIES: &[MenuItem] = &[
     MenuItem::Entry(MenuEntry { label: "MONITOR", action: MenuAction::Navigate(ScreenId::Monitor) }),
     MenuItem::Entry(MenuEntry { label: "BOOT", action: MenuAction::Boot }),
@@ -139,6 +133,27 @@ pub fn prev_selectable(from: usize) -> usize {
         .find(|(_, item)| matches!(item, MenuItem::Entry(_)))
         .map(|(i, _)| i)
         .unwrap_or(from)
+}
+
+/// Espeja `draw`: le da a cada screen un lugar dedicado para su propio
+/// manejo de teclado, en vez de que `App::run()` sea el único que conoce las
+/// teclas de todas — mismo principio que recomienda la guía de "Component
+/// Architecture" de ratatui (co-locar `handle_events`/`update`/`render` a
+/// nivel de componente), sin adoptar el trait `Component` completo.
+///
+/// Devuelve `true` si la screen consumió la tecla — `App::run()` solo cae al
+/// match genérico (Esc/q compartidos, scroll de log, etc.) si devuelve
+/// `false`. Hoy solo Settings tiene sub-estado propio que lo justifique
+/// (`settings::handle_key`); el resto sigue resuelto inline en `App::run()`
+/// hasta que a alguna le haga falta lo mismo.
+pub fn handle_key(id: ScreenId, app: &mut App, code: KeyCode, tx: &mpsc::UnboundedSender<AppEvent>) -> bool {
+    match id {
+        ScreenId::Settings => {
+            settings::handle_key(app, code, tx);
+            true
+        }
+        _ => false,
+    }
 }
 
 pub fn draw(id: ScreenId, f: &mut Frame, app: &App) {
@@ -192,8 +207,8 @@ fn status_line(app: &App) -> Line<'static> {
     } else {
         let hint = match app.screen {
             ScreenId::Menu => " ↑↓=mover  Enter=elegir  q=salir ",
-            ScreenId::Monitor => " Esc=menu  q=salir ",
-            ScreenId::Logs => " q/Esc=volver ",
+            ScreenId::Monitor => " Esc=menu  q=salir  ←→=scroll log ",
+            ScreenId::Logs => " q/Esc=volver  ←→=scroll  Home/End ",
             ScreenId::Capture => " Esc=volver (al terminar) ",
             ScreenId::PhaseRunner => " Esc=volver (al terminar) ",
             ScreenId::ExitPrompt => " Y/n=elegir  q=salir sin apagar ",

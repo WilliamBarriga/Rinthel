@@ -86,11 +86,11 @@ class Field:
     port: bool = False
     positive: bool = False
     exists: bool = False
-    # Categoría para agrupar visualmente en [N] CONFIGURAR (sesión 09 del
-    # port-map) — "" para sub-configs con pocos campos que no lo necesitan
-    # (understory/pithagoras/moe). Identificador plano (sin acentos) porque
-    # cruza a JSON/Rust vía GET /config; el label mostrado es responsabilidad
-    # del cliente.
+    # Categoría para agrupar visualmente en [N] CONFIGURAR — "" para
+    # sub-configs con pocos campos que no lo necesitan (understory/
+    # pithagoras/moe). Identificador plano (sin acentos) porque cruza a
+    # JSON/Rust vía GET /config; el label mostrado es responsabilidad del
+    # cliente.
     group: str = ""
 
 
@@ -171,16 +171,9 @@ class LlamaConfig:
 # ``env`` queda afuera — se sintetiza a partir de ``moe_cache_profile``
 # (ver ``default_config()``), no sale de una env var propia.
 #
-# Grupos revisados sesión 09 del port-map contra el `--help` real del build
-# custom (`~/codacus/llama.cpp-perf-latest`, el que corre esta máquina, no
-# el default de `bin` acá abajo): 26 de 27 campos (todos salvo `enabled`,
-# que no es un flag) mapean 1:1 a flags vigentes de ese fork. Único
-# desfasaje encontrado y corregido en esa
-# sesión: este campo se llamaba `flash_inference`/`RINTHEL_FLASH_INFERENCE`
-# pero arma `-fit` (`services.py::_llama_argv`), que es "ajustar args no
-# seteados para entrar en memoria del device" — no tiene nada que ver con
-# flash attention ni con inference. Renombrado a `fit_to_memory` para que la
-# screen de settings no muestre un nombre engañoso.
+# `fit_to_memory` arma el flag `-fit` (`services.py::_llama_argv`), que
+# ajusta los args no seteados para entrar en memoria del device — no tiene
+# relación con flash attention pese a lo que sugeriría un nombre distinto.
 LLAMA_FIELDS: list[Field] = [
     Field("bin", "RINTHEL_LLAMA_BIN", Path, "~/codacus/llama.cpp/build-cuda/bin/llama-server", exists=True, group="general"),
     Field("model", "RINTHEL_LLAMA_MODEL_PATH", Path, "~/llama.cpp/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", exists=True, group="general"),
@@ -368,11 +361,10 @@ class RinthelConfig:
         return warnings
 
 
-# ── Lectura/escritura genérica de campos — usado por GET/POST /config
-# (sesión 09 del port-map, amendment de docs/adr/0001) y por [N] CONFIGURAR
-# del lado Textual (rinthel_tui/tui/screens/settings.py). Vive acá y no en
-# la screen porque el daemon (no Textual) también lo necesita ahora que es
-# dueño de la config — ver Decision Q1 de esa sesión. ──────────────────────
+# ── Lectura/escritura genérica de campos, usado por GET/POST /config (ver
+# docs/adr/0001) — vive acá, junto al resto de config.py, porque tanto el
+# daemon (dueño de la config) como cualquier UI necesitan la misma lógica de
+# diff/validación antes de escribir. ──────────────────────────────────────
 
 
 def stringify(value: object) -> str:
@@ -439,9 +431,6 @@ def default_config() -> RinthelConfig:
         llama=llama, moe=moe,
         understory=understory, pithagoras=pithagoras, install=install,
     )
-
-
-CONFIG = default_config()
 
 
 # Toggle global de efectos visuales (glow, glitch, ripple, etc.) — apagable

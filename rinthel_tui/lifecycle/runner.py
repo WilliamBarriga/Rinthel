@@ -1,13 +1,10 @@
 """Corre una lista declarativa de PhaseSpec en secuencia.
 
-Reemplaza ``nightcity/framework/rinthel-phase-runner.sh`` (``nc_run_phase_list``).
-A diferencia del bash, no hay distinción TUI/texto-plano: quien llama a
-``run_phase_list`` (una Screen de Textual, o el script de prueba suelto)
-decide qué hacer con cada llamada a ``report``. Si una fase levanta
-PhaseError la secuencia se corta ahí — igual que el ``set -e``/``exit 1``
-del script bash corriendo en directo, porque las fases siguientes suelen
-depender de que la anterior haya funcionado (ej. no tiene sentido esperar
-a que llama-server responda si nunca se lo pudo lanzar).
+Quien llama a ``run_phase_list`` decide qué hacer con cada llamada a
+``report``. Si una fase levanta PhaseError la secuencia se corta ahí, porque
+las fases siguientes suelen depender de que la anterior haya funcionado
+(ej. no tiene sentido esperar a que llama-server responda si nunca se lo
+pudo lanzar).
 """
 
 import inspect
@@ -18,11 +15,10 @@ from rinthel_tui.lifecycle.specs import PhaseSpec
 from rinthel_tui.lifecycle.types import PhaseError, PhaseReport
 
 # status: "running" | "done" | "error" — avisa a quien llama antes/después de
-# cada fase para que pueda reflejarlo en un checklist (PhaseSequenceScreen)
-# sin que este módulo sepa nada de Textual. Puede devolver un awaitable (sesión
-# 05 del port-map: el daemon lo usa para transmitir por /ws/monitor) o nada
-# (Textual, que actualiza el widget de forma sincrónica) — se espera el
-# resultado solo si hace falta, así los dos callers conviven sin wrapper.
+# cada fase para que pueda reflejarlo en un checklist. Puede devolver un
+# awaitable (el daemon lo usa para transmitir por /ws/monitor) o nada — se
+# espera el resultado solo si hace falta, así los dos casos conviven sin
+# wrapper.
 PhaseCallback = Callable[[PhaseSpec, str], Union[Awaitable[None], None]]
 
 

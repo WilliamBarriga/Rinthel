@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Autostart del daemon (con pidfile) + lanza el cliente Rust. Sesión 11 del
-# port-map (.scratch/ratatui-migration/port-issues/11-hardening-pidfile-autostart.md):
-# el daemon es infraestructura persistente e independiente del cliente (ver
-# issues/04-packaging-entrypoint.md) — sobrevive a que cierres la TUI, hasta
-# que corras `--stop` o apagues la máquina.
+# Autostart del daemon (con pidfile) + lanza el cliente Rust. El daemon es
+# infraestructura persistente e independiente del cliente — sobrevive a que
+# cierres la TUI, hasta que corras `--stop` o apagues la máquina.
 #
 # Ejecutar SIEMPRE desde (o con cwd dentro de) la raíz del repo: DIR se
 # resuelve relativo a este script. Config vía .env, ver README/.env.example.
@@ -15,11 +13,37 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON="$DIR/.venv/bin/python"
+CARGO_MANIFEST="$DIR/rinthel-client/Cargo.toml"
 BINARY="$DIR/rinthel-client/target/release/rinthel"
 PIDFILE="$DIR/.rinthel-daemon.pid"
 ENV_FILE="$DIR/.env"
 DAEMON_LOG="$DIR/logs/daemon.log"
-READY_TIMEOUT=10 # segundos de poll tras autostart antes de rendirse (sesión 11, grillado con Tarkark)
+READY_TIMEOUT=10 # segundos de poll tras autostart antes de rendirse
+
+# `cargo build` es incremental — sin cambios desde el último boot, esto es
+# casi gratis (chequeo de mtimes, nada que recompilar). Se corre en cada
+# arranque para que el binario nunca quede desactualizado respecto al
+# código fuente, sin depender de que alguien se acuerde de correr
+# `cargo build --release` a mano después de un `git pull`.
+build_client() {
+    if ! command -v cargo >/dev/null 2>&1; then
+        if [[ -x "$BINARY" ]]; then
+            echo "[boot] cargo no está en PATH — sigo con el binario existente sin reconstruir." >&2
+            return
+        fi
+        echo "error: no se encontró cargo y no hay binario previo en $BINARY — instalá Rust (rustup.rs) o corré ./install.sh." >&2
+        exit 1
+    fi
+    echo "[boot] compilando cliente Rust (cargo build --release)..."
+    if ! cargo build --release --manifest-path "$CARGO_MANIFEST"; then
+        if [[ -x "$BINARY" ]]; then
+            echo "[boot] la compilación falló — sigo con el binario previo ($BINARY), puede estar desactualizado." >&2
+        else
+            echo "error: la compilación falló y no hay binario previo en $BINARY." >&2
+            exit 1
+        fi
+    fi
+}
 
 port_from_env() {
     local value="8765"
@@ -85,10 +109,7 @@ if [[ ! -x "$PYTHON" ]]; then
     echo "error: no se encontró $PYTHON — corré ./install.sh primero." >&2
     exit 1
 fi
-if [[ ! -x "$BINARY" ]]; then
-    echo "error: no se encontró $BINARY — corré ./install.sh, o 'cargo build --release' dentro de rinthel-client/." >&2
-    exit 1
-fi
+build_client
 
 PORT="$(port_from_env)"
 pid="$(running_pid)"

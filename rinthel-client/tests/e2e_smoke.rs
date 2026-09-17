@@ -1,29 +1,28 @@
-//! Esqueleto de smoke E2E (sesión 00 del porteo): daemon real
-//! (`rinthel_tui.daemon`, lanzado como subproceso) + cliente real (los
-//! mismos structs `protocol.rs` + `reqwest`/`tokio-tungstenite` que usa
-//! `app.rs`) conectados por HTTP/WS real en loopback — boot→terminate→cerrar.
+//! Smoke E2E: daemon real (`rinthel_tui.daemon`, lanzado como subproceso) +
+//! cliente real (los mismos structs `protocol.rs` + `reqwest`/
+//! `tokio-tungstenite` que usa `app.rs`) conectados por HTTP/WS real en
+//! loopback — boot→terminate→cerrar.
 //!
-//! Desde sesión 04 (hardening), `boot`/`terminate` corren `run_phase_list`
-//! REAL — pero contra dobles de `LocalProcessService`/`DockerComposeService`,
-//! nunca contra llama-server/Understory/Pithagoras reales (ver
-//! `../../tests/fixtures/fake_ready_server.py`): las env vars de abajo
-//! redirigen los 3 managed services a un único proceso Python que solo
-//! responde 200 en los puertos de prueba, y a directorios docker inexistentes
-//! (`phase_up`/`phase_down` los saltean con un warn, sin invocar `docker
-//! compose`). Único componente real e inevitable: el chequeo de
-//! `systemctl is-active docker` al principio de boot — lee el estado real
-//! del docker daemon del host, no lo simula (no hay hook para eso hoy); en
-//! este proyecto (sin CI, corrido a mano) siempre corre con Docker ya activo.
+//! `boot`/`terminate` corren `run_phase_list` REAL — pero contra dobles de
+//! `LocalProcessService`/`DockerComposeService`, nunca contra llama-server/
+//! Understory/Pithagoras reales (ver `../../tests/fixtures/fake_ready_server.py`):
+//! las env vars de abajo redirigen los 3 managed services a un único proceso
+//! Python que solo responde 200 en los puertos de prueba, y a directorios
+//! docker inexistentes (`phase_up`/`phase_down` los saltean con un warn, sin
+//! invocar `docker compose`). Único componente real e inevitable: el chequeo
+//! de `systemctl is-active docker` al principio de boot — lee el estado real
+//! del docker daemon del host, no lo simula; en este proyecto (sin CI,
+//! corrido a mano) siempre corre con Docker ya activo.
 //!
 //! Lo que valida es el cable completo: WS/HTTP, serialización, el wiring
-//! real de `lifecycle/runner.py` de punta a punta, cliente parseando en vivo
-//! (ver .scratch/ratatui-migration/issues/08-cross-process-testing-strategy.md).
+//! real de `lifecycle/runner.py` de punta a punta, cliente parseando en vivo.
 //!
 //! Requiere que no haya nada más escuchando ya en :8765 ni en los puertos de
 //! prueba 18080-18082 (proyecto de un solo dev/host, sin CI — cortá
 //! cualquier `rinthel_tui.daemon` que tengas corriendo antes de `cargo test`).
 
 use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use futures_util::StreamExt;
@@ -39,6 +38,11 @@ const WS: &str = "ws://127.0.0.1:8765/ws/monitor";
 const FAKE_LLAMA_PORT: u16 = 18080;
 const FAKE_UNDERSTORY_PORT: u16 = 18081;
 const FAKE_PITHAGORAS_PORT: u16 = 18082;
+
+// Los dos tests de este archivo levantan el daemon en el mismo puerto fijo
+// (arriba) — en paralelo (default de `cargo test`) chocan entre sí. Este
+// lock los serializa sin tocar el resto del setup.
+static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 struct DaemonGuard(Child);
 
@@ -90,6 +94,7 @@ async fn wait_for_theme() -> Theme {
 
 #[tokio::test]
 async fn boot_then_terminate_over_real_wire() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let _daemon = spawn_daemon();
     let _theme = wait_for_theme().await;
 
@@ -115,9 +120,9 @@ async fn boot_then_terminate_over_real_wire() {
         env.kind
     );
 
-    // Amendment de docs/adr/0001 (sesión 05): boot/terminate real también
-    // debe transmitir phase_status/phase_log por el mismo túnel mientras
-    // corre — se recolectan en paralelo a los POST de abajo.
+    // boot/terminate real también debe transmitir phase_status/phase_log
+    // por el mismo túnel mientras corre (ver docs/adr/0001) — se recolectan
+    // en paralelo a los POST de abajo.
     let (kind_tx, mut kind_rx) = mpsc::unbounded_channel::<String>();
     tokio::spawn(async move {
         while let Some(Ok(msg)) = read.next().await {
@@ -165,17 +170,17 @@ async fn boot_then_terminate_over_real_wire() {
         kinds.iter().any(|k| k == "phase_log"),
         "no llegó ningún phase_log durante boot+terminate; vistos: {kinds:?}"
     );
-    // Sesión 08: llama_status es un estado parado (loop cada 2s mientras haya
-    // cliente conectado, no un evento de la corrida) — boot+terminate contra
-    // los dobles tarda bastante más que eso, así que debería aparecer solo.
+    // llama_status es un estado parado (loop cada 2s mientras haya cliente
+    // conectado, no un evento de la corrida) — boot+terminate contra los
+    // dobles tarda bastante más que eso, así que debería aparecer solo.
     assert!(
         kinds.iter().any(|k| k == "llama_status"),
         "no llegó ningún llama_status durante boot+terminate; vistos: {kinds:?}"
     );
 }
 
-/// Sesión 06: `/reload` corre shutdown→boot→rebuild en secuencia contra los
-/// mismos dobles — arranca desde cero (nada corriendo todavía), así que el
+/// `/reload` corre shutdown→boot→rebuild en secuencia contra los mismos
+/// dobles — arranca desde cero (nada corriendo todavía), así que el
 /// shutdown inicial mata/baja procesos que nunca existieron (warns, no
 /// errores) antes de relanzar. Sin este boot previo la aserción seguiría
 /// pasando igual (phase_kill/phase_down toleran "no había nada corriendo"),
@@ -183,13 +188,14 @@ async fn boot_then_terminate_over_real_wire() {
 /// todo arriba).
 #[tokio::test]
 async fn reload_over_real_wire() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let _daemon = spawn_daemon();
     let _theme = wait_for_theme().await;
 
-    // Amendment de docs/adr/0001 (sesión 10): /reload real también debe
-    // transmitir phase_batch("boot")/phase_batch("rebuild") por el mismo
-    // túnel — sin esto el cliente no tiene forma de disparar Datamosh/
-    // Vignette en el límite entre tandas.
+    // /reload real también debe transmitir phase_batch("boot")/
+    // phase_batch("rebuild") por el mismo túnel (ver docs/adr/0001) — sin
+    // esto el cliente no tiene forma de disparar Datamosh/Vignette en el
+    // límite entre tandas.
     let (ws_stream, _) = tokio_tungstenite::connect_async(WS).await.expect("no pude conectar a /ws/monitor");
     let (_write, mut read) = ws_stream.split();
     let (batch_tx, mut batch_rx) = mpsc::unbounded_channel::<String>();

@@ -1,7 +1,5 @@
-//! Puerto de `tui/effects/flicker.py` — `glitch_frames`/`GlitchLabel`. Sin
-//! `FlickerLabel`/`TypewriterLabel`/`pulse`: no forman parte del inventario
-//! de 8 efectos de esta sesión — ningún call site los usa (confirmado
-//! grepeando `rinthel_tui/tui/screens/`).
+//! `glitch_frames`/`GlitchReveal` — revela texto a través de caracteres de
+//! corrupción.
 
 use std::time::Instant;
 
@@ -10,9 +8,8 @@ use rand::Rng;
 const CORRUPT_CHARS: &[char] = &['░', '▒', '▓', '█', '╳'];
 
 /// `frames` strings que revelan `text` de izquierda a derecha a través de
-/// caracteres de corrupción — el último siempre es el texto limpio. Puerto
-/// 1:1 de `glitch_frames` (Python): ahí también se computa una sola vez
-/// (`list(glitch_frames(...))` en `__init__`), no en cada frame.
+/// caracteres de corrupción — el último siempre es el texto limpio. Se
+/// computa una sola vez al arrancar, no en cada frame.
 pub fn glitch_frames(text: &str, frames: usize) -> Vec<String> {
     let chars: Vec<char> = text.chars().collect();
     let length = chars.len();
@@ -34,10 +31,9 @@ pub fn glitch_frames(text: &str, frames: usize) -> Vec<String> {
     out
 }
 
-/// Puerto de `GlitchLabel`: revela `text` una sola vez desde `start()`,
-/// consultado por reloj de pared en vez de `set_interval` — reusado por el
-/// título del menú, el reveal de farewell, y como transición de
-/// `RotatingTagline` entre frases.
+/// Revela `text` una sola vez desde `start()`, consultado por reloj de
+/// pared — reusado por el título del menú, el reveal de farewell, y como
+/// transición de `RotatingTagline` entre frases.
 pub struct GlitchReveal {
     frames: Vec<String>,
     frame_ms: u64,

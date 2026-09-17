@@ -212,9 +212,8 @@ async def check_ready(cfg: RinthelConfig, service: _ServiceBase) -> bool:
     """Chequeo puntual de ``service.ready_url_of`` — un solo GET, sin el
     backoff/retry de ``phase_wait_ready`` ni un ``PhaseReport`` para
     escribirle. Pensado para telemetría en vivo fuera de una fase de boot/
-    reload (ver ``daemon.py::llama_status_task``, sesión 08 del port-map):
-    ahí lo que importa es el estado actual en cada tick, no esperar a que
-    aparezca."""
+    reload (ver ``daemon.py::llama_status_task``): ahí lo que importa es el
+    estado actual en cada tick, no esperar a que aparezca."""
     if service.ready_url_of is None:
         return False
     return await _http_ok(service.ready_url_of(cfg))

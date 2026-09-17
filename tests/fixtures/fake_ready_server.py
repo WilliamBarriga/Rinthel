@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Doble de servicio para el smoke E2E de sesión 04 (hardening real de
-boot/terminate) — NO es llama-server/Understory/Pithagoras real.
+"""Doble de servicio para el smoke E2E de boot/terminate reales — NO es
+llama-server/Understory/Pithagoras real.
 
 `e2e_smoke.rs` apunta `RINTHEL_LLAMA_BIN` acá para que `phase_spawn` lance
 ESTE script en vez del binario real de llama-server, y apunta

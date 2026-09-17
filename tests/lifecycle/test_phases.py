@@ -46,8 +46,8 @@ async def test_check_docker_raises_when_daemon_inactive(monkeypatch, cfg, report
 
 
 async def test_check_docker_auto_starts_with_passwordless_sudo(monkeypatch, cfg, report):
-    """Docker inactivo + `sudo -n systemctl start docker` disponible: sesión
-    04 del port-map — el daemon lo levanta solo en vez de solo avisar."""
+    """Docker inactivo + `sudo -n systemctl start docker` disponible: el
+    daemon lo levanta solo en vez de solo avisar."""
     calls: list[tuple[str, ...]] = []
 
     async def fake_exec(*args, **kwargs):

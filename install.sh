@@ -64,10 +64,9 @@ fi
 "$DIR/.venv/bin/pip" install -q -e "$DIR"
 
 # ── Rust (cliente) ──────────────────────────────────────────────
-# Sesión 11 del port-map (issues/04-packaging-entrypoint.md): el binario
-# Rust es el cliente reemplazable, el daemon Python es la infraestructura
-# persistente — este script bootstrapea ambos toolchains, el arranque
-# real (autostart + pidfile) queda en rinthel-boot.sh.
+# El binario Rust es el cliente reemplazable, el daemon Python es la
+# infraestructura persistente — este script bootstrapea ambos toolchains, el
+# arranque real (autostart + pidfile) queda en rinthel-boot.sh.
 if ! command -v cargo >/dev/null 2>&1; then
     echo "[install] no encontré cargo — instalando Rust vía rustup (no interactivo)..." >&2
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y

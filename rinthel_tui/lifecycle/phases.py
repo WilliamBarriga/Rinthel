@@ -31,10 +31,9 @@ async def phase_check_docker(cfg: RinthelConfig, report: PhaseReport) -> None:
     # Intento de auto-levante no interactivo (`sudo -n`): si ya hay una regla
     # NOPASSWD para este comando, boot sigue solo; si no, `sudo` falla al
     # toque en vez de colgarse esperando una contraseña que nunca va a llegar
-    # (este proceso no tiene TTY). Decisión de Tarkark (sesión 04 del
-    # port-map): sin NOPASSWD configurado, el daemon nunca lo levanta solo —
-    # solo le pasa al usuario el comando exacto para que lo corra a mano y el
-    # PRÓXIMO boot ya encuentre Docker activo.
+    # (este proceso no tiene TTY). Sin NOPASSWD configurado, el daemon nunca
+    # levanta Docker solo — solo le pasa al usuario el comando exacto para
+    # que lo corra a mano y el PRÓXIMO boot ya lo encuentre activo.
     proc = await asyncio.create_subprocess_exec(
         "sudo", "-n", "systemctl", "start", "docker",
         stdout=asyncio.subprocess.DEVNULL,

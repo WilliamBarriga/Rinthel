@@ -1,11 +1,11 @@
 """Aggregation de PhaseSpec en ServiceOutcome para POST /boot, /terminate y
-/reload (sesión 04 + sesión 06 del port-map) — ver docs/adr/0001.
+/reload — ver docs/adr/0001.
 `boot_units`/`down_units`/`reload_units` (lifecycle/specs.py) dan las fases
-agrupadas por servicio; acá se prueba que `daemon._run_unit`/`_Collected`
-las conviertan en el `{"service", "ok", "message"}` que espera el cliente
-Rust, y que `boot`/`terminate`/`reload` respeten "corta en el primer
-fallo" vs. "sigue con todas" sin tocar infra real (todo con PhaseSpec/fases
-falsas)."""
+agrupadas por servicio; la conversión a `{"service", "ok", "message"}` en sí
+vive en `phase_bridge.run_unit` y se prueba en tests/test_phase_bridge.py.
+Acá se prueba que `boot`/`terminate`/`reload`/`install` respeten "corta en
+el primer fallo" vs. "sigue con todas" sin tocar infra real (todo con
+PhaseSpec/fases falsas)."""
 
 import json
 
@@ -27,40 +27,6 @@ def _failing_spec(label: str, msg: str) -> PhaseSpec:
         raise PhaseError(msg)
 
     return PhaseSpec(label, phase)
-
-
-def _noisy_spec(label: str, msg: str) -> PhaseSpec:
-    """Una fase que además reporta info() — no debería colarse en message."""
-
-    async def phase(cfg, report):
-        report.info("ruido de proceso, no es el resultado")
-        report.success(msg)
-
-    return PhaseSpec(label, phase)
-
-
-async def test_run_unit_ok_true_and_concatenates_terminal_messages():
-    outcome = await daemon._run_unit(
-        "llama-server", [_ok_spec("spawn", "lanzado (PID 1)"), _ok_spec("wait", "respondiendo en :8080")]
-    )
-    assert outcome == {
-        "service": "llama-server",
-        "ok": True,
-        "message": "lanzado (PID 1) — respondiendo en :8080",
-    }
-
-
-async def test_run_unit_drops_info_messages():
-    outcome = await daemon._run_unit("llama-server", [_noisy_spec("spawn", "lanzado")])
-    assert outcome["message"] == "lanzado"
-
-
-async def test_run_unit_ok_false_when_a_phase_errors():
-    outcome = await daemon._run_unit(
-        "understory", [_ok_spec("up", "levantado"), _failing_spec("wait", "timeout esperando :3800")]
-    )
-    assert outcome["ok"] is False
-    assert outcome["message"] == "levantado — timeout esperando :3800"
 
 
 async def test_boot_stops_at_first_failed_service(monkeypatch):
@@ -117,11 +83,39 @@ async def test_terminate_runs_every_unit_even_if_one_fails(monkeypatch):
     assert [r["ok"] for r in body["results"]] == [False, True, True]
 
 
-# ── /reload (sesión 06) ─────────────────────────────────────────────────
+async def test_terminate_runs_every_unit_even_if_one_raises_an_unexpected_exception(monkeypatch):
+    """El caso que estaba roto antes de phase_bridge._run_phase_list_safe:
+    una excepción que no es PhaseError (bug real, IO real) abortaba la
+    list-comprehension de terminate() entera, y ninguna unidad posterior a
+    la que explotó llegaba a correr — al revés de lo documentado en
+    CONTEXT.md ("terminate sigue con las que quedan aunque una falle")."""
+
+    async def _crashing_kill(cfg, report):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        daemon.specs,
+        "down_units",
+        lambda cfg: [
+            ("llama-server", [PhaseSpec("kill", _crashing_kill)]),
+            ("understory", [_ok_spec("down", "parado")]),
+            ("pithagoras", [_ok_spec("down", "parado")]),
+        ],
+    )
+
+    response = await daemon.terminate()
+    body = json.loads(response.body)
+
+    assert [r["service"] for r in body["results"]] == ["llama-server", "understory", "pithagoras"]
+    assert [r["ok"] for r in body["results"]] == [False, True, True]
+    assert "error inesperado" in body["results"][0]["message"]
+
+
+# ── /reload ───────────────────────────────────────────────────────────
 # Mismas 3 tandas de specs.reload_units + el chequeo de DOCKER que
 # daemon.py inserta aparte entre shutdown y boot — corta en el primer
 # fallo en cualquier punto de la secuencia completa, mismo criterio que
-# /boot (grillado con Tarkark: replica _run_all de reload.py).
+# /boot.
 
 
 def _patch_reload_units(monkeypatch, shutdown, boot, rebuild):
@@ -182,8 +176,8 @@ async def test_reload_stops_when_docker_check_fails_before_boot(monkeypatch):
     assert body["results"][-1]["ok"] is False
 
 
-# ── phase_batch (sesión 10) ─────────────────────────────────────────────
-# Amendment de docs/adr/0001: marca el límite entre tandas de /reload — sin
+# ── phase_batch ───────────────────────────────────────────────────────────
+# Ver docs/adr/0001: marca el límite entre tandas de /reload — sin
 # esto el cliente no tenía forma de saber cuándo disparar Datamosh/Vignette
 # (las 2 transiciones que reload.py corría client-side, imposibles de
 # replicar contra un solo POST bloqueante orquestado del lado daemon).
@@ -249,7 +243,7 @@ async def test_reload_never_reaches_rebuild_batch_marker_if_boot_fails(monkeypat
     assert batches == ["boot"]
 
 
-# ── /install (sesión 07) ────────────────────────────────────────────────
+# ── /install ─────────────────────────────────────────────────────────────
 # specs.install_units ya agrupa por InstallUnit (PREFLIGHT + una unidad por
 # InstallUnit habilitada) — corta en el primer fallo, mismo criterio que
 # /boot. Sin doble real: install corre subprocesos reales (clone/build CUDA/

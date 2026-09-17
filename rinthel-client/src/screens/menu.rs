@@ -1,10 +1,9 @@
-//! Screen de menú — `draw_menu` movido tal cual desde `main.rs` (sesión 00),
-//! con `MENU_ITEMS` reemplazado por el registro `super::MENU_ENTRIES`.
+//! Screen de menú — itera el registro `super::MENU_ENTRIES`.
 //!
-//! Título + tagline (sesión 10): reveal `GlitchLabel`/rotación
-//! `RotatingTagline` de `menu.py:129-134`, con estado en `App::menu_title`/
-//! `App::menu_tagline` (avanzado cada vuelta del loop en `App::run`) — acá
-//! solo se lee el texto que corresponde a este instante.
+//! Título + tagline: reveal `GlitchLabel`/rotación `RotatingTagline`, con
+//! estado en `App::menu_title`/`App::menu_tagline` (avanzado cada vuelta del
+//! loop en `App::run`) — acá solo se lee el texto que corresponde a este
+//! instante.
 
 use std::time::Instant;
 

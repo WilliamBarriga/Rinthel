@@ -1,5 +1,5 @@
-//! Screen de monitor — `draw_monitor` movido tal cual desde `main.rs`
-//! (sesión 00), con el helper `badge` que solo usa esta screen.
+//! Screen de monitor — el helper `badge` de acá abajo solo lo usa esta
+//! screen.
 
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::Style;
@@ -51,10 +51,10 @@ pub fn draw(f: &mut Frame, app: &App) {
     .block(Block::default().borders(Borders::ALL).title(" services "));
     f.render_widget(badges, rows[0]);
 
-    // Experimento ratatui-sci-fi (ticket 01/05): EnergyGauge trae su propia
-    // cascada CSS interna — solo hace falta elegir el Theme, no hay que
-    // tocar ratatui_style a mano. Comparar contra los Sparkline de abajo,
-    // que son ratatui puro con los colores servidos por /theme.
+    // ratatui-sci-fi EnergyGauge: trae su propia cascada CSS interna, solo
+    // hace falta elegir el Theme, no hay que tocar ratatui_style a mano.
+    // Comparar contra los Sparkline de abajo, que son ratatui puro con los
+    // colores servidos por /theme.
     let gauge_cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Ratio(1, 3); 3])
@@ -137,7 +137,14 @@ pub fn draw(f: &mut Frame, app: &App) {
     .block(Block::default().borders(Borders::ALL).title(" docker "));
     f.render_widget(table, mid_cols[0]);
 
-    log_tail::draw(f, mid_cols[1], &app.log_lines, app.colors.fg, " log_tail (llama-server) ");
+    log_tail::draw(
+        f,
+        mid_cols[1],
+        &app.log_lines,
+        app.colors.fg,
+        " log_tail (llama-server) — ←→ ",
+        app.log_scroll_x,
+    );
 
     f.render_widget(Paragraph::new(super::status_line(app)).block(Block::default().borders(Borders::ALL)), rows[4]);
 }

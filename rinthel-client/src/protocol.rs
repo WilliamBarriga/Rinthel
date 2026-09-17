@@ -1,16 +1,14 @@
 //! Formas de mensaje del protocolo daemon<->cliente.
-//! Espejo a mano de los modelos Pydantic del daemon (sin codegen, decisión
-//! del ticket 03 / ADR 0001) — mismo snake_case en ambos lados.
+//! Espejo a mano de los modelos Pydantic del daemon (sin codegen, ver
+//! docs/adr/0001) — mismo snake_case en ambos lados.
 
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct Theme {
     pub canonical: Palette,
-    /// Sesión 10: los 8 effect_* de `tui/effects/transitions.py` usan estos
-    /// colores además de los 9 canónicos — quedaban sin parsear (`dead_code`)
-    /// desde que `GET /theme` empezó a servirlos (ticket 03), a propósito
-    /// diferido hasta esta sesión.
+    /// Los efectos de transición usan estos colores además de los 9
+    /// canónicos.
     pub extended: ExtendedPalette,
     pub frame_chars: Vec<String>,
 }
@@ -30,7 +28,7 @@ pub struct Palette {
 }
 
 /// Paleta "extended" de `theme/palette.py` — no forma parte de los 9 colores
-/// canónicos, la usan exclusivamente los efectos de transición (sesión 10).
+/// canónicos, la usan exclusivamente los efectos de transición.
 #[derive(Debug, Deserialize)]
 pub struct ExtendedPalette {
     pub cool: String,
@@ -89,8 +87,8 @@ pub struct LogLine {
     pub line: String,
 }
 
-/// Sobre `llama_status` (amendment de docs/adr/0001, sesión 08): estado
-/// parado, transmitido en loop mientras haya un cliente conectado — no un
+/// Sobre `llama_status` (ver docs/adr/0001): estado parado, transmitido en
+/// loop mientras haya un cliente conectado — no un
 /// evento puntual de una corrida como `phase_status`/`phase_log`. `ready`
 /// ya significa "servidor arriba + modelo cargado" (un solo GET contra el
 /// mismo `ready_url_of` que usa boot/reload), no hace falta más granularidad.
@@ -111,10 +109,9 @@ pub struct CommandResult {
     pub results: Vec<ServiceOutcome>,
 }
 
-/// Sobre `phase_status` (amendment de docs/adr/0001, sesión 05): un mensaje
-/// por cada `PhaseSpec` que corre `run_phase_list` del lado daemon — misma
-/// granularidad fina que `boot_phases()`/`down_phases()`, no la agrupación
-/// por servicio de la respuesta de `/boot`/`/terminate`.
+/// Sobre `phase_status` (ver docs/adr/0001): un mensaje por cada `PhaseSpec`
+/// que corre `run_phase_list` del lado daemon — granularidad fina, no la
+/// agrupación por servicio de la respuesta de `/boot`/`/terminate`.
 #[derive(Debug, Deserialize)]
 pub struct PhaseStatus {
     pub label: String,
@@ -130,21 +127,19 @@ pub struct PhaseLog {
     pub message: String,
 }
 
-/// Sobre `phase_batch` (amendment de docs/adr/0001, sesión 10): marca el
-/// límite entre tandas de `/reload` — sin esto el cliente no tiene forma de
-/// saber cuándo terminó "shutdown" y empezó "boot", o "boot" y "rebuild"
-/// (el daemon corre las 3 tandas de un tirón, `phase_status`/`phase_log`
-/// solo hablan de fases individuales). Dispara Datamosh/Vignette en el
-/// cliente. `"shutdown"` no se emite — nada la escucha (no hay transición
-/// antes de la primera tanda en el original).
+/// Sobre `phase_batch` (ver docs/adr/0001): marca el límite entre tandas de
+/// `/reload` — sin esto el cliente no tiene forma de saber cuándo terminó
+/// "shutdown" y empezó "boot", o "boot" y "rebuild" (el daemon corre las 3
+/// tandas de un tirón, `phase_status`/`phase_log` solo hablan de fases
+/// individuales). Dispara Datamosh/Vignette en el cliente. `"shutdown"` no
+/// se emite — nada la escucha (no hay transición antes de la primera tanda).
 #[derive(Debug, Deserialize)]
 pub struct PhaseBatch {
     pub batch: String,
 }
 
-/// Un campo editable de `[N] CONFIGURAR` (amendment de docs/adr/0001,
-/// sesión 09) — `value` viaja como string (mismo criterio que un `Input` de
-/// Textual) y `kind` le dice al cliente qué widget pintar ("bool" ->
+/// Un campo editable de `[N] CONFIGURAR` (ver docs/adr/0001) — `value` viaja
+/// como string y `kind` le dice al cliente qué widget pintar ("bool" ->
 /// checkbox, el resto -> texto) sin que el cliente conozca los tipos de
 /// Python. `group` agrupa visualmente (ver `screens::settings`) — "" para
 /// sub-configs con pocos campos que no lo necesitan.
@@ -170,9 +165,8 @@ pub struct ConfigService {
     pub fields: Vec<ConfigField>,
 }
 
-/// `GET /config` — shape genérico a propósito (mismo espíritu "genérico"
-/// que ya tenía `rinthel_tui/tui/screens/settings.py`): sumar un `Field`
-/// nuevo del lado daemon lo hace aparecer acá sin tocar este struct.
+/// `GET /config` — shape genérico a propósito: sumar un `Field` nuevo del
+/// lado daemon lo hace aparecer acá sin tocar este struct.
 #[derive(Debug, Deserialize, Clone)]
 pub struct ConfigPayload {
     pub services: Vec<ConfigService>,

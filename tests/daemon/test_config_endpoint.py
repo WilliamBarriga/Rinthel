@@ -1,8 +1,9 @@
-"""GET/POST /config (sesión 09 del port-map) — ver docs/adr/0001. El daemon
-pasa a ser dueño de toda la config; estos tests cubren el shape genérico de
-`_config_payload` y el ciclo validar-antes-de-escribir de `POST /config`,
-sin tocar el `.env` real del repo (`_ENV_PATH`/`_ENV_EXAMPLE_PATH` se
-monkeypatchean a rutas de `tmp_path`)."""
+"""GET/POST /config — ver docs/adr/0001. El daemon es dueño de toda la
+config; estos tests cubren el shape genérico de
+`config_routes.config_payload` y el ciclo validar-antes-de-escribir de
+`POST /config` a través de las rutas de `daemon.py`, sin tocar el `.env`
+real del repo (`_ENV_PATH`/`_ENV_EXAMPLE_PATH` se monkeypatchean a rutas de
+`tmp_path`)."""
 
 import json
 
@@ -15,10 +16,10 @@ from rinthel_tui import daemon
 def _isolated_env_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(daemon, "_ENV_PATH", tmp_path / ".env")
     monkeypatch.setattr(daemon, "_ENV_EXAMPLE_PATH", tmp_path / ".env.example")
-    # `post_config` reasigna `daemon.cfg` en memoria tras un write exitoso
-    # (fix post-prueba-en-vivo, sesión 09) — sin este snapshot/restore, un
-    # test que guarda algo dejaría `daemon.cfg` mutado para el resto de la
-    # sesión de pytest (es un global de módulo, no algo por-test).
+    # `post_config` reasigna `daemon.cfg` en memoria tras un write exitoso —
+    # sin este snapshot/restore, un test que guarda algo dejaría `daemon.cfg`
+    # mutado para el resto de la sesión de pytest (es un global de módulo,
+    # no algo por-test).
     monkeypatch.setattr(daemon, "cfg", daemon.cfg)
 
 
@@ -86,12 +87,11 @@ async def test_post_config_rejects_a_non_positive_numeric_field():
 
 
 # ── cfg en memoria se actualiza tras un write propio ────────────────────
-# Encontrado en vivo (sesión 09 del port-map): sin esto, un GET inmediato
-# después de guardar seguía mostrando el valor viejo, y "revertir" un campo
-# a su valor original vía la UI no escribía nada — se comparaba contra el
-# mismo valor viejo de `cfg`, así que `diff_overrides` lo veía como "sin
-# cambios". Pasó de verdad contra el daemon real: guardar cache_reuse=300
-# y después intentar volver a 256 dejó el .env en 300 silenciosamente.
+# Sin esto, un GET inmediato después de guardar sigue mostrando el valor
+# viejo, y "revertir" un campo a su valor original vía la UI no escribe
+# nada — se compara contra el mismo valor viejo de `cfg`, así que
+# `diff_overrides` lo ve como "sin cambios" (ej.: guardar cache_reuse=300 y
+# después intentar volver a 256 deja el .env en 300 silenciosamente).
 
 
 async def test_post_config_updates_cfg_in_memory_so_get_reflects_the_new_value():

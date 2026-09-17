@@ -11,10 +11,9 @@ herramientas).
 
 import asyncio
 import dataclasses
-import re
 import shutil
 
-from rinthel_tui.lifecycle import install, specs
+from rinthel_tui.lifecycle import install
 from rinthel_tui.lifecycle.phases import PhaseError
 
 
@@ -251,50 +250,3 @@ async def test_setup_understory_generates_env_and_bundle(cfg, report, tmp_path):
     assert (understory_dir / ".env").read_text() == "AUTH_TOKEN=abc123\n"
     assert (understory_dir / "bundle" / "agents" / "index.md").exists()
     assert (understory_dir / "bundle" / "index.md").exists()
-
-
-# ── INSTALL_UNITS / specs.install_phases ─────────────────────────────
-
-
-def _numbers(phase_specs):
-    out = []
-    for spec in phase_specs:
-        match = re.search(r"\[(\d+)/(\d+)\]", spec.label)
-        assert match is not None
-        out.append((int(match.group(1)), int(match.group(2))))
-    return out
-
-
-def test_install_phases_includes_all_units_by_default(cfg):
-    labels = [s.label for s in specs.install_phases(cfg)]
-    assert any("PREFLIGHT" in l for l in labels)
-    assert any("LLAMA.CPP — clone" in l for l in labels)
-    assert any("LLAMA.CPP — build CUDA" in l for l in labels)
-    assert any("MODELO GGUF" in l for l in labels)
-    assert any("PITHAGORAS" in l for l in labels)
-    assert any("UNDERSTORY" in l for l in labels)
-    numbers = _numbers(specs.install_phases(cfg))
-    total = len(numbers)
-    assert [n for n, _ in numbers] == list(range(1, total + 1))
-    assert all(n_total == total for _, n_total in numbers)
-
-
-def test_install_phases_excludes_disabled_unit_and_renumbers(cfg):
-    disabled = dataclasses.replace(cfg, llama=dataclasses.replace(cfg.llama, enabled=False))
-    phase_specs = specs.install_phases(disabled)
-    labels = [s.label for s in phase_specs]
-    assert not any("LLAMA.CPP" in l for l in labels)
-    assert not any("MODELO GGUF" in l for l in labels)
-    assert any("PREFLIGHT" in l for l in labels)
-    assert any("PITHAGORAS" in l for l in labels)
-    numbers = _numbers(phase_specs)
-    total = len(numbers)
-    assert [n for n, _ in numbers] == list(range(1, total + 1))
-
-
-def test_install_phases_excludes_only_the_disabled_service(cfg):
-    disabled = dataclasses.replace(cfg, pithagoras=dataclasses.replace(cfg.pithagoras, enabled=False))
-    labels = [s.label for s in specs.install_phases(disabled)]
-    assert not any("PITHAGORAS" in l for l in labels)
-    assert any("LLAMA.CPP" in l for l in labels)
-    assert any("UNDERSTORY" in l for l in labels)

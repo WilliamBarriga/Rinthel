@@ -1,6 +1,4 @@
-//! Estado de la app (`App`/`AppEvent`/`Colors`) y el loop principal —
-//! separado de `main.rs` en la sesión 00 del porteo (ver
-//! .scratch/ratatui-migration/port-issues/00-scaffolding-testing-and-crate-skeleton.md).
+//! Estado de la app (`App`/`AppEvent`/`Colors`) y el loop principal.
 
 use std::collections::{HashMap, VecDeque};
 use std::io;
@@ -24,12 +22,12 @@ use crate::protocol::{
 };
 use crate::screens::exit_prompt::ExitPromptTimer;
 use crate::screens::farewell::FarewellTimer;
-use crate::screens::settings::{self, DetailRow};
+use crate::screens::settings::{ConfigFocus, ConfigSaveStatus, SettingsState};
 use crate::screens::{self, MenuAction, ScreenId};
 
-/// Puerto de `branding/taglines.py` — solo contenido, ver docstring de ese
-/// módulo (mezcla status técnico con líneas de peso narrativo, mismo
-/// registro que la cita de Blade Runner del banner).
+/// Frases que rota `RotatingTagline` en el menú — mezcla status técnico con
+/// líneas de peso narrativo, mismo registro que la cita de Blade Runner del
+/// banner.
 pub const TAGLINES: &[&str] = &[
     "Like tears in the rain.",
     "Have you ever retired a human by mistake?",
@@ -47,9 +45,9 @@ pub const TAGLINES: &[&str] = &[
 static DAEMON_PORT: OnceLock<u16> = OnceLock::new();
 
 /// Puerto del daemon — seteado una única vez desde `main()` (flag `--port`,
-/// que `rinthel-boot.sh` pasa leyendo `RINTHEL_DAEMON_PORT` del `.env`;
-/// sesión 11 del port-map). Sin setear todavía (tests, o correr el binario
-/// a mano sin boot.sh) cae al 8765 de siempre.
+/// que `rinthel-boot.sh` pasa leyendo `RINTHEL_DAEMON_PORT` del `.env`).
+/// Sin setear todavía (tests, o correr el binario a mano sin boot.sh) cae al
+/// 8765 de siempre.
 pub fn set_daemon_port(port: u16) {
     let _ = DAEMON_PORT.set(port);
 }
@@ -66,6 +64,8 @@ fn ws_url() -> String {
     format!("ws://127.0.0.1:{}/ws/monitor", daemon_port())
 }
 const HIST_LEN: usize = 60;
+/// Columnas por pulsación de `Left`/`Right` sobre el log_tail.
+const LOG_SCROLL_STEP: i32 = 8;
 
 /// Eventos que las tareas de fondo empujan hacia el loop principal —
 /// mismo patrón que un `Message` en Elm/TEA, adaptado a Rust con un canal.
@@ -76,19 +76,18 @@ pub enum AppEvent {
     Log(String),
     CommandDone(&'static str, CommandResult),
     CommandFailed(&'static str, String),
-    /// `phase_status` (amendment de docs/adr/0001, sesión 05): (label, status).
+    /// `phase_status` (ver docs/adr/0001): (label, status).
     PhaseStatus(String, String),
     /// `phase_log`: (kind, message).
     PhaseLog(String, String),
-    /// `phase_batch` (amendment de docs/adr/0001, sesión 10): límite entre
-    /// tandas de `/reload` — dispara Datamosh ("boot") o Vignette
-    /// ("rebuild"). `"shutdown"` nunca llega (nadie la emite, ver
-    /// protocol::PhaseBatch).
+    /// `phase_batch` (ver docs/adr/0001): límite entre tandas de `/reload` —
+    /// dispara Datamosh ("boot") o Vignette ("rebuild"). `"shutdown"` nunca
+    /// llega (nadie la emite, ver `protocol::PhaseBatch`).
     PhaseBatch(String),
-    /// `llama_status` (sesión 08): estado parado, no un evento de corrida.
+    /// `llama_status`: estado parado, no un evento de corrida.
     LlamaStatus(bool),
-    /// `GET /config` resuelto (sesión 09) — disparado al entrar a
-    /// `ScreenId::Settings`, mismo trigger-on-entry que `MenuAction::Capture`.
+    /// `GET /config` resuelto — disparado al entrar a `ScreenId::Settings`,
+    /// mismo trigger-on-entry que `MenuAction::Capture`.
     ConfigLoaded(ConfigPayload),
     ConfigLoadFailed(String),
     /// `POST /config` resuelto con `ok: true`.
@@ -98,51 +97,29 @@ pub enum AppEvent {
     ConfigSaveFailed(Vec<String>),
 }
 
-/// A qué pantalla vuelve `FarewellScreen` al terminar sus 5s — reemplaza el
-/// `await push_screen_wait(FarewellScreen())` de Python (`app.rs` no tiene
-/// stack de screens): `phase_runner.py:110` vuelve al checklist ya cerrado,
-/// `menu.py:183` (EXIT) sale de la app.
+/// A qué pantalla vuelve la screen de farewell al terminar sus 5s: desde el
+/// cierre de una corrida (BOOT/TERMINATE/RELOAD/INSTALL) vuelve al checklist
+/// ya cerrado; desde EXIT sale de la app.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum FarewellNext {
     BackToPhaseRunner,
     Quit,
 }
 
-/// Qué panel de `SettingsScreen` recibe las teclas de navegación —
-/// reemplaza el foco de widget que Textual manejaba solo (`Checkbox`/
-/// `Button`/`Input` tenían cada uno su propio `on_*` en `settings.py`).
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ConfigFocus {
-    Services,
-    Detail,
-}
-
-/// Qué hacer cuando `App::active_effect` termina — reemplaza el `await
-/// push_screen_wait(effect); <lo que sigue>` secuencial de Python: acá el
-/// efecto y su continuación viven separados (el loop principal no puede
-/// bloquearse), así que la continuación se guarda como dato en vez de
-/// código que sigue inline.
+/// Qué hacer cuando `App::active_effect` termina — el loop principal no
+/// puede bloquearse esperando a un efecto, así que la continuación se
+/// guarda como dato en vez de ejecutarse inline al terminar el efecto.
 pub enum EffectFollowUp {
     None,
     /// SignalNoise antes de BOOT/RELOAD/TERMINATE/INSTALL — dispara el POST
-    /// recién cuando termina, igual que `menu.py:154-176`.
+    /// recién cuando termina.
     StartPhaseRun { name: &'static str, path: &'static str, title: &'static str },
-    /// SignalNoise antes de CAPTURE (`menu.py:175-177`).
+    /// SignalNoise antes de CAPTURE.
     StartCapture,
     /// Cierre de BOOT/TERMINATE/RELOAD/INSTALL exitosos: banner al log +
     /// farewell si corresponde (TERMINATE) — recién acá se libera
-    /// `command_in_flight` (Esc queda bloqueado hasta este punto, igual que
-    /// `_done = True` recién después de `_run_closing` en Python).
+    /// `command_in_flight`, así que Esc queda bloqueado hasta este punto.
     FinishClosing { banner: String, show_farewell: bool },
-}
-
-/// Resultado del último `POST /config` — separado de
-/// `last_command_result`/`last_command_error` (que asumen el shape
-/// `CommandResult` de boot/terminate/reload/install) porque `/config`
-/// tiene su propio shape (`ok`/`written`/`warnings`/`errors`).
-pub enum ConfigSaveStatus {
-    Saved(String),
-    Failed(String),
 }
 
 pub struct Colors {
@@ -153,12 +130,12 @@ pub struct Colors {
     pub hot: Color,
     pub dim: Color,
     pub bg: Color,
-    /// Resto de la paleta canónica — sin uso hasta sesión 10 (efectos de
-    /// transición): `electric`/`glow` (`ChromaticAberrationEffect`).
+    /// Resto de la paleta canónica — solo la usan los efectos de transición
+    /// (`electric`/`glow`, ej. `ChromaticAberrationEffect`).
     pub electric: Color,
     pub glow: Color,
     /// Paleta "extended" (`theme/palette.py`) — solo la usan los efectos de
-    /// transición (sesión 10).
+    /// transición.
     pub cool: Color,
     pub cool_dim: Color,
     pub hot_dim: Color,
@@ -166,7 +143,7 @@ pub struct Colors {
     pub steel: Color,
     pub steel_dim: Color,
     /// `palette.FRAME_CHARS` — glifos de corrupción/banner compartidos por
-    /// varios efectos (`random.choice(palette.FRAME_CHARS)` en Python).
+    /// varios efectos.
     pub frame_chars: Vec<char>,
 }
 
@@ -206,9 +183,8 @@ pub struct App {
     pub menu_selected: usize,
     pub colors: Colors,
     pub containers: Vec<DockerContainer>,
-    /// `llama_status` en vivo (sesión 08) — reemplaza el badge hardcodeado
-    /// "N/A (spike)" que tenía `MonitorScreen` (llama-server no es un
-    /// contenedor Docker, así que no sale de `containers`).
+    /// `llama_status` en vivo — llama-server no es un contenedor Docker, así
+    /// que no sale de `containers`.
     pub llama_ready: bool,
     pub gpu: GpuSample,
     pub cpu_ram: CpuRamSample,
@@ -216,58 +192,46 @@ pub struct App {
     pub ram_hist: VecDeque<u64>,
     pub gpu_hist: VecDeque<u64>,
     pub log_lines: VecDeque<String>,
+    /// Offset horizontal (en columnas) del tail de log — `Left`/`Right` lo
+    /// mueven en `screens::monitor`/`screens::logs`, ambas comparten
+    /// `widgets::log_tail`. Las líneas de llama-server suelen superar el
+    /// ancho del panel, así que sin esto quedan truncadas sin forma de
+    /// leerlas enteras.
+    pub log_scroll_x: u16,
     pub command_in_flight: Option<&'static str>,
     pub last_command_result: Option<(&'static str, CommandResult)>,
     pub last_command_error: Option<String>,
-    /// Título de `PhaseRunnerScreen` para la corrida en curso — "EXECUTE —
-    /// FAST BOOT" / "SHUTDOWN SEQUENCE", mismos textos que `menu.py`.
+    /// Título de la screen de checklist para la corrida en curso —
+    /// "EXECUTE — FAST BOOT" / "SHUTDOWN SEQUENCE".
     pub phase_title: &'static str,
     /// Filas del checklist, en el orden en que llegó su primer evento
     /// `phase_status` — ver doc-comment de `widgets/checklist.rs`.
     pub phase_rows: Vec<(String, String)>,
     /// Log en vivo de la corrida — (kind, message), igual que `phase_log`.
     pub phase_log: VecDeque<(String, String)>,
-    /// `ScreenId::ExitPrompt` (sesión 12) — `Some` mientras se espera la
-    /// elección de apagar o no el daemon, consultado cada vuelta del loop
-    /// igual que `farewell_timer`.
+    /// `ScreenId::ExitPrompt` — `Some` mientras se espera la elección de
+    /// apagar o no el daemon, consultado cada vuelta del loop igual que
+    /// `farewell_timer`.
     pub exit_prompt_timer: Option<ExitPromptTimer>,
     pub farewell_timer: Option<FarewellTimer>,
     pub farewell_next: FarewellNext,
-    /// Reveal del mensaje de farewell (`GlitchLabel` en Python) — se crea
-    /// junto con `farewell_timer` (mismo instante de arranque, ver
-    /// `begin_farewell`), no en `App::new` (recién sabemos el texto/momento
-    /// cuando se entra a la screen).
+    /// Reveal del mensaje de farewell — se crea junto con `farewell_timer`
+    /// (mismo instante de arranque, ver `begin_farewell`), no en `App::new`
+    /// (recién sabemos el texto/momento cuando se entra a la screen).
     pub farewell_message: Option<effects::flicker::GlitchReveal>,
-    /// Efecto de transición modal en curso (sesión 10) — `Some` mientras
-    /// esté activo, se dibuja encima de la screen de siempre (ver
-    /// `effects::GridWidget`) y consume todo el input salvo `q`.
+    /// Efecto de transición modal en curso — `Some` mientras esté activo, se
+    /// dibuja encima de la screen de siempre (ver `effects::GridWidget`) y
+    /// consume todo el input salvo `q`.
     pub active_effect: Option<ActiveEffect>,
     pub effect_followup: EffectFollowUp,
-    /// Reveal del título del menú (`GlitchLabel` en Python) — arranca una
-    /// sola vez al crear `App` (el menú no tiene "on_mount" propio acá, es
-    /// la screen inicial y vive todo el proceso).
+    /// Reveal del título del menú — arranca una sola vez al crear `App` (el
+    /// menú es la screen inicial y vive todo el proceso, no se remonta).
     pub menu_title: effects::flicker::GlitchReveal,
     pub menu_tagline: effects::tagline::RotatingTagline,
-    /// `GET /config` en curso o ya resuelto — `None` mientras carga (ver
-    /// `screens::settings::draw`, que pinta "cargando…" en ese caso).
-    pub config: Option<ConfigPayload>,
-    pub config_selected_service: usize,
-    /// Índice dentro de `settings::detail_rows(&service.fields)` del
-    /// servicio seleccionado — se resetea a la primera fila seleccionable
-    /// cada vez que cambia `config_selected_service`.
-    pub config_selected_row: usize,
-    pub config_focus: ConfigFocus,
-    /// `Some(buffer)` mientras se edita el campo de texto seleccionado —
-    /// reemplaza el `Input`/`Checkbox` con estado propio que tenía Textual;
-    /// `None` en modo navegación.
-    pub config_editing: Option<String>,
-    /// env var -> valor nuevo (string), todo lo tocado en esta sesión de
-    /// settings — mismo shape y mismo criterio que `self._edits` en
-    /// `settings.py` (`config.diff_overrides`, del lado daemon, filtra qué
-    /// de esto es un cambio real recién al guardar).
-    pub config_edits: HashMap<String, String>,
-    pub config_save_in_flight: bool,
-    pub config_status: Option<ConfigSaveStatus>,
+    /// Estado de `ScreenId::Settings` — agrupado en `screens::settings`
+    /// (no acá) para que agregar una configuración nueva toque un solo
+    /// struct chico en vez de este.
+    pub settings: SettingsState,
     should_quit: bool,
 }
 
@@ -285,6 +249,7 @@ impl App {
             ram_hist: VecDeque::with_capacity(HIST_LEN),
             gpu_hist: VecDeque::with_capacity(HIST_LEN),
             log_lines: VecDeque::with_capacity(200),
+            log_scroll_x: 0,
             command_in_flight: None,
             last_command_result: None,
             last_command_error: None,
@@ -303,16 +268,20 @@ impl App {
                 50,
             ),
             menu_tagline: effects::tagline::RotatingTagline::new(TAGLINES, 6.0, 6, 40),
-            config: None,
-            config_selected_service: 0,
-            config_selected_row: 0,
-            config_focus: ConfigFocus::Services,
-            config_editing: None,
-            config_edits: HashMap::new(),
-            config_save_in_flight: false,
-            config_status: None,
+            settings: SettingsState::default(),
             should_quit: false,
         }
+    }
+
+    /// Mueve `log_scroll_x` por `delta` columnas, clampeado a `[0, línea
+    /// más larga - 1]` — evita que el slider se vaya más allá del final
+    /// real del texto (a diferencia del thumb del `Scrollbar`, que solo
+    /// clampea su propio dibujo, no el offset del `Paragraph`).
+    fn scroll_log_x(&mut self, delta: i32) {
+        let max_len = self.log_lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) as i64;
+        let max_scroll = (max_len - 1).max(0);
+        let new_val = (self.log_scroll_x as i64 + delta as i64).clamp(0, max_scroll);
+        self.log_scroll_x = new_val as u16;
     }
 
     fn push_hist(hist: &mut VecDeque<u64>, v: u64) {
@@ -388,41 +357,37 @@ impl App {
             }
             AppEvent::LlamaStatus(ready) => self.llama_ready = ready,
             AppEvent::ConfigLoaded(payload) => {
-                self.config = Some(payload);
-                self.config_selected_service = 0;
-                self.config_selected_row = 0;
-                self.config_focus = ConfigFocus::Services;
+                self.settings.payload = Some(payload);
+                self.settings.selected_service = 0;
+                self.settings.selected_row = 0;
+                self.settings.focus = ConfigFocus::Services;
             }
             AppEvent::ConfigLoadFailed(err) => {
-                self.config_status = Some(ConfigSaveStatus::Failed(format!("GET /config falló: {err}")));
+                self.settings.status = Some(ConfigSaveStatus::Failed(format!("GET /config falló: {err}")));
             }
             AppEvent::ConfigSaved { written, warnings } => {
-                self.config_save_in_flight = false;
-                self.config_edits.clear();
+                self.settings.save_in_flight = false;
+                self.settings.edits.clear();
                 let msg = if written == 0 {
                     "nada para guardar — no tocaste ningún valor".to_string()
                 } else {
                     format!("guardado ({written} cambio(s)) — aplica en el próximo BOOT/RELOAD")
                 };
                 let msg = if warnings.is_empty() { msg } else { format!("{msg} — {}", warnings.join("; ")) };
-                self.config_status = Some(ConfigSaveStatus::Saved(msg));
+                self.settings.status = Some(ConfigSaveStatus::Saved(msg));
             }
             AppEvent::ConfigSaveFailed(errors) => {
-                self.config_save_in_flight = false;
-                self.config_status = Some(ConfigSaveStatus::Failed(errors.join("; ")));
+                self.settings.save_in_flight = false;
+                self.settings.status = Some(ConfigSaveStatus::Failed(errors.join("; ")));
             }
         }
     }
 
-    /// Puerto de `PhaseSequenceScreen._run_all`/`_run_closing`
-    /// (`phase_runner.py`/`reload.py`): al llegar la respuesta bloqueante de
-    /// `/boot`/`/terminate`/`/reload`/`/install`, cierra el log de la
-    /// corrida — mensaje de cierre, el `ClosingSequence`/Ripple real de
-    /// sesión 10 (`begin_effect`), y recién cuando ese efecto termina el
+    /// Al llegar la respuesta bloqueante de `/boot`/`/terminate`/`/reload`/
+    /// `/install`, cierra el log de la corrida: mensaje de cierre, un efecto
+    /// de transición (`begin_effect`), y recién cuando ese efecto termina el
     /// banner + farewell si corresponde (`EffectFollowUp::FinishClosing`) —
-    /// o "secuencia cortada" de una si algo falló (sin efecto, igual que
-    /// Python: `_run_closing` nunca se llama si `_run_spec` devolvió
-    /// `False`).
+    /// o "secuencia cortada" de una si algo falló (sin efecto).
     fn finish_phase_sequence(&mut self, name: &'static str, result: &CommandResult) {
         match result.results.iter().find(|r| !r.ok) {
             Some(failed) => {
@@ -434,9 +399,6 @@ impl App {
             }
             None => {
                 let (done_msg, banner, effect): (&str, &str, ActiveEffect) = match name {
-                    // Ripple original retirado (session 10, probando en vivo:
-                    // "demasiado largo y feo") — ver doc-comment de
-                    // `effects::SyncSweepEffect`.
                     "reload" => (
                         "Reboot completo.",
                         "SYSTEM REBOOTED — TODOS LOS SERVICIOS ACTIVOS",
@@ -467,10 +429,9 @@ impl App {
         }
     }
 
-    /// Resuelve `ScreenId::ExitPrompt` (sesión 12) — llamado tanto por la
-    /// elección explícita (tecla Y/N) como por el timeout (default: apaga).
-    /// Siempre sigue a `FarewellScreen`, nunca la reemplaza (grillado con
-    /// Tarkark, ver doc-comment de `screens::exit_prompt`).
+    /// Resuelve `ScreenId::ExitPrompt` — llamado tanto por la elección
+    /// explícita (tecla Y/N) como por el timeout (default: apaga). Siempre
+    /// sigue a la screen de farewell, nunca la reemplaza.
     fn resolve_exit_prompt(&mut self, shutdown_daemon: bool) {
         self.exit_prompt_timer = None;
         if shutdown_daemon {
@@ -480,14 +441,13 @@ impl App {
         self.begin_farewell(FarewellNext::Quit);
     }
 
-    /// `./rinthel-boot.sh --stop` (sesión 12) — apagado del daemon,
-    /// fire-and-forget: no se espera a que termine ni se reporta el
-    /// resultado (grillado con Tarkark: reusa la lógica de sesión 11 — pid
-    /// vivo, poll, pidfile stale — en vez de duplicarla leyendo el pidfile
-    /// desde Rust). Asume cwd = raíz del repo, la misma asunción que ya
-    /// documenta `rinthel-boot.sh` (que a su vez `exec`ea este binario sin
-    /// hacer `cd`). stdout/stderr a `Stdio::null()` para no pisar la
-    /// alternate screen del cliente con los `echo` del script.
+    /// Apaga el daemon vía `./rinthel-boot.sh --stop` (que ya sabe manejar
+    /// pid vivo, poll, y pidfile stale), fire-and-forget: no se espera a que
+    /// termine ni se reporta el resultado. Asume cwd = raíz del repo, la
+    /// misma asunción que ya documenta `rinthel-boot.sh` (que a su vez
+    /// `exec`ea este binario sin hacer `cd`). stdout/stderr a
+    /// `Stdio::null()` para no pisar la alternate screen del cliente con los
+    /// `echo` del script.
     fn spawn_daemon_stop() {
         let _ = tokio::process::Command::new("./rinthel-boot.sh")
             .arg("--stop")
@@ -505,9 +465,8 @@ impl App {
         self.farewell_next = next;
     }
 
-    /// `SignalNoiseEffect(1, 3, 20)` — mismos parámetros que los 5 call
-    /// sites de `menu.py`, siempre seguido de la transición real que dio
-    /// `followup`.
+    /// `SignalNoiseEffect(1, 3, 20)` antes de cualquier transición real,
+    /// dada por `followup`.
     fn begin_pre_transition(&mut self, followup: EffectFollowUp) {
         self.begin_effect(ActiveEffect::SignalNoise(effects::SignalNoiseEffect::new(1.0, 3, 20)), followup);
     }
@@ -517,9 +476,7 @@ impl App {
         self.effect_followup = followup;
     }
 
-    /// Se llama cuando `active_effect` termina (ver loop de `run()`) — puerto
-    /// de lo que en Python seguía inline después de un
-    /// `await push_screen_wait(effect)`.
+    /// Se llama cuando `active_effect` termina (ver loop de `run()`).
     fn run_effect_followup(&mut self, tx: &mpsc::UnboundedSender<AppEvent>) {
         match std::mem::replace(&mut self.effect_followup, EffectFollowUp::None) {
             EffectFollowUp::None => {}
@@ -542,9 +499,8 @@ impl App {
         }
     }
 
-    /// Reemplaza el `match app.menu_selected { 0 => ..., ... }` hardcodeado
-    /// de antes de la sesión 00 — la semántica de cada opción vive en
-    /// `screens::MENU_ENTRIES`, no acá.
+    /// La semántica de cada opción de menú vive en `screens::MENU_ENTRIES`,
+    /// no acá.
     fn dispatch_menu_action(&mut self, tx: &mpsc::UnboundedSender<AppEvent>) {
         // `Divider` no es seleccionable (next_selectable/prev_selectable ya
         // lo garantizan), pero el match no puede probarlo — si algún día
@@ -552,10 +508,9 @@ impl App {
         let Some(entry) = screens::MENU_ENTRIES[self.menu_selected].as_entry() else { return };
         match entry.action {
             MenuAction::Navigate(id) => self.screen = id,
-            // `menu.py:154-176`: SignalNoise (1s) ANTES de cambiar de
-            // pantalla y disparar el POST — no antes de Navigate/Settings
-            // (Monitor/Logs/Configurar no lo tienen en Python, confirmado
-            // en el ticket de esta sesión).
+            // SignalNoise (1s) ANTES de cambiar de pantalla y disparar el
+            // POST — Navigate/Settings (Monitor/Logs/Configurar) no lo
+            // llevan.
             MenuAction::Boot => self.begin_pre_transition(EffectFollowUp::StartPhaseRun {
                 name: "boot",
                 path: "/boot",
@@ -579,18 +534,16 @@ impl App {
             }),
             MenuAction::Settings => {
                 self.screen = ScreenId::Settings;
-                self.config = None;
-                self.config_edits.clear();
-                self.config_editing = None;
-                self.config_status = None;
-                self.config_save_in_flight = false;
+                self.settings.payload = None;
+                self.settings.edits.clear();
+                self.settings.editing = None;
+                self.settings.status = None;
+                self.settings.save_in_flight = false;
                 tokio::spawn(fetch_config(tx.clone()));
             }
-            // menu.py:183 — EXIT pasaba directo a FarewellScreen (sesión
-            // 05); sesión 12 intercala el prompt de apagado del daemon
-            // antes, sin equivalente en Python (grillado con Tarkark, ver
-            // doc-comment de `screens::exit_prompt`). Sin SignalNoise antes
-            // (Python tampoco lo dispara para "exit").
+            // EXIT pasa por el prompt de apagado del daemon antes de la
+            // screen de farewell — ver doc-comment de `screens::exit_prompt`.
+            // Sin SignalNoise antes.
             MenuAction::Quit => {
                 self.screen = ScreenId::ExitPrompt;
                 self.exit_prompt_timer = Some(ExitPromptTimer::start());
@@ -598,110 +551,9 @@ impl App {
         }
     }
 
-    /// Toda la lógica de teclado de `ScreenId::Settings` vive acá (no en
-    /// `screens::settings`, que es solo dibujo + helpers puros) porque
-    /// necesita mutar `App` y disparar `POST /config` — mismo criterio que
-    /// `dispatch_menu_action`/`start_phase_run`. Consume la tecla entera, no
-    /// cae al catch-all `q`=salir del loop principal: mientras se edita un
-    /// campo de texto, cualquier char (incluido 'q') es contenido del
-    /// campo, no un atajo — `settings.py` bindea igual `q`/Escape a
-    /// "Volver" (no a salir de la app), mismo criterio que `LogsScreen`.
-    fn handle_settings_key(&mut self, code: KeyCode, tx: &mpsc::UnboundedSender<AppEvent>) {
-        if self.config_editing.is_none() && matches!(code, KeyCode::Char('q') | KeyCode::Esc) {
-            self.screen = ScreenId::Menu;
-            return;
-        }
-        let Some(payload) = self.config.clone() else { return }; // todavía cargando (GET /config)
-
-        if self.config_editing.is_some() {
-            match code {
-                KeyCode::Enter | KeyCode::Esc => {
-                    let buffer = self.config_editing.take().unwrap();
-                    let svc = &payload.services[self.config_selected_service];
-                    let rows = settings::detail_rows(&svc.fields);
-                    if let DetailRow::Field(field_i) = rows[self.config_selected_row] {
-                        self.config_edits.insert(svc.fields[field_i].env.clone(), buffer);
-                    }
-                }
-                KeyCode::Backspace => {
-                    if let Some(buffer) = &mut self.config_editing {
-                        buffer.pop();
-                    }
-                }
-                KeyCode::Char(c) => {
-                    if let Some(buffer) = &mut self.config_editing {
-                        buffer.push(c);
-                    }
-                }
-                _ => {}
-            }
-            return;
-        }
-
-        match code {
-            KeyCode::Left => self.config_focus = ConfigFocus::Services,
-            KeyCode::Up => match self.config_focus {
-                ConfigFocus::Services => {
-                    self.config_selected_service = self.config_selected_service.saturating_sub(1);
-                    self.config_selected_row = 0;
-                }
-                ConfigFocus::Detail => {
-                    let svc = &payload.services[self.config_selected_service];
-                    let rows = settings::detail_rows(&svc.fields);
-                    self.config_selected_row = settings::prev_row(&rows, self.config_selected_row);
-                }
-            },
-            KeyCode::Down => match self.config_focus {
-                ConfigFocus::Services => {
-                    self.config_selected_service =
-                        (self.config_selected_service + 1).min(payload.services.len() - 1);
-                    self.config_selected_row = 0;
-                }
-                ConfigFocus::Detail => {
-                    let svc = &payload.services[self.config_selected_service];
-                    let rows = settings::detail_rows(&svc.fields);
-                    self.config_selected_row = settings::next_row(&rows, self.config_selected_row);
-                }
-            },
-            KeyCode::Right | KeyCode::Enter if self.config_focus == ConfigFocus::Services => {
-                let svc = &payload.services[self.config_selected_service];
-                let rows = settings::detail_rows(&svc.fields);
-                self.config_focus = ConfigFocus::Detail;
-                self.config_selected_row = settings::first_row(&rows);
-            }
-            KeyCode::Char(' ') if self.config_focus == ConfigFocus::Services => {
-                let svc = &payload.services[self.config_selected_service];
-                if let (Some(orig), Some(env)) = (svc.enabled, &svc.enabled_env) {
-                    let effective = self.config_edits.get(env).map(|v| v == "true").unwrap_or(orig);
-                    self.config_edits.insert(env.clone(), (!effective).to_string());
-                }
-            }
-            KeyCode::Enter | KeyCode::Char(' ') if self.config_focus == ConfigFocus::Detail => {
-                let svc = &payload.services[self.config_selected_service];
-                let rows = settings::detail_rows(&svc.fields);
-                if let DetailRow::Field(field_i) = rows[self.config_selected_row] {
-                    let field = &svc.fields[field_i];
-                    if field.kind == "bool" {
-                        let current = settings::field_value(self, field) == "true";
-                        self.config_edits.insert(field.env.clone(), (!current).to_string());
-                    } else {
-                        self.config_editing = Some(settings::field_value(self, field).to_string());
-                    }
-                }
-            }
-            KeyCode::Char('s') if !self.config_save_in_flight => {
-                self.config_save_in_flight = true;
-                self.config_status = None;
-                tokio::spawn(save_config(self.config_edits.clone(), tx.clone()));
-            }
-            _ => {}
-        }
-    }
-
-    /// Boot/Terminate/Reload comparten el mismo arranque: limpiar el
-    /// checklist/log de la corrida anterior, pasar a `PhaseRunnerScreen` y
-    /// disparar el POST bloqueante — mismo trío que `menu.py`'s
-    /// `_handle_selection` hace con `push_screen`/`run_worker`.
+    /// Boot/Terminate/Reload/Install comparten el mismo arranque: limpiar el
+    /// checklist/log de la corrida anterior, pasar a `ScreenId::PhaseRunner`
+    /// y disparar el POST bloqueante en una tarea aparte.
     fn start_phase_run(
         &mut self,
         name: &'static str,
@@ -718,7 +570,7 @@ impl App {
     }
 
     /// Loop principal: terminal alternate-screen, tick de eventos + polling
-    /// de teclado, hasta `q`/SALIR. Antes vivía en `main()`.
+    /// de teclado, hasta `q`/SALIR.
     pub async fn run(mut self) -> io::Result<()> {
         let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
         tokio::spawn(ws_task(tx.clone()));
@@ -735,9 +587,8 @@ impl App {
                 let size = terminal.size()?;
                 let (width, height) = (size.width as usize, size.height as usize);
 
-                // Reveal del título + rotación de frases — corren siempre
-                // en segundo plano, como el `set_interval` de Python (el
-                // menú no se remonta cada vez que se vuelve a él).
+                // Rotación de frases del menú — corre siempre en segundo
+                // plano; el menú no se remonta cada vez que se vuelve a él.
                 self.menu_tagline.advance(now);
 
                 if let Some(effect) = &mut self.active_effect {
@@ -755,17 +606,17 @@ impl App {
                 }
 
                 // Sin elección a tiempo, apaga todo por default (a prueba
-                // de olvidos, ticket 04) — mismo patrón de "consultar el
-                // timer cada vuelta" que `farewell_timer`, abajo.
+                // de olvidos) — mismo patrón de "consultar el timer cada
+                // vuelta" que `farewell_timer`, abajo.
                 if self.screen == ScreenId::ExitPrompt
                     && self.exit_prompt_timer.as_ref().is_some_and(|t| t.is_done())
                 {
                     self.resolve_exit_prompt(true);
                 }
 
-                // `FarewellScreen._finish` de Python (set_timer + dismiss()):
-                // acá no hay callback, así que se consulta el timer cada
-                // vuelta del loop en vez de agendar uno.
+                // Sin callback de timer disponible acá, así que se consulta
+                // el estado del farewell cada vuelta del loop en vez de
+                // agendar uno.
                 if self.screen == ScreenId::Farewell {
                     if let Some(timer) = &self.farewell_timer {
                         if timer.is_done() {
@@ -783,32 +634,27 @@ impl App {
                     if let Event::Key(key) = event::read()? {
                         // Mientras un efecto de transición está en curso
                         // consume toda la pantalla (ver `draw`) y bloquea el
-                        // input salvo `q` — mismo trato que ya tenía
-                        // `FarewellScreen` (decisión explícita de Tarkark en
-                        // sesión 05, extendida acá al resto de los efectos).
+                        // input salvo `q`.
                         if self.active_effect.is_some() {
                             if key.code == KeyCode::Char('q') {
                                 self.should_quit = true;
                             }
-                        } else {
+                        } else if !screens::handle_key(self.screen, &mut self, key.code, &tx) {
+                            // `screens::handle_key` ya resolvió la tecla si la
+                            // screen actual tiene su propio manejo dedicado
+                            // (hoy: Settings) — acá abajo solo lo genérico,
+                            // compartido o sin sub-estado propio.
                             match (self.screen, key.code) {
-                                // LogsScreen (rinthel_tui/tui/screens/logs.py) bindea
-                                // q/Escape a "volver", no a "salir" — tiene que
-                                // resolverse antes del catch-all de abajo.
+                                // Logs bindea q/Escape a "volver", no a
+                                // "salir" — tiene que resolverse antes del
+                                // catch-all de abajo.
                                 (ScreenId::Logs, KeyCode::Char('q') | KeyCode::Esc) => {
                                     self.screen = ScreenId::Menu;
                                 }
-                                // Settings maneja su propia tecla entera (ver
-                                // doc-comment de `handle_settings_key`) — tiene
-                                // que resolverse antes del catch-all de abajo,
-                                // igual que Logs: mientras se edita un campo de
-                                // texto, 'q' es contenido del campo, no salir.
-                                (ScreenId::Settings, code) => self.handle_settings_key(code, &tx),
-                                // Sesión 12 — 'q' sigue cayendo al catch-all
-                                // de abajo desde acá también (sale sin
-                                // apagar el daemon, sin pasar por esta
-                                // elección): no se lo especial-casó, mismo
-                                // criterio que el resto del cliente.
+                                // 'q' en ExitPrompt cae al catch-all de abajo
+                                // (sale sin apagar el daemon, sin pasar por
+                                // esta elección) — no se lo especial-casó,
+                                // mismo criterio que el resto del cliente.
                                 (ScreenId::ExitPrompt, KeyCode::Char('y') | KeyCode::Enter) => {
                                     self.resolve_exit_prompt(true);
                                 }
@@ -824,10 +670,25 @@ impl App {
                                 }
                                 (ScreenId::Menu, KeyCode::Enter) => self.dispatch_menu_action(&tx),
                                 (ScreenId::Monitor, KeyCode::Esc) => self.screen = ScreenId::Menu,
-                                // CaptureScreen/PhaseRunnerScreen bloquean "volver"
-                                // hasta terminar (`action_dismiss_if_done` en
-                                // capture.py/phase_runner.py) — acá eso es "no hay
-                                // POST en vuelo".
+                                // Slider horizontal del log_tail — comparten
+                                // offset ambas screens (mismo `log_scroll_x`,
+                                // mismo `VecDeque` de líneas) porque
+                                // `widgets::log_tail` es el mismo widget
+                                // montado en las dos.
+                                (ScreenId::Logs | ScreenId::Monitor, KeyCode::Left) => {
+                                    self.scroll_log_x(-LOG_SCROLL_STEP);
+                                }
+                                (ScreenId::Logs | ScreenId::Monitor, KeyCode::Right) => {
+                                    self.scroll_log_x(LOG_SCROLL_STEP);
+                                }
+                                (ScreenId::Logs | ScreenId::Monitor, KeyCode::Home) => {
+                                    self.log_scroll_x = 0;
+                                }
+                                (ScreenId::Logs | ScreenId::Monitor, KeyCode::End) => {
+                                    self.scroll_log_x(i32::MAX);
+                                }
+                                // Capture/PhaseRunner bloquean "volver" hasta
+                                // terminar — acá eso es "no hay POST en vuelo".
                                 (ScreenId::Capture, KeyCode::Esc) if screens::capture::done(&self) => {
                                     self.screen = ScreenId::Menu;
                                 }
@@ -860,10 +721,8 @@ fn draw(f: &mut Frame, app: &App) {
     let bg = Block::default().style(Style::default().bg(app.colors.bg));
     f.render_widget(bg, f.area());
     screens::draw(app.screen, f, app);
-    // `TransitionEffect` es un `ModalScreen` con `background: $bg 0%` en
-    // Python: se apila SOBRE lo que ya está montado, sin borrarlo — acá es
-    // dibujar la screen de siempre y superponer la grilla del efecto
-    // encima (`GridWidget` deja pasar las celdas que no tocó).
+    // El efecto se dibuja SOBRE la screen de siempre, sin borrarla —
+    // `GridWidget` deja pasar las celdas que no tocó.
     if let Some(grid) = app.active_effect.as_ref().and_then(|e| e.grid()) {
         f.render_widget(effects::GridWidget(grid), f.area());
     }
@@ -932,8 +791,8 @@ async fn run_command(name: &'static str, path: &str, tx: mpsc::UnboundedSender<A
     }
 }
 
-/// `GET /config` (sesión 09) — disparado al entrar a `ScreenId::Settings`,
-/// mismo trigger-on-entry que `run_command("capture", ...)`.
+/// `GET /config` — disparado al entrar a `ScreenId::Settings`, mismo
+/// trigger-on-entry que `run_command("capture", ...)`.
 async fn fetch_config(tx: mpsc::UnboundedSender<AppEvent>) {
     let ev = match reqwest::get(format!("{}/config", daemon_base())).await {
         Ok(resp) => match resp.json::<ConfigPayload>().await {
@@ -949,7 +808,7 @@ async fn fetch_config(tx: mpsc::UnboundedSender<AppEvent>) {
 /// settings (mismo shape que `config.diff_overrides` del lado daemon,
 /// que hace el filtrado real). `ok: false` (validación) y falla de red
 /// terminan ambas en `ConfigSaveFailed`, mostradas igual (líneas de error).
-async fn save_config(overrides: HashMap<String, String>, tx: mpsc::UnboundedSender<AppEvent>) {
+pub(crate) async fn save_config(overrides: HashMap<String, String>, tx: mpsc::UnboundedSender<AppEvent>) {
     let body = serde_json::json!({ "overrides": overrides });
     let ev = match reqwest::Client::new().post(format!("{}/config", daemon_base())).json(&body).send().await {
         Ok(resp) => match resp.json::<ConfigSaveResult>().await {
