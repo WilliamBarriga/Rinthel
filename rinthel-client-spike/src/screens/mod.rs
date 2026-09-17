@@ -4,6 +4,7 @@
 //! registro, para que agregar una screen/opción de menú no toque el loop
 //! principal en `app.rs`.
 
+pub mod logs;
 pub mod menu;
 pub mod monitor;
 
@@ -17,6 +18,7 @@ use crate::app::App;
 pub enum ScreenId {
     Menu,
     Monitor,
+    Logs,
 }
 
 #[derive(Clone, Copy)]
@@ -35,6 +37,7 @@ pub struct MenuEntry {
 
 pub const MENU_ENTRIES: &[MenuEntry] = &[
     MenuEntry { label: "MONITOR", action: MenuAction::Navigate(ScreenId::Monitor) },
+    MenuEntry { label: "LOGS", action: MenuAction::Navigate(ScreenId::Logs) },
     MenuEntry { label: "BOOT", action: MenuAction::Boot },
     MenuEntry { label: "TERMINATE", action: MenuAction::Terminate },
     MenuEntry { label: "SALIR", action: MenuAction::Quit },
@@ -44,6 +47,7 @@ pub fn draw(id: ScreenId, f: &mut Frame, app: &App) {
     match id {
         ScreenId::Menu => menu::draw(f, app),
         ScreenId::Monitor => monitor::draw(f, app),
+        ScreenId::Logs => logs::draw(f, app),
     }
 }
 
@@ -79,6 +83,7 @@ fn status_line(app: &App) -> Line<'static> {
         let hint = match app.screen {
             ScreenId::Menu => " ↑↓=mover  Enter=elegir  q=salir ",
             ScreenId::Monitor => " b=boot  t=terminate  Esc=menu  q=salir ",
+            ScreenId::Logs => " q/Esc=volver ",
         };
         Line::from(Span::styled(hint, Style::default().fg(app.colors.dim)))
     }

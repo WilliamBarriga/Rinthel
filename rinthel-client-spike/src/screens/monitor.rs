@@ -10,6 +10,7 @@ use ratatui_sci_fi::{EnergyGauge, Theme as SciFiTheme};
 
 use crate::app::{App, Colors};
 use crate::protocol::DockerContainer;
+use crate::widgets::log_tail;
 
 fn badge(containers: &[DockerContainer], name_contains: &str, colors: &Colors) -> Span<'static> {
     let running = containers
@@ -132,16 +133,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     .block(Block::default().borders(Borders::ALL).title(" docker "));
     f.render_widget(table, mid_cols[0]);
 
-    let log_text: Vec<Line> = app
-        .log_lines
-        .iter()
-        .rev()
-        .take((mid_cols[1].height as usize).saturating_sub(2))
-        .rev()
-        .map(|l| Line::from(Span::styled(l.clone(), Style::default().fg(app.colors.fg))))
-        .collect();
-    let log = Paragraph::new(log_text).block(Block::default().borders(Borders::ALL).title(" log_tail (llama-server) "));
-    f.render_widget(log, mid_cols[1]);
+    log_tail::draw(f, mid_cols[1], &app.log_lines, app.colors.fg, " log_tail (llama-server) ");
 
     f.render_widget(Paragraph::new(super::status_line(app)).block(Block::default().borders(Borders::ALL)), rows[4]);
 }

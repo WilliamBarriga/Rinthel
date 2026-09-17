@@ -183,6 +183,12 @@ impl App {
                 if event::poll(Duration::from_millis(80))? {
                     if let Event::Key(key) = event::read()? {
                         match (self.screen, key.code) {
+                            // LogsScreen (rinthel_tui/tui/screens/logs.py) bindea
+                            // q/Escape a "volver", no a "salir" — tiene que
+                            // resolverse antes del catch-all de abajo.
+                            (ScreenId::Logs, KeyCode::Char('q') | KeyCode::Esc) => {
+                                self.screen = ScreenId::Menu;
+                            }
                             (_, KeyCode::Char('q')) => self.should_quit = true,
                             (ScreenId::Menu, KeyCode::Up) => {
                                 self.menu_selected = self.menu_selected.saturating_sub(1);
