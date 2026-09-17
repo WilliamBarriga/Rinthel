@@ -86,6 +86,27 @@ def install_phases(cfg: RinthelConfig) -> list[PhaseSpec]:
         raw.extend(PhaseSpec(f"◈ {label}", fn) for label, fn in unit.steps)
     return _renumbered(raw, len(raw), start=1)
 
+
+# ── INSTALL agrupado por unidad instalable (daemon FastAPI, sesión 07 del
+# port-map) — mismo criterio que boot_units/reload_units: un ServiceOutcome
+# por unidad en vez de un resultado por fase. PREFLIGHT es su propia unidad
+# (no es de ningún InstallUnit, mismo motivo que el chequeo de DOCKER queda
+# aparte en boot_units) — a diferencia de ese chequeo, acá no hace falta que
+# el daemon lo intercale aparte: no hay nada que deba correr antes de
+# PREFLIGHT. No numera nada (igual que boot_units/reload_units) —
+# install_phases (arriba) sigue siendo la fuente del checklist numerado que
+# usa Textual.
+def install_units(cfg: RinthelConfig) -> list[tuple[str, list[PhaseSpec]]]:
+    units: list[tuple[str, list[PhaseSpec]]] = [
+        ("preflight", [PhaseSpec("◈ PREFLIGHT — GPU/CUDA/cmake/docker", install.phase_install_preflight)])
+    ]
+    for unit in install.INSTALL_UNITS:
+        if not unit.enabled_of(cfg):
+            continue
+        units.append((unit.label.lower(), [PhaseSpec(f"◈ {label}", fn) for label, fn in unit.steps]))
+    return units
+
+
 # ── BOOT (rinthel-up.sh) ──────────────────────────────────────
 # Funciones de ``cfg``, no constantes de módulo: cada servicio con
 # ``enabled_of(cfg)`` en False queda afuera de las 4 secuencias (spawn/kill/

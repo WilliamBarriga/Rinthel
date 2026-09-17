@@ -29,6 +29,14 @@ no dejan ningún rastro en el protocolo — ni siquiera un marcador de
 boundary entre tandas — quedan puramente del lado cliente para cuando la
 sesión 10 las retrofitee.
 
+Sesión 07 agrega ``/install`` — puerto de ``[0] INSTALL`` (`menu.py`), mismo
+mecanismo bloqueante + phase_status/phase_log, corriendo ``specs.
+install_units`` (PREFLIGHT + una unidad por ``InstallUnit`` habilitada) y
+cortando en el primer fallo. A diferencia de boot/terminate/reload, esto
+corre subprocesos reales (git clone, build de CUDA, descarga del modelo)
+desde el día uno — no hay versión simulada de install (a diferencia de
+capture, que sí la tiene).
+
 Sesión 05 (phase_runner) agrega dos tipos de sobre a ``/ws/monitor``, para
 que el checklist/log en vivo de BOOT/TERMINATE tenga de dónde sacar
 progreso sin romper ADR 0001 (``/boot``/``/terminate`` siguen siendo POST
@@ -327,6 +335,23 @@ async def reload() -> JSONResponse:
 async def _simulate_service(name: str, seconds: float, ok: bool, message: str) -> dict:
     await asyncio.sleep(seconds)
     return {"service": name, "ok": ok, "message": message}
+
+
+@app.post("/install")
+async def install() -> JSONResponse:
+    # Sesión 07 del port-map: mismo mecanismo bloqueante + phase_status/
+    # phase_log que boot/terminate/reload (grillado con Tarkark, ver ticket
+    # 07 — install no necesita un endpoint genérico "correr lista de
+    # fases": install_units ya agrupa por InstallUnit igual que boot_units).
+    # Corta en el primer fallo: si PREFLIGHT falla (falta CUDA/docker) no
+    # tiene sentido seguir con clone/build/descarga.
+    results = []
+    for service, unit_specs in specs.install_units(cfg):
+        outcome = await _run_unit(service, unit_specs)
+        results.append(outcome)
+        if not outcome["ok"]:
+            break
+    return JSONResponse({"results": results})
 
 
 @app.post("/capture")

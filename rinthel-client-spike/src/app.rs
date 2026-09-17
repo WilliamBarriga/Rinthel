@@ -112,7 +112,7 @@ impl App {
     pub fn new(theme: &Theme) -> Self {
         App {
             screen: ScreenId::Menu,
-            menu_selected: 0,
+            menu_selected: screens::first_selectable(),
             colors: Colors::from(theme),
             containers: Vec::new(),
             gpu: GpuSample::default(),
@@ -163,7 +163,7 @@ impl App {
             AppEvent::CommandDone(name, result) => {
                 self.command_in_flight = None;
                 self.last_command_error = None;
-                if name == "boot" || name == "terminate" || name == "reload" {
+                if name == "boot" || name == "terminate" || name == "reload" || name == "install" {
                     self.finish_phase_sequence(name, &result);
                 }
                 self.last_command_result = Some((name, result));
@@ -189,13 +189,14 @@ impl App {
 
     /// Puerto de `PhaseSequenceScreen._run_all`/`_run_closing`
     /// (`phase_runner.py`/`reload.py`): al llegar la respuesta bloqueante de
-    /// `/boot`/`/terminate`/`/reload`, cierra el log de la corrida —
-    /// mensaje de cierre + banner si todo salió bien (y dispara farewell si
-    /// fue TERMINATE), o "secuencia cortada" si algo falló. Los textos son
-    /// los mismos que `_BOOT_CLOSING`/`_TERMINATE_CLOSING`/el remate de
-    /// `ReloadScreen._run_all` en Python; el efecto de transición que los
-    /// precedía (y las 3 transiciones entre tandas de reload) quedan
-    /// stubbeados (sesión 10 los retrofitea) — acá son líneas más del log.
+    /// `/boot`/`/terminate`/`/reload`/`/install`, cierra el log de la
+    /// corrida — mensaje de cierre + banner si todo salió bien (y dispara
+    /// farewell si fue TERMINATE), o "secuencia cortada" si algo falló. Los
+    /// textos son los mismos que `_BOOT_CLOSING`/`_TERMINATE_CLOSING`/
+    /// `_INSTALL_CLOSING`/el remate de `ReloadScreen._run_all` en Python; el
+    /// efecto de transición que los precedía (y las 3 transiciones entre
+    /// tandas de reload) quedan stubbeados (sesión 10 los retrofitea) — acá
+    /// son líneas más del log.
     fn finish_phase_sequence(&mut self, name: &'static str, result: &CommandResult) {
         match result.results.iter().find(|r| !r.ok) {
             Some(failed) => {
@@ -208,6 +209,7 @@ impl App {
                 let (done_msg, banner) = match name {
                     "reload" => ("Reboot completo.", "SYSTEM REBOOTED — TODOS LOS SERVICIOS ACTIVOS"),
                     "boot" => ("Secuencia completa.", "TODO EN LINEA — Understory + Pithagoras activos"),
+                    "install" => ("Setup listo.", "SETUP LISTO — elegí [1] BOOT para levantar todo"),
                     _ => ("Secuencia completa.", "SYSTEM OFFLINE — TODOS LOS SERVICIOS DETENIDOS"),
                 };
                 self.phase_log.push_back(("success".to_string(), done_msg.to_string()));
@@ -225,7 +227,11 @@ impl App {
     /// de antes de la sesión 00 — la semántica de cada opción vive en
     /// `screens::MENU_ENTRIES`, no acá.
     fn dispatch_menu_action(&mut self, tx: &mpsc::UnboundedSender<AppEvent>) {
-        match screens::MENU_ENTRIES[self.menu_selected].action {
+        // `Divider` no es seleccionable (next_selectable/prev_selectable ya
+        // lo garantizan), pero el match no puede probarlo — si algún día
+        // deja de ser cierto, mejor no-op que panic.
+        let Some(entry) = screens::MENU_ENTRIES[self.menu_selected].as_entry() else { return };
+        match entry.action {
             MenuAction::Navigate(id) => self.screen = id,
             MenuAction::Boot => self.start_phase_run("boot", "/boot", "EXECUTE — FAST BOOT", tx),
             MenuAction::Reload => self.start_phase_run("reload", "/reload", "SYSTEM REBOOT", tx),
@@ -235,6 +241,7 @@ impl App {
                 self.command_in_flight = Some("capture");
                 tokio::spawn(run_command("capture", "/capture", tx.clone()));
             }
+            MenuAction::Install => self.start_phase_run("install", "/install", "INSTALL — SETUP INICIAL", tx),
             // menu.py:183 — EXIT pasa por FarewellScreen antes de salir,
             // igual que TERMINATE (grillado con Tarkark, sesión 05).
             MenuAction::Quit => {
@@ -310,11 +317,10 @@ impl App {
                             }
                             (_, KeyCode::Char('q')) => self.should_quit = true,
                             (ScreenId::Menu, KeyCode::Up) => {
-                                self.menu_selected = self.menu_selected.saturating_sub(1);
+                                self.menu_selected = screens::prev_selectable(self.menu_selected);
                             }
                             (ScreenId::Menu, KeyCode::Down) => {
-                                self.menu_selected =
-                                    (self.menu_selected + 1).min(screens::MENU_ENTRIES.len() - 1);
+                                self.menu_selected = screens::next_selectable(self.menu_selected);
                             }
                             (ScreenId::Menu, KeyCode::Enter) => self.dispatch_menu_action(&tx),
                             (ScreenId::Monitor, KeyCode::Esc) => self.screen = ScreenId::Menu,

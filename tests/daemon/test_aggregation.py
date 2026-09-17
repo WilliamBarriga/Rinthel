@@ -180,3 +180,52 @@ async def test_reload_stops_when_docker_check_fails_before_boot(monkeypatch):
 
     assert [r["service"] for r in body["results"]] == ["llama-server", "docker"]
     assert body["results"][-1]["ok"] is False
+
+
+# ── /install (sesión 07) ────────────────────────────────────────────────
+# specs.install_units ya agrupa por InstallUnit (PREFLIGHT + una unidad por
+# InstallUnit habilitada) — corta en el primer fallo, mismo criterio que
+# /boot. Sin doble real: install corre subprocesos reales (clone/build CUDA/
+# descarga del modelo) que no tiene sentido disparar en un test unitario, así
+# que igual que boot/reload acá se prueba con PhaseSpec/fases falsas.
+
+
+async def test_install_stops_at_first_failed_unit(monkeypatch):
+    monkeypatch.setattr(
+        daemon.specs,
+        "install_units",
+        lambda cfg: [
+            ("preflight", [_failing_spec("preflight", "falta nvcc")]),
+            ("llama.cpp + modelo", [_ok_spec("clone", "nunca debería correr")]),
+        ],
+    )
+
+    response = await daemon.install()
+    body = json.loads(response.body)
+
+    assert [r["service"] for r in body["results"]] == ["preflight"]
+    assert body["results"][0]["ok"] is False
+
+
+async def test_install_runs_every_unit_when_all_succeed(monkeypatch):
+    monkeypatch.setattr(
+        daemon.specs,
+        "install_units",
+        lambda cfg: [
+            ("preflight", [_ok_spec("preflight", "todo encontrado")]),
+            ("llama.cpp + modelo", [_ok_spec("clone", "clonado"), _ok_spec("build", "compilado")]),
+            ("pithagoras", [_ok_spec("setup", "configurado")]),
+            ("understory", [_ok_spec("setup", "configurado")]),
+        ],
+    )
+
+    response = await daemon.install()
+    body = json.loads(response.body)
+
+    assert [r["service"] for r in body["results"]] == [
+        "preflight",
+        "llama.cpp + modelo",
+        "pithagoras",
+        "understory",
+    ]
+    assert all(r["ok"] for r in body["results"])

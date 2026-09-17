@@ -187,3 +187,39 @@ def test_reload_units_excludes_disabled_service(cfg):
     shutdown, _boot, rebuild = specs.reload_units(disabled)
     assert "understory" not in dict(shutdown)
     assert "understory" not in dict(rebuild)
+
+
+# ── install_units (daemon FastAPI, sesión 07) ──────────────────────────────
+# Vista agrupada por InstallUnit de install_phases — un ServiceOutcome por
+# unidad instalable (mismo criterio que boot_units/reload_units), más
+# PREFLIGHT como su propia unidad.
+
+
+def test_install_units_groups_preflight_and_every_unit_by_default(cfg):
+    units = dict(specs.install_units(cfg))
+    assert set(units) == {"preflight", "llama.cpp + modelo", "pithagoras", "understory"}
+
+
+def test_install_units_preflight_is_first_and_a_single_phase(cfg):
+    units = specs.install_units(cfg)
+    assert units[0][0] == "preflight"
+    assert len(units[0][1]) == 1
+
+
+def test_install_units_llama_groups_all_three_steps(cfg):
+    units = dict(specs.install_units(cfg))
+    assert len(units["llama.cpp + modelo"]) == 3
+
+
+def test_install_units_excludes_disabled_service(cfg):
+    disabled = _disable(cfg, "understory")
+    units = dict(specs.install_units(disabled))
+    assert set(units) == {"preflight", "llama.cpp + modelo", "pithagoras"}
+
+
+def test_install_units_does_not_number_labels(cfg):
+    # A diferencia de install_phases (checklist de Textual), install_units
+    # no numera — el daemon solo necesita qué corrió y si salió bien.
+    units = specs.install_units(cfg)
+    all_labels = [s.label for _, unit_specs in units for s in unit_specs]
+    assert not any(re.search(r"\[\d+/\d+\]", l) for l in all_labels)

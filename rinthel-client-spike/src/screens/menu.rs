@@ -32,13 +32,21 @@ pub fn draw(f: &mut Frame, app: &App) {
     let items: Vec<ListItem> = super::MENU_ENTRIES
         .iter()
         .enumerate()
-        .map(|(i, entry)| {
-            let style = if i == app.menu_selected {
-                Style::default().fg(app.colors.bg).bg(app.colors.accent).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(app.colors.fg)
-            };
-            ListItem::new(format!("  {}", entry.label)).style(style)
+        .map(|(i, item)| match item {
+            super::MenuItem::Entry(entry) => {
+                let style = if i == app.menu_selected {
+                    Style::default().fg(app.colors.bg).bg(app.colors.accent).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(app.colors.fg)
+                };
+                ListItem::new(format!("  {}", entry.label)).style(style)
+            }
+            // Nunca seleccionable — Up/Down (next_selectable/prev_selectable
+            // en screens/mod.rs) lo saltan, así que no necesita reaccionar a
+            // `app.menu_selected`.
+            super::MenuItem::Divider => {
+                ListItem::new("  ───────────────").style(Style::default().fg(app.colors.dim))
+            }
         })
         .collect();
     let list = List::new(items).block(

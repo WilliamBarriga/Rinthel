@@ -42,6 +42,11 @@ pub enum MenuAction {
     /// Distinta de `Navigate`: entrar a Capture dispara `POST /capture` de
     /// una, como `on_mount` en `capture.py` — no es solo cambiar de screen.
     Capture,
+    /// Puerto de `[0] INSTALL` (sesión 07 del port-map) — reusa
+    /// `ScreenId::PhaseRunner` tal cual, mismo argumento que `Reload`: con
+    /// `specs.install_units` orquestando todo del lado daemon, no queda
+    /// comportamiento propio para una screen de Install en el cliente.
+    Install,
     Quit,
 }
 
@@ -51,15 +56,79 @@ pub struct MenuEntry {
     pub action: MenuAction,
 }
 
-pub const MENU_ENTRIES: &[MenuEntry] = &[
-    MenuEntry { label: "MONITOR", action: MenuAction::Navigate(ScreenId::Monitor) },
-    MenuEntry { label: "LOGS", action: MenuAction::Navigate(ScreenId::Logs) },
-    MenuEntry { label: "BOOT", action: MenuAction::Boot },
-    MenuEntry { label: "RELOAD", action: MenuAction::Reload },
-    MenuEntry { label: "TERMINATE", action: MenuAction::Terminate },
-    MenuEntry { label: "CAPTURE", action: MenuAction::Capture },
-    MenuEntry { label: "SALIR", action: MenuAction::Quit },
+/// Un ítem del menú — o una entrada accionable, o un separador puramente
+/// visual. Separar esto en un enum (en vez de, por ejemplo, un flag
+/// `disabled` en `MenuEntry` o índices de divisor hardcodeados como
+/// `menu.py::_DIVIDER_INDEX_1/2/3`) es lo que permite agregar/sacar/mover
+/// entradas y separadores en `MENU_ENTRIES` sin tocar la navegación: `Up`/
+/// `Down` (`next_selectable`/`prev_selectable`, más abajo) saltan
+/// `Divider` solos, así que ningún índice queda hardcodeado en otro lado.
+#[derive(Clone, Copy)]
+pub enum MenuItem {
+    Entry(MenuEntry),
+    Divider,
+}
+
+impl MenuItem {
+    pub fn as_entry(&self) -> Option<&MenuEntry> {
+        match self {
+            MenuItem::Entry(e) => Some(e),
+            MenuItem::Divider => None,
+        }
+    }
+}
+
+// Orden fijado en la sesión 07 del port-map (grillado con Tarkark) para lo
+// que hoy existe del lado Rust. `configurar` (sesión 09, `ScreenId::Settings`
+// todavía no existe) va entre TERMINATE y CAPTURE cuando se porte esa
+// screen — agregarla ahora sin la screen real rompería `Navigate`. Sin
+// divisores todavía (eso sigue siendo pulido visual de sesión 10): la
+// estructura ya los soporta, agregarlos es sumar `MenuItem::Divider` donde
+// corresponda.
+pub const MENU_ENTRIES: &[MenuItem] = &[
+    MenuItem::Entry(MenuEntry { label: "MONITOR", action: MenuAction::Navigate(ScreenId::Monitor) }),
+    MenuItem::Entry(MenuEntry { label: "BOOT", action: MenuAction::Boot }),
+    MenuItem::Entry(MenuEntry { label: "RELOAD", action: MenuAction::Reload }),
+    MenuItem::Entry(MenuEntry { label: "TERMINATE", action: MenuAction::Terminate }),
+    MenuItem::Entry(MenuEntry { label: "CAPTURE", action: MenuAction::Capture }),
+    MenuItem::Entry(MenuEntry { label: "LOGS", action: MenuAction::Navigate(ScreenId::Logs) }),
+    MenuItem::Entry(MenuEntry { label: "INSTALL", action: MenuAction::Install }),
+    MenuItem::Entry(MenuEntry { label: "SALIR", action: MenuAction::Quit }),
 ];
+
+/// Primer índice seleccionable de `MENU_ENTRIES` — usado para saltar
+/// `Divider` sin asumir que el índice 0 siempre es una `Entry`.
+pub fn first_selectable() -> usize {
+    MENU_ENTRIES
+        .iter()
+        .position(|item| matches!(item, MenuItem::Entry(_)))
+        .expect("MENU_ENTRIES sin ninguna entrada seleccionable")
+}
+
+/// Próxima `Entry` seleccionable a partir de (sin incluir) `from` — se queda
+/// en `from` si ya es la última (mismo comportamiento de "tope" que el
+/// `.min(...)` que reemplaza).
+pub fn next_selectable(from: usize) -> usize {
+    MENU_ENTRIES
+        .iter()
+        .enumerate()
+        .skip(from + 1)
+        .find(|(_, item)| matches!(item, MenuItem::Entry(_)))
+        .map(|(i, _)| i)
+        .unwrap_or(from)
+}
+
+/// Entry seleccionable anterior a `from` — se queda en `from` si ya es la
+/// primera.
+pub fn prev_selectable(from: usize) -> usize {
+    MENU_ENTRIES[..from]
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, item)| matches!(item, MenuItem::Entry(_)))
+        .map(|(i, _)| i)
+        .unwrap_or(from)
+}
 
 pub fn draw(id: ScreenId, f: &mut Frame, app: &App) {
     match id {
