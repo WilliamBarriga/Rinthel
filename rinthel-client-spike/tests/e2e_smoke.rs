@@ -163,3 +163,46 @@ async fn boot_then_terminate_over_real_wire() {
         "no llegó ningún phase_log durante boot+terminate; vistos: {kinds:?}"
     );
 }
+
+/// Sesión 06: `/reload` corre shutdown→boot→rebuild en secuencia contra los
+/// mismos dobles — arranca desde cero (nada corriendo todavía), así que el
+/// shutdown inicial mata/baja procesos que nunca existieron (warns, no
+/// errores) antes de relanzar. Sin este boot previo la aserción seguiría
+/// pasando igual (phase_kill/phase_down toleran "no había nada corriendo"),
+/// pero arrancar ya booteado es el caso real (RELOAD desde el menú, con
+/// todo arriba).
+#[tokio::test]
+async fn reload_over_real_wire() {
+    let _daemon = spawn_daemon();
+    let _theme = wait_for_theme().await;
+
+    let client = reqwest::Client::new();
+    let boot: CommandResult = client
+        .post(format!("{DAEMON}/boot"))
+        .send()
+        .await
+        .expect("POST /boot falló")
+        .json()
+        .await
+        .expect("respuesta de /boot no matchea CommandResult");
+    assert!(boot.results.iter().all(|r| r.ok), "boot previo (contra dobles) no debería fallar");
+
+    let reload: CommandResult = client
+        .post(format!("{DAEMON}/reload"))
+        .send()
+        .await
+        .expect("POST /reload falló")
+        .json()
+        .await
+        .expect("respuesta de /reload no matchea CommandResult");
+    assert!(
+        reload.results.iter().all(|r| r.ok),
+        "reload real (contra dobles) no debería fallar: {:?}",
+        reload.results
+    );
+    // shutdown (kill llama + down x2 + wait-port-free = 4 unidades) + DOCKER
+    // (1) + boot (spawn+wait llama, 1 unidad) + rebuild (up+wait x2) — mismo
+    // total que specs.reload_units + el chequeo de DOCKER que daemon.py
+    // inserta aparte.
+    assert_eq!(reload.results.len(), 8, "resultados: {:?}", reload.results);
+}

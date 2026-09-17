@@ -19,6 +19,16 @@ que lo vuelva real (ver "Not yet specified" en port-map.md). Todo lo demás
 (GPU, CPU/RAM, docker ps, tail de log) es de solo lectura contra el sistema
 real, sin cambios respecto al spike original.
 
+Sesión 06 agrega ``/reload`` — puerto real de ``ReloadScreen``
+(``rinthel_tui/tui/screens/reload.py``), mismo mecanismo bloqueante +
+``phase_status``/``phase_log`` que boot/terminate, corriendo las 3 tandas
+de ``specs.reload_units`` (shutdown → boot → rebuild) en secuencia y
+cortando en el primer fallo. Las 3 transiciones entre tandas que Python
+dispara entre grupos (``DatamoshEffect``/``VignetteEffect``/``RippleEffect``)
+no dejan ningún rastro en el protocolo — ni siquiera un marcador de
+boundary entre tandas — quedan puramente del lado cliente para cuando la
+sesión 10 las retrofitee.
+
 Sesión 05 (phase_runner) agrega dos tipos de sobre a ``/ws/monitor``, para
 que el checklist/log en vivo de BOOT/TERMINATE tenga de dónde sacar
 progreso sin romper ADR 0001 (``/boot``/``/terminate`` siguen siendo POST
@@ -294,6 +304,23 @@ async def boot() -> JSONResponse:
 @app.post("/terminate")
 async def terminate() -> JSONResponse:
     results = [await _run_unit(service, unit_specs) for service, unit_specs in specs.down_units(cfg)]
+    return JSONResponse({"results": results})
+
+
+@app.post("/reload")
+async def reload() -> JSONResponse:
+    # Sesión 06 del port-map: shutdown → DOCKER → boot(solo local) →
+    # rebuild(solo docker, no_cache) — mismo trío phase_status/phase_log
+    # que boot/terminate, corta en el primer fallo (grillado con Tarkark:
+    # mismo criterio que /boot, replica _run_all de reload.py).
+    shutdown, boot, rebuild = specs.reload_units(cfg)
+    docker_check = ("docker", [PhaseSpec("◈ DOCKER", phases.phase_check_docker)])
+    results = []
+    for service, unit_specs in [*shutdown, docker_check, *boot, *rebuild]:
+        outcome = await _run_unit(service, unit_specs)
+        results.append(outcome)
+        if not outcome["ok"]:
+            break
     return JSONResponse({"results": results})
 
 

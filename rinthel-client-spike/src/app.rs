@@ -163,7 +163,7 @@ impl App {
             AppEvent::CommandDone(name, result) => {
                 self.command_in_flight = None;
                 self.last_command_error = None;
-                if name == "boot" || name == "terminate" {
+                if name == "boot" || name == "terminate" || name == "reload" {
                     self.finish_phase_sequence(name, &result);
                 }
                 self.last_command_result = Some((name, result));
@@ -188,13 +188,14 @@ impl App {
     }
 
     /// Puerto de `PhaseSequenceScreen._run_all`/`_run_closing`
-    /// (`phase_runner.py`): al llegar la respuesta bloqueante de
-    /// `/boot`/`/terminate`, cierra el log de la corrida — "Secuencia
-    /// completa." + banner si todo salió bien (y dispara farewell si fue
-    /// TERMINATE), o "secuencia cortada" si algo falló. Los banners son los
-    /// mismos textos que `_BOOT_CLOSING`/`_TERMINATE_CLOSING` en `menu.py`;
-    /// el efecto de transición que los precedía en Python queda stubbeado
-    /// (sesión 10 lo retrofitea) — acá es directamente una línea más del log.
+    /// (`phase_runner.py`/`reload.py`): al llegar la respuesta bloqueante de
+    /// `/boot`/`/terminate`/`/reload`, cierra el log de la corrida —
+    /// mensaje de cierre + banner si todo salió bien (y dispara farewell si
+    /// fue TERMINATE), o "secuencia cortada" si algo falló. Los textos son
+    /// los mismos que `_BOOT_CLOSING`/`_TERMINATE_CLOSING`/el remate de
+    /// `ReloadScreen._run_all` en Python; el efecto de transición que los
+    /// precedía (y las 3 transiciones entre tandas de reload) quedan
+    /// stubbeados (sesión 10 los retrofitea) — acá son líneas más del log.
     fn finish_phase_sequence(&mut self, name: &'static str, result: &CommandResult) {
         match result.results.iter().find(|r| !r.ok) {
             Some(failed) => {
@@ -204,12 +205,12 @@ impl App {
                 ));
             }
             None => {
-                self.phase_log.push_back(("success".to_string(), "Secuencia completa.".to_string()));
-                let banner = if name == "boot" {
-                    "TODO EN LINEA — Understory + Pithagoras activos"
-                } else {
-                    "SYSTEM OFFLINE — TODOS LOS SERVICIOS DETENIDOS"
+                let (done_msg, banner) = match name {
+                    "reload" => ("Reboot completo.", "SYSTEM REBOOTED — TODOS LOS SERVICIOS ACTIVOS"),
+                    "boot" => ("Secuencia completa.", "TODO EN LINEA — Understory + Pithagoras activos"),
+                    _ => ("Secuencia completa.", "SYSTEM OFFLINE — TODOS LOS SERVICIOS DETENIDOS"),
                 };
+                self.phase_log.push_back(("success".to_string(), done_msg.to_string()));
                 self.phase_log.push_back(("success".to_string(), format!("◈ {banner}")));
                 if name == "terminate" {
                     self.screen = ScreenId::Farewell;
@@ -227,6 +228,7 @@ impl App {
         match screens::MENU_ENTRIES[self.menu_selected].action {
             MenuAction::Navigate(id) => self.screen = id,
             MenuAction::Boot => self.start_phase_run("boot", "/boot", "EXECUTE — FAST BOOT", tx),
+            MenuAction::Reload => self.start_phase_run("reload", "/reload", "SYSTEM REBOOT", tx),
             MenuAction::Terminate => self.start_phase_run("terminate", "/terminate", "SHUTDOWN SEQUENCE", tx),
             MenuAction::Capture => {
                 self.screen = ScreenId::Capture;
@@ -243,10 +245,10 @@ impl App {
         }
     }
 
-    /// Boot/Terminate comparten el mismo arranque: limpiar el checklist/log
-    /// de la corrida anterior, pasar a `PhaseRunnerScreen` y disparar el
-    /// POST bloqueante — mismo trío que `menu.py`'s `_handle_selection`
-    /// hace con `push_screen`/`run_worker`.
+    /// Boot/Terminate/Reload comparten el mismo arranque: limpiar el
+    /// checklist/log de la corrida anterior, pasar a `PhaseRunnerScreen` y
+    /// disparar el POST bloqueante — mismo trío que `menu.py`'s
+    /// `_handle_selection` hace con `push_screen`/`run_worker`.
     fn start_phase_run(
         &mut self,
         name: &'static str,

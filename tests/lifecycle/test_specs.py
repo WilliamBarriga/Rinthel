@@ -133,3 +133,57 @@ def test_reload_phases_includes_llama_port_wait_by_default(cfg):
     groups = specs.reload_phases(cfg)
     all_labels = [s.label for group in groups for s in group]
     assert any("PUERTO" in l and "LIBRE" in l for l in all_labels)
+
+
+# ── reload_units (daemon FastAPI, sesión 06) ───────────────────────────────
+# Vista agrupada por servicio de las 3 tandas de reload_phases — un
+# ServiceOutcome por unidad, mismo criterio que boot_units/down_units.
+
+
+def test_reload_units_shutdown_groups_kill_and_down(cfg):
+    shutdown, _boot, _rebuild = specs.reload_units(cfg)
+    # "llama-server" aparece 2 veces (kill + wait-port-free, unidades
+    # separadas con el mismo nombre de servicio) — no colapsar con dict().
+    assert [service for service, _ in shutdown] == [
+        "llama-server",
+        "understory",
+        "pithagoras",
+        "llama-server",
+    ]
+    understory_specs = next(specs_ for service, specs_ in shutdown if service == "understory")
+    assert len(understory_specs) == 1  # down, sin wait
+    port_wait_specs = shutdown[-1][1]
+    assert len(port_wait_specs) == 1
+    assert "PUERTO" in port_wait_specs[0].label and "LIBRE" in port_wait_specs[0].label
+
+
+def test_reload_units_boot_is_local_only_no_docker_check(cfg):
+    _shutdown, boot, _rebuild = specs.reload_units(cfg)
+    units = dict(boot)
+    assert set(units) == {"llama-server"}  # único LOCAL_SERVICES hoy
+    assert len(units["llama-server"]) == 2  # spawn + wait
+    all_labels = [s.label for _, unit_specs in boot for s in unit_specs]
+    assert not any("DOCKER" in l for l in all_labels)  # lo corre daemon.py aparte
+
+
+def test_reload_units_rebuild_is_docker_only_with_no_cache(cfg):
+    _shutdown, _boot, rebuild = specs.reload_units(cfg)
+    units = dict(rebuild)
+    assert set(units) == {"understory", "pithagoras"}
+    for service, unit_specs in rebuild:
+        up_spec = unit_specs[0]
+        assert up_spec.kwargs["no_cache"] is True
+
+
+def test_reload_units_excludes_llama_port_wait_when_llama_disabled(cfg):
+    disabled = _disable(cfg, "llama")
+    shutdown, boot, _rebuild = specs.reload_units(disabled)
+    assert dict(shutdown).get("llama-server") is None
+    assert dict(boot).get("llama-server") is None
+
+
+def test_reload_units_excludes_disabled_service(cfg):
+    disabled = _disable(cfg, "understory")
+    shutdown, _boot, rebuild = specs.reload_units(disabled)
+    assert "understory" not in dict(shutdown)
+    assert "understory" not in dict(rebuild)

@@ -34,6 +34,11 @@ pub enum MenuAction {
     Navigate(ScreenId),
     Boot,
     Terminate,
+    /// Puerto de RELOAD (sesión 06 del port-map) — reusa `ScreenId::PhaseRunner`
+    /// tal cual, mismo mecanismo bloqueante que Boot/Terminate contra
+    /// `POST /reload` (las 3 tandas de `specs.reload_units` corren del lado
+    /// daemon; el cliente no distingue reload de un boot/terminate más largo).
+    Reload,
     /// Distinta de `Navigate`: entrar a Capture dispara `POST /capture` de
     /// una, como `on_mount` en `capture.py` — no es solo cambiar de screen.
     Capture,
@@ -50,6 +55,7 @@ pub const MENU_ENTRIES: &[MenuEntry] = &[
     MenuEntry { label: "MONITOR", action: MenuAction::Navigate(ScreenId::Monitor) },
     MenuEntry { label: "LOGS", action: MenuAction::Navigate(ScreenId::Logs) },
     MenuEntry { label: "BOOT", action: MenuAction::Boot },
+    MenuEntry { label: "RELOAD", action: MenuAction::Reload },
     MenuEntry { label: "TERMINATE", action: MenuAction::Terminate },
     MenuEntry { label: "CAPTURE", action: MenuAction::Capture },
     MenuEntry { label: "SALIR", action: MenuAction::Quit },

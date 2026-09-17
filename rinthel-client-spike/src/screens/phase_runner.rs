@@ -1,17 +1,24 @@
-//! Screen genérica de checklist + log para BOOT/TERMINATE — puerto de
-//! `PhaseSequenceScreen`/`PhaseRunnerScreen`
+//! Screen genérica de checklist + log para BOOT/TERMINATE/RELOAD — puerto
+//! de `PhaseSequenceScreen`/`PhaseRunnerScreen`
 //! (`rinthel_tui/tui/screens/phase_runner.py`, sesión 05 del port-map).
+//!
+//! RELOAD (sesión 06) reusa esta screen tal cual en vez de tener la suya
+//! propia (`ScreenId::PhaseRunner`, no `ScreenId::Reload`): con las 3
+//! tandas orquestadas del lado daemon (`POST /reload`) y las transiciones
+//! entre tandas stubbeadas a nada, no queda ningún comportamiento propio de
+//! Reload del lado cliente — grillado con Tarkark antes de proceder.
 //!
 //! El estado (`phase_rows`/`phase_log`) vive en `App`, no en un struct de
 //! screen propio — mismo patrón que `capture.rs` (`command_in_flight` +
 //! `last_command_result`), porque `app.rs` no tiene un stack de screens al
 //! estilo Textual. `app::finish_phase_sequence` llena `phase_log` con el
-//! cierre ("Secuencia completa."/banner, o "secuencia cortada") cuando
-//! llega la respuesta del POST — acá solo se dibuja.
+//! cierre (mensaje/banner de cierre, o "secuencia cortada") cuando llega la
+//! respuesta del POST — acá solo se dibuja.
 //!
-//! Los efectos de cierre (`ChromaticAberrationEffect`/`AfterimageEffect`)
-//! quedan stubbeados: el banner es una línea más del log, sin transición —
-//! confirmado en el ticket, retrofit real en sesión 10.
+//! Los efectos de cierre (`ChromaticAberrationEffect`/`AfterimageEffect`, y
+//! para reload las 3 transiciones entre tandas) quedan stubbeados: el
+//! banner es una línea más del log, sin transición — confirmado en el
+//! ticket, retrofit real en sesión 10.
 
 use std::collections::VecDeque;
 

@@ -1,10 +1,11 @@
-"""Aggregation de PhaseSpec en ServiceOutcome para POST /boot y /terminate
-(sesión 04 del port-map, hardening real de boot/terminate) — ver
-docs/adr/0001. `boot_units`/`down_units` (lifecycle/specs.py) dan las fases
+"""Aggregation de PhaseSpec en ServiceOutcome para POST /boot, /terminate y
+/reload (sesión 04 + sesión 06 del port-map) — ver docs/adr/0001.
+`boot_units`/`down_units`/`reload_units` (lifecycle/specs.py) dan las fases
 agrupadas por servicio; acá se prueba que `daemon._run_unit`/`_Collected`
 las conviertan en el `{"service", "ok", "message"}` que espera el cliente
-Rust, y que `boot`/`terminate` respeten "corta en el primer fallo" vs.
-"sigue con todas" sin tocar infra real (todo con PhaseSpec/fases falsas)."""
+Rust, y que `boot`/`terminate`/`reload` respeten "corta en el primer
+fallo" vs. "sigue con todas" sin tocar infra real (todo con PhaseSpec/fases
+falsas)."""
 
 import json
 
@@ -114,3 +115,68 @@ async def test_terminate_runs_every_unit_even_if_one_fails(monkeypatch):
 
     assert [r["service"] for r in body["results"]] == ["llama-server", "understory", "pithagoras"]
     assert [r["ok"] for r in body["results"]] == [False, True, True]
+
+
+# ── /reload (sesión 06) ─────────────────────────────────────────────────
+# Mismas 3 tandas de specs.reload_units + el chequeo de DOCKER que
+# daemon.py inserta aparte entre shutdown y boot — corta en el primer
+# fallo en cualquier punto de la secuencia completa, mismo criterio que
+# /boot (grillado con Tarkark: replica _run_all de reload.py).
+
+
+def _patch_reload_units(monkeypatch, shutdown, boot, rebuild):
+    monkeypatch.setattr(daemon.specs, "reload_units", lambda cfg: (shutdown, boot, rebuild))
+
+
+async def test_reload_runs_shutdown_docker_boot_rebuild_in_order(monkeypatch):
+    monkeypatch.setattr(daemon.phases, "phase_check_docker", _ok_spec("docker", "activo").fn)
+    _patch_reload_units(
+        monkeypatch,
+        shutdown=[("llama-server", [_ok_spec("kill", "parado")]), ("llama-server-port", [_ok_spec("wait", "libre")])],
+        boot=[("llama-server", [_ok_spec("spawn", "lanzado"), _ok_spec("wait", "respondiendo")])],
+        rebuild=[("understory", [_ok_spec("up", "levantado"), _ok_spec("wait", "respondiendo")])],
+    )
+
+    response = await daemon.reload()
+    body = json.loads(response.body)
+
+    assert [r["service"] for r in body["results"]] == [
+        "llama-server",
+        "llama-server-port",
+        "docker",
+        "llama-server",
+        "understory",
+    ]
+    assert all(r["ok"] for r in body["results"])
+
+
+async def test_reload_stops_at_first_failure_in_shutdown(monkeypatch):
+    monkeypatch.setattr(daemon.phases, "phase_check_docker", _ok_spec("docker", "activo").fn)
+    _patch_reload_units(
+        monkeypatch,
+        shutdown=[("llama-server", [_failing_spec("kill", "murió al instante")])],
+        boot=[("understory", [_ok_spec("up", "nunca debería correr")])],
+        rebuild=[],
+    )
+
+    response = await daemon.reload()
+    body = json.loads(response.body)
+
+    assert [r["service"] for r in body["results"]] == ["llama-server"]
+    assert body["results"][0]["ok"] is False
+
+
+async def test_reload_stops_when_docker_check_fails_before_boot(monkeypatch):
+    monkeypatch.setattr(daemon.phases, "phase_check_docker", _failing_spec("docker", "DOCKER DAEMON INACTIVO").fn)
+    _patch_reload_units(
+        monkeypatch,
+        shutdown=[("llama-server", [_ok_spec("kill", "parado")])],
+        boot=[("llama-server", [_ok_spec("spawn", "nunca debería correr")])],
+        rebuild=[("understory", [_ok_spec("up", "nunca debería correr")])],
+    )
+
+    response = await daemon.reload()
+    body = json.loads(response.body)
+
+    assert [r["service"] for r in body["results"]] == ["llama-server", "docker"]
+    assert body["results"][-1]["ok"] is False

@@ -186,3 +186,41 @@ def reload_phases(cfg: RinthelConfig) -> tuple[list[PhaseSpec], list[PhaseSpec],
         _renumbered(boot, total, start=1 + len(shutdown)),
         _renumbered(rebuild, total, start=1 + len(shutdown) + len(boot)),
     )
+
+
+# ── RELOAD agrupado por servicio (daemon FastAPI, sesión 06 del port-map) ──
+# Mismo criterio que boot_units/down_units: un ServiceOutcome por unidad en
+# vez de un resultado por fase — pero acá en 3 tandas en secuencia
+# (shutdown → boot → rebuild) en vez de una sola lista plana. No numera nada
+# (a diferencia de reload_phases, que sí lo hace para el checklist de
+# Textual): el daemon no pinta checklist, solo necesita qué corrió y si
+# salió bien. Igual que boot_units, no incluye el chequeo de DOCKER — el
+# caller (daemon.py) lo corre aparte, entre las tandas shutdown y boot.
+def reload_units(
+    cfg: RinthelConfig,
+) -> tuple[list[tuple[str, list[PhaseSpec]]], list[tuple[str, list[PhaseSpec]]], list[tuple[str, list[PhaseSpec]]]]:
+    local = [s for s in services.LOCAL_SERVICES if s.enabled_of(cfg)]
+    docker = [s for s in services.DOCKER_SERVICES if s.enabled_of(cfg)]
+
+    shutdown: list[tuple[str, list[PhaseSpec]]] = [
+        *[(svc.display_name.lower(), [_kill_spec(svc)]) for svc in local],
+        *[(svc.display_name.lower(), [_down_spec(svc)]) for svc in docker],
+    ]
+    # Mismo guard que _reload_raw_groups: solo tiene sentido esperar el
+    # puerto libre si el boot que sigue va a relanzar llama-server.
+    if services.LLAMA_SERVICE.enabled_of(cfg):
+        shutdown.append((
+            services.LLAMA_SERVICE.display_name.lower(),
+            [
+                PhaseSpec(
+                    f"◈ PUERTO {services.LLAMA_SERVICE.wait_label} LIBRE",
+                    managed_service.phase_wait_port_free,
+                    {"port_of": services.LLAMA_SERVICE.port_of},
+                )
+            ],
+        ))
+
+    boot = [(svc.display_name.lower(), [_spawn_spec(svc), _wait_spec(svc)]) for svc in local]
+    rebuild = [(svc.display_name.lower(), [_up_spec(svc, no_cache=True), _wait_spec(svc)]) for svc in docker]
+
+    return shutdown, boot, rebuild
