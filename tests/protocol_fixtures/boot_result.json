@@ -1,0 +1,5 @@
+{"results": [
+  {"service": "llama-server", "ok": true, "message": "listo en 42s"},
+  {"service": "understory", "ok": true, "message": "listo"},
+  {"service": "pithagoras", "ok": false, "message": "docker compose build falló: exit code 1"}
+]}

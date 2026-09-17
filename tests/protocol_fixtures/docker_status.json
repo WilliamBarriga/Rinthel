@@ -1,0 +1,4 @@
+{"type": "docker_status", "data": {"containers": [
+  {"name": "understory-app-1", "state": "running", "ports": "3800->3800", "status": "Up 2 hours"},
+  {"name": "pithagoras-portal-1", "state": "exited", "ports": "-", "status": "Exited (0) 5 minutes ago"}
+]}}

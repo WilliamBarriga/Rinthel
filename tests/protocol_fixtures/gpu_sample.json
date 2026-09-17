@@ -1,0 +1,4 @@
+{"type": "gpu_sample", "data": {
+  "available": true, "utilization": 42.0, "memory_used": 8192.0,
+  "memory_total": 24576.0, "temperature": 61.0, "power_draw": 210.5
+}}

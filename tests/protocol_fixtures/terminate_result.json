@@ -1,0 +1,5 @@
+{"results": [
+  {"service": "llama-server", "ok": true, "message": "detenido"},
+  {"service": "understory", "ok": true, "message": "detenido"},
+  {"service": "pithagoras", "ok": true, "message": "detenido"}
+]}

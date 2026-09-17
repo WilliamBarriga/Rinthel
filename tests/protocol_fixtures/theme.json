@@ -1,0 +1,13 @@
+{
+  "canonical": {
+    "fg": "#7CFCFF", "accent": "#EA00D9", "electric": "#BF00FF", "warn": "#FCEE0A",
+    "success": "#39FF14", "hot": "#FF003C", "caution": "#FFB000", "glow": "#FFFFFF",
+    "dim": "#5A5A72", "bg": "#0D0221"
+  },
+  "extended": {
+    "cool": "#0ABDC6", "cool_dim": "#044C4F", "hot_dim": "#660018",
+    "electric_dim": "#4C0066", "steel": "#6E5F96", "steel_dim": "#3A186B",
+    "accent_dim": "#660066"
+  },
+  "frame_chars": ["░", "▒", "▓", "█", "◈", "◆", "▲", "∷", "∴", "⊹", "⊛", "⌇"]
+}
