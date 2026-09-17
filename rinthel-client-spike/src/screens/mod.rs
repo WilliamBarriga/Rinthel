@@ -4,6 +4,7 @@
 //! registro, para que agregar una screen/opción de menú no toque el loop
 //! principal en `app.rs`.
 
+pub mod farewell;
 pub mod logs;
 pub mod menu;
 pub mod monitor;
@@ -14,6 +15,9 @@ use ratatui::Frame;
 
 use crate::app::App;
 
+// `farewell` (sesión 02) no tiene variante acá a propósito — es un mockup
+// sin cablear, ver el doc-comment de `farewell.rs` para el porqué y lo
+// pendiente de sesión 05.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScreenId {
     Menu,
