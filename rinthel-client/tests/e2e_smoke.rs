@@ -27,7 +27,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use rinthel_client_spike::protocol::{CommandResult, Envelope, Theme};
+use rinthel::protocol::{CommandResult, Envelope, Theme};
 use tokio::sync::mpsc;
 
 const DAEMON: &str = "http://127.0.0.1:8765";

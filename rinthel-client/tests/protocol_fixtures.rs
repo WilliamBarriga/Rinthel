@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use rinthel_client_spike::protocol::{
+use rinthel::protocol::{
     CommandResult, ConfigPayload, ConfigSaveResult, CpuRamSample, DockerStatus, Envelope, GpuSample, LlamaStatus,
     LogLine, Theme,
 };

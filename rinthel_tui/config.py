@@ -13,9 +13,8 @@ dataclass monolítico anterior (``cfg.llama_port`` -> ``cfg.llama.port``).
 
 Todo campo puede overridearse con una var de entorno ``RINTHEL_*`` (ver
 ``.env.example``) — los nombres de esas vars NO cambiaron con este split,
-salvo el caso especial de llama-server, que antes no tenía prefijo
-(``RINTHEL_PORT``/``RINTHEL_MODEL_PATH``/``RINTHEL_LOG_PATH``) y ahora es
-consistente con el resto de los servicios (``RINTHEL_LLAMA_PORT``/
+salvo el caso especial de llama-server, que antes no tenía prefijo propio y
+ahora es consistente con el resto de los servicios (``RINTHEL_LLAMA_PORT``/
 ``RINTHEL_LLAMA_MODEL_PATH``/``RINTHEL_LLAMA_LOG_PATH``).
 
 Si existe un ``.env`` en la raíz de este repo, se carga automáticamente vía

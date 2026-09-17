@@ -1,6 +1,6 @@
 """Fixture dorada (sesión 00 del porteo): un JSON por forma de mensaje del
 protocolo daemon<->cliente, fuente única compartida con los tests Rust
-(``rinthel-client-spike/tests/protocol_fixtures.rs``) — ver
+(``rinthel-client/tests/protocol_fixtures.rs``) — ver
 ``../protocol_fixtures/``. Cierra el riesgo de drift que ADR 0001 aceptó al
 descartar codegen: si el daemon cambia una forma sin tocar el fixture, este
 test y su espejo en Rust divergen visiblemente en vez de en silencio.

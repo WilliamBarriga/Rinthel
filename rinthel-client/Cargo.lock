@@ -1666,7 +1666,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rinthel-client-spike"
+name = "rinthel"
 version = "0.1.0"
 dependencies = [
  "crossterm 0.28.1",

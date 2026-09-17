@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Bootstrap de un solo comando para una máquina nueva: detecta/instala Python
-# >=3.13, crea el venv de este repo y lanza la TUI. No toca GPU/CUDA/Docker —
-# eso vive enteramente en las fases de [0] INSTALL dentro de la propia TUI.
+# >=3.13 (venv del daemon) y Rust (build del cliente), compila el binario
+# release y lanza la TUI vía rinthel-boot.sh. No toca GPU/CUDA/Docker — eso
+# vive enteramente en las fases de [0] INSTALL dentro de la propia TUI.
 # Idempotente: correrlo de nuevo con todo ya instalado no rompe nada.
 set -euo pipefail
 
@@ -62,4 +63,22 @@ fi
 
 "$DIR/.venv/bin/pip" install -q -e "$DIR"
 
-exec "$DIR/.venv/bin/python" -m rinthel_tui "$@"
+# ── Rust (cliente) ──────────────────────────────────────────────
+# Sesión 11 del port-map (issues/04-packaging-entrypoint.md): el binario
+# Rust es el cliente reemplazable, el daemon Python es la infraestructura
+# persistente — este script bootstrapea ambos toolchains, el arranque
+# real (autostart + pidfile) queda en rinthel-boot.sh.
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "[install] no encontré cargo — instalando Rust vía rustup (no interactivo)..." >&2
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    # rustup deja esto en ~/.bashrc para shells nuevas; esta sigue corriendo
+    # el script, así que lo sourceamos acá para que el cargo build de abajo
+    # lo encuentre sin reabrir terminal.
+    # shellcheck disable=SC1091
+    source "$HOME/.cargo/env"
+fi
+
+echo "[install] usando $(cargo --version)"
+(cd "$DIR/rinthel-client" && cargo build --release)
+
+exec "$DIR/rinthel-boot.sh" "$@"

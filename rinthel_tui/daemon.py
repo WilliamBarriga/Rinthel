@@ -121,6 +121,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -540,7 +541,11 @@ async def capture() -> JSONResponse:
 def main() -> None:
     import uvicorn
 
-    port = 8765  # puerto fijo, distinto de los 3 servicios reales
+    # Puerto propio del daemon (distinto de los 3 servicios reales) —
+    # overrideable por `.env` (sesión 11 del port-map: `rinthel-boot.sh` lo
+    # lee de ahí y se lo pasa al binario Rust como `--port`, mismo default
+    # 8765 de siempre si nadie lo setea).
+    port = int(os.getenv("RINTHEL_DAEMON_PORT", "8765"))
     print(f"[daemon] {time.strftime('%H:%M:%S')} arrancando en http://127.0.0.1:{port}")
     print(f"[daemon] tail real de: {cfg.llama.log}")
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

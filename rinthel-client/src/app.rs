@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::io;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode};
@@ -42,8 +43,27 @@ pub const TAGLINES: &[&str] = &[
     "Your body can be chrome, but the heart never changes.",
 ];
 
-pub const DAEMON: &str = "http://127.0.0.1:8765";
-const WS: &str = "ws://127.0.0.1:8765/ws/monitor";
+static DAEMON_PORT: OnceLock<u16> = OnceLock::new();
+
+/// Puerto del daemon — seteado una única vez desde `main()` (flag `--port`,
+/// que `rinthel-boot.sh` pasa leyendo `RINTHEL_DAEMON_PORT` del `.env`;
+/// sesión 11 del port-map). Sin setear todavía (tests, o correr el binario
+/// a mano sin boot.sh) cae al 8765 de siempre.
+pub fn set_daemon_port(port: u16) {
+    let _ = DAEMON_PORT.set(port);
+}
+
+fn daemon_port() -> u16 {
+    *DAEMON_PORT.get_or_init(|| 8765)
+}
+
+pub fn daemon_base() -> String {
+    format!("http://127.0.0.1:{}", daemon_port())
+}
+
+fn ws_url() -> String {
+    format!("ws://127.0.0.1:{}/ws/monitor", daemon_port())
+}
 const HIST_LEN: usize = 60;
 
 /// Eventos que las tareas de fondo empujan hacia el loop principal —
@@ -794,7 +814,7 @@ fn draw(f: &mut Frame, app: &App) {
 
 async fn ws_task(tx: mpsc::UnboundedSender<AppEvent>) {
     loop {
-        let conn = tokio_tungstenite::connect_async(WS).await;
+        let conn = tokio_tungstenite::connect_async(ws_url()).await;
         let Ok((stream, _)) = conn else {
             tokio::time::sleep(Duration::from_secs(2)).await;
             continue;
@@ -839,7 +859,7 @@ async fn ws_task(tx: mpsc::UnboundedSender<AppEvent>) {
 }
 
 async fn run_command(name: &'static str, path: &str, tx: mpsc::UnboundedSender<AppEvent>) {
-    let url = format!("{DAEMON}{path}");
+    let url = format!("{}{path}", daemon_base());
     match reqwest::Client::new().post(&url).send().await {
         Ok(resp) => match resp.json::<CommandResult>().await {
             Ok(result) => {
@@ -858,7 +878,7 @@ async fn run_command(name: &'static str, path: &str, tx: mpsc::UnboundedSender<A
 /// `GET /config` (sesión 09) — disparado al entrar a `ScreenId::Settings`,
 /// mismo trigger-on-entry que `run_command("capture", ...)`.
 async fn fetch_config(tx: mpsc::UnboundedSender<AppEvent>) {
-    let ev = match reqwest::get(format!("{DAEMON}/config")).await {
+    let ev = match reqwest::get(format!("{}/config", daemon_base())).await {
         Ok(resp) => match resp.json::<ConfigPayload>().await {
             Ok(payload) => AppEvent::ConfigLoaded(payload),
             Err(e) => AppEvent::ConfigLoadFailed(e.to_string()),
@@ -874,7 +894,7 @@ async fn fetch_config(tx: mpsc::UnboundedSender<AppEvent>) {
 /// terminan ambas en `ConfigSaveFailed`, mostradas igual (líneas de error).
 async fn save_config(overrides: HashMap<String, String>, tx: mpsc::UnboundedSender<AppEvent>) {
     let body = serde_json::json!({ "overrides": overrides });
-    let ev = match reqwest::Client::new().post(format!("{DAEMON}/config")).json(&body).send().await {
+    let ev = match reqwest::Client::new().post(format!("{}/config", daemon_base())).json(&body).send().await {
         Ok(resp) => match resp.json::<ConfigSaveResult>().await {
             Ok(result) if result.ok => AppEvent::ConfigSaved { written: result.written, warnings: result.warnings },
             Ok(result) => AppEvent::ConfigSaveFailed(result.errors),

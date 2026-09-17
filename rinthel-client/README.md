@@ -1,47 +1,57 @@
-# SPIKE — cliente Ratatui (ticket 05)
+# Cliente Ratatui de Rinthel
 
-Prototipo throwaway, no producción. Valida el diseño de los tickets 01-04 del
+Nació como spike (ticket 05) para validar el diseño de los tickets 01-04 del
 mapa [Ratatui TUI Migration](../.scratch/ratatui-migration/map.md) contra un
-cliente y un daemon reales. Vive en la rama `spike/ratatui-mvp-05`.
+cliente y un daemon reales. Ya no es un prototipo throwaway: es el cliente de
+uso diario, portado screen por screen (ver
+[port-map.md](../.scratch/ratatui-migration/port-map.md) para el estado
+actual). Vive en la rama `spike/ratatui-mvp-05` (nombre de rama histórico,
+sin relación con el estado actual del código).
 
 ## Qué es cada parte
 
 - **Daemon** — `../rinthel_tui/daemon.py` (promovido desde `daemon_spike.py`
   en sesión 04 del port-map). FastAPI, reusa de verdad
   `monitoring/resources.py` (GPU/CPU/RAM), `monitoring/services.py` (docker
-  ps) y `theme/palette.py` — todo de solo lectura. `boot`/`terminate` corren
-  `lifecycle/runner.py` **real** (arrancan/matan llama-server, Understory y
-  Pithagoras de verdad). `capture` sigue **simulado** (sin sesión de
-  hardening asignada todavía).
-- **Cliente** — este directorio, `rinthel-client-spike`. Ratatui + tokio +
+  ps) y `theme/palette.py` — todo de solo lectura. `boot`/`terminate`/
+  `reload`/`install` corren `lifecycle/runner.py` **real**. `capture` sigue
+  **simulado** (sin sesión de hardening asignada todavía, ver "Not yet
+  specified" en port-map.md).
+- **Cliente** — este directorio, `rinthel-client`. Ratatui + tokio +
   `tokio-tungstenite` (WebSocket) + `reqwest` (REST) + `ratatui-sci-fi`
   (tema Cyberpunk, widget `EnergyGauge`).
 
-## Correrlo (paso a paso — primera vez con Rust)
+## Correrlo
 
-1. **Rust ya está instalado** en este container (`rustup` corrido en esta
-   sesión: `rustc 1.98.1`). Si abrís una terminal nueva y `cargo` no
-   aparece, corré `source "$HOME/.cargo/env"` (o abrí una shell nueva —
-   `rustup` ya dejó eso en `~/.bashrc`... si no aparece, avisame).
+**Uso normal** — `../rinthel-boot.sh` desde la raíz del repo: autostartea el
+daemon si no está escuchando (guarda su PID en `.rinthel-daemon.pid`, junto
+al repo — sobrevive a que cierres el cliente) y lanza el binario del
+cliente (`target/release/rinthel`, `cargo build --release` primero si no
+existe todavía). `../rinthel-boot.sh --stop` apaga el daemon sin abrir el
+cliente. Puerto overrideable con `RINTHEL_DAEMON_PORT` en el `.env` de la
+raíz (default 8765). Ver sesión 11 del port-map para el detalle de diseño.
 
-2. **Levantar el daemon** (deja la terminal ocupada, corre en foreground):
+**Debugging puntual** (sin pasar por boot.sh):
+
+1. Levantar el daemon a mano (deja la terminal ocupada):
    ```bash
    cd ~/Rinthel-general
    .venv/bin/python -m rinthel_tui.daemon
    ```
-   Imprime el puerto (8765) y el archivo de log que está taileando. `Ctrl+C`
-   para pararlo.
-
-3. **En otra terminal, correr el cliente**:
+2. En otra terminal, correr el cliente contra ese daemon:
    ```bash
-   cd ~/Rinthel-general/rinthel-client-spike
-   source "$HOME/.cargo/env"
+   cd ~/Rinthel-general/rinthel-client
    cargo run
    ```
-   La primera vez compila todas las dependencias (~1 min). Las siguientes
-   son instantáneas (cache incremental de `cargo`, en `target/`).
+   (`cargo run -- --port N` si el daemon no quedó en el 8765 default.)
 
 ## Qué mirar / probar
+
+_Las tres secciones de abajo quedaron congeladas en el estado de las
+primeras sesiones del porteo (menú de 4 opciones, sin settings/logs/capture/
+farewell/install/effects) — no se reescriben retroactivamente, mismo
+criterio que las entradas cerradas de port-map.md. Para el estado actual,
+ver port-map.md._
 
 - **Menú**: `↑`/`↓` para moverse, `Enter` para elegir. `MONITOR` entra a la
   pantalla de métricas.
