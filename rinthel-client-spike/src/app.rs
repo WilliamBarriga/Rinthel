@@ -156,6 +156,11 @@ impl App {
                 self.command_in_flight = Some("terminate");
                 tokio::spawn(run_command("terminate", "/terminate", tx.clone()));
             }
+            MenuAction::Capture => {
+                self.screen = ScreenId::Capture;
+                self.command_in_flight = Some("capture");
+                tokio::spawn(run_command("capture", "/capture", tx.clone()));
+            }
             MenuAction::Quit => self.should_quit = true,
         }
     }
@@ -199,6 +204,12 @@ impl App {
                             }
                             (ScreenId::Menu, KeyCode::Enter) => self.dispatch_menu_action(&tx),
                             (ScreenId::Monitor, KeyCode::Esc) => self.screen = ScreenId::Menu,
+                            // CaptureScreen bloquea "volver" hasta terminar
+                            // (`action_dismiss_if_done` en capture.py) — acá
+                            // eso es "no hay POST /capture en vuelo".
+                            (ScreenId::Capture, KeyCode::Esc) if screens::capture::done(&self) => {
+                                self.screen = ScreenId::Menu;
+                            }
                             (ScreenId::Monitor, KeyCode::Char('b')) => {
                                 self.command_in_flight = Some("boot");
                                 tokio::spawn(run_command("boot", "/boot", tx.clone()));

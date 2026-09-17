@@ -65,3 +65,10 @@ fn terminate_result_shape() {
         .expect("terminate_result.json no matchea CommandResult");
     assert!(!result.results.is_empty());
 }
+
+#[test]
+fn capture_result_shape() {
+    let result: CommandResult =
+        serde_json::from_str(&fixture("capture_result.json")).expect("capture_result.json no matchea CommandResult");
+    assert!(!result.results.is_empty());
+}

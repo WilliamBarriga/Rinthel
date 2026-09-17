@@ -193,6 +193,28 @@ async def terminate() -> JSONResponse:
     return JSONResponse({"results": results})
 
 
+@app.post("/capture")
+async def capture() -> JSONResponse:
+    # SIMULADO a propósito, mismo criterio que boot/terminate arriba — no
+    # corre lifecycle/capture_profile.py real (no dispara llama-moe-trace
+    # contra la GPU). Decisión de Tarkark 2026-09-16 (sesión 03 del
+    # port-map); a diferencia de boot/terminate, todavía no hay sesión de
+    # hardening que lo vuelva real (anotado en port-map.md).
+    # `results[].service` reusa el campo de `ServiceOutcome` para nombrar
+    # cada sub-paso de `capture_profile` ("código"/"chat"), no un servicio.
+    plan = [
+        ("código", 1.5, True, "listo (simulado)"),
+        ("chat", 1.5, True, "listo (simulado)"),
+    ]
+    results = []
+    for name, secs, ok, msg in plan:
+        outcome = await _simulate_service(name, secs, ok, msg)
+        results.append(outcome)
+        if not outcome["ok"]:
+            break  # mismo criterio que boot: corta en el primer fallo
+    return JSONResponse({"results": results})
+
+
 def main() -> None:
     import uvicorn
 

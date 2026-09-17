@@ -72,3 +72,7 @@ def test_boot_result_shape():
 
 def test_terminate_result_shape():
     _assert_command_result_shape(_load("terminate_result.json"))
+
+
+def test_capture_result_shape():
+    _assert_command_result_shape(_load("capture_result.json"))
