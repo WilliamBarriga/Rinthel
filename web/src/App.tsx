@@ -1,3 +1,4 @@
+import { appendLiveEvent, resetLiveEvents } from "./live-events";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuPanelLeft, LuPlus } from "react-icons/lu";
 import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
@@ -152,12 +153,13 @@ function Shell({
       if (cancelled) return;
       const es = new EventSource(`/api/sessions/${sessionId}/events?since=${seq}`);
       esRef.current = es;
+      es.addEventListener("live-reset", () => setEvents(resetLiveEvents));
       es.onmessage = (m) => {
         const ev: PortalEvent = JSON.parse(m.data);
         // Live-only events (dialogs) use a negative seq and must not move the
         // resume cursor, or reconnecting would skip real history.
         if (ev.seq > 0) seq = ev.seq;
-        setEvents((prev) => [...prev, ev]);
+        setEvents((prev) => appendLiveEvent(prev, ev));
         // Applied straight from the event, not by re-fetching: the round trip
         // is what made the Stop button appear a beat late, or not at all when
         // the reply came back before the list did.

@@ -50,10 +50,10 @@ if [ ! -s models/kokoro-82m-q8_0.gguf ]; then
   download "https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/77af7ee6a8223df27baa2a952aebe142a8a4a929/Kokoro-82M-GGUF/kokoro-82m-q8_0.gguf" models/kokoro-82m-q8_0.gguf
 fi
 cat > /voice/server.json <<'JSON'
-{"host":"0.0.0.0","port":7861,"backend":"cpu","threads":4,"lazy_load":true,"idle_unload_ms":90000,"ui_management":true,"max_loaded_models":2,"models":[{"id":"breeze","family":"pocket_tts","path":"/voice/models/pocket-tts-spanish-q8_0.gguf","task":"tts","mode":"streaming"},{"id":"kokoro","family":"kokoro_tts","path":"/voice/models/kokoro-82m-q8_0.gguf","task":"tts","mode":"offline"}]}
+{"host":"127.0.0.1","port":7862,"backend":"cpu","threads":4,"lazy_load":true,"idle_unload_ms":90000,"ui_management":true,"max_loaded_models":2,"models":[{"id":"breeze","family":"pocket_tts","path":"/voice/models/pocket-tts-spanish-q8_0.gguf","task":"tts","mode":"streaming"},{"id":"kokoro","family":"kokoro_tts","path":"/voice/models/kokoro-82m-q8_0.gguf","task":"tts","mode":"offline"}]}
 JSON
 echo 'VOICE_STAGE: Starting speech services'
-whisper/build/bin/whisper-server --host 0.0.0.0 --port 8178 --model /voice/models/ggml-base.bin --language auto --threads 4 &
+whisper/build/bin/whisper-server --host 127.0.0.1 --port 8188 --model /voice/models/ggml-base.bin --language auto --threads 4 &
 whisper_pid=$!
 audio/build/portal/bin/audiocpp_server --config /voice/server.json &
 speech_pid=$!
