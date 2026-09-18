@@ -1,0 +1,731 @@
+import { useEffect, useState } from "react";
+import {
+  LuCheck,
+  LuChevronLeft,
+  LuChevronRight,
+  LuCircleAlert,
+  LuDownload,
+  LuFolder,
+  LuPackage,
+  LuPlus,
+  LuRadio,
+  LuRefreshCw,
+  LuTrash2,
+  LuTriangleAlert,
+} from "react-icons/lu";
+import { api, type BrokenChannelPackage, type Channel, type ChannelKind } from "../api";
+
+const inputCls =
+  "w-full rounded-lg border border-line bg-raised/60 px-3 py-2 text-sm outline-none transition placeholder:text-fg-faint focus:border-accent/60";
+const btnCls =
+  "inline-flex items-center gap-1.5 rounded-lg bg-fg/5 px-3 py-2 text-sm text-fg transition hover:bg-fg/10 disabled:opacity-40";
+const STATE_STYLE: Record<string, string> = {
+  running: "text-ok",
+  starting: "text-warn",
+  error: "text-danger",
+  stopped: "text-fg-subtle",
+};
+
+const primaryCls =
+  "inline-flex items-center gap-1.5 rounded-lg bg-accent/12 px-3 py-2 text-sm text-accent ring-1 ring-inset ring-accent/25 transition hover:bg-accent/20 disabled:opacity-40";
+
+/**
+ * Channels are two-way links into the agent — one long-lived session rooted at
+ * agentHome. Every channel talks to that same conversation, so this reads as
+ * "ways to reach the agent" rather than a list of separate bots.
+ */
+export function ChannelsPanel({ onError }: { onError: (e: string) => void }) {
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [kinds, setKinds] = useState<ChannelKind[]>([]);
+  const [broken, setBroken] = useState<BrokenChannelPackage[]>([]);
+  const [home, setHome] = useState("");
+  const [spec, setSpec] = useState("");
+  const [installing, setInstalling] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      const r = await api.channels();
+      setChannels(r.channels);
+      setKinds(r.kinds);
+      setBroken(r.broken ?? []);
+      setHome(r.agentHome);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    // Channels start, fail and log on their own schedule, so the page follows.
+    const t = setInterval(load, 4000);
+    return () => clearInterval(t);
+  }, []);
+
+  const kindOf = (id: string) => kinds.find((k) => k.id === id);
+
+  const act = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn();
+      await load();
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  };
+
+  const install = async () => {
+    setInstalling(true);
+    try {
+      await api.installChannelPackage(spec.trim());
+      setSpec("");
+      await load();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const open = channels.find((c) => c.id === openId);
+  if (openId && open) {
+    return (
+      <ChannelDetail
+        channel={open}
+        kind={kindOf(open.kind)}
+        onBack={() => setOpenId(null)}
+        onError={onError}
+        onChanged={load}
+      />
+    );
+  }
+
+  return (
+    <>
+      <section className="mb-6 rounded-xl border border-line bg-raised/40 p-3">
+        <div className="flex items-center gap-2">
+          <LuFolder className="h-3.5 w-3.5 shrink-0 text-fg-faint" />
+          <p className="text-xs text-fg-subtle">Agent home</p>
+          <p className="ml-auto truncate pl-3 font-mono text-xs text-fg-muted">{home || "…"}</p>
+        </div>
+        <p className="mt-1.5 text-xs text-fg-faint">
+          Every channel below is a door into one long-lived session running here. They share the
+          agent's memory rather than each starting a conversation of their own.
+        </p>
+      </section>
+
+      <section className="mb-6">
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+            Channels{channels.length ? ` (${channels.length})` : ""}
+          </h3>
+          <button onClick={load} className="text-[11px] text-fg-subtle hover:text-fg-muted">
+            Refresh
+          </button>
+        </div>
+
+        {loading ? (
+          <p className="mt-2 text-sm text-fg-subtle">Loading…</p>
+        ) : channels.length === 0 ? (
+          <div className="mt-2 rounded-xl border border-dashed border-line px-3 py-6 text-center text-sm text-fg-subtle">
+            No channels yet.
+            <p className="mt-1 text-xs text-fg-faint">
+              Add one below to reach the agent from outside the portal.
+            </p>
+          </div>
+        ) : (
+          <ul className="mt-2 space-y-1.5">
+            {channels.map((ch) => (
+              <ChannelRow
+                key={ch.id}
+                channel={ch}
+                kind={kindOf(ch.kind)}
+                onOpen={() => setOpenId(ch.id)}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mb-6">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Add channel</h3>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {kinds.map((k) => (
+            <button
+              key={k.id}
+              onClick={() => setAdding(adding === k.id ? null : k.id)}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm transition ${
+                adding === k.id
+                  ? "bg-accent/12 text-accent ring-1 ring-inset ring-accent/25"
+                  : "bg-fg/5 text-fg-muted hover:bg-fg/10"
+              }`}
+            >
+              <LuPlus className="h-3.5 w-3.5" />
+              {k.label}
+            </button>
+          ))}
+        </div>
+
+        {adding && kindOf(adding) && (
+          <NewChannelForm
+            kind={kindOf(adding)!}
+            onCancel={() => setAdding(null)}
+            onError={onError}
+            onCreated={async (created) => {
+              setAdding(null);
+              await load();
+              setOpenId(created.id);
+            }}
+          />
+        )}
+      </section>
+
+      <section className="mb-6">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Packages</h3>
+        <p className="mt-0.5 text-xs text-fg-subtle">
+          Channel types come from packages. Point at a GitHub repo following the convention and it
+          becomes available above.
+        </p>
+
+        <div className="mt-2 flex gap-2">
+          <input
+            value={spec}
+            onChange={(e) => setSpec(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && spec.trim() && install()}
+            placeholder="user/repo"
+            className={`${inputCls} font-mono text-xs`}
+          />
+          <button
+            disabled={!spec.trim() || installing}
+            onClick={install}
+            className={primaryCls}
+          >
+            {installing ? (
+              <LuRefreshCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <LuDownload className="h-4 w-4" />
+            )}
+            {installing ? "Installing…" : "Install"}
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] text-fg-faint">
+          Anything npm understands: <code>user/repo</code>, <code>github:user/repo#v2</code>, a git
+          URL, or an npm package name.
+        </p>
+
+        <ul className="mt-3 space-y-1">
+          {kinds.map((k) => (
+            <li
+              key={k.packageName}
+              className="flex items-center gap-2 rounded-lg border border-line bg-raised/40 px-3 py-2"
+            >
+              <LuPackage className="h-3.5 w-3.5 shrink-0 text-fg-faint" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs text-fg-muted">
+                  {k.label}{" "}
+                  <span className="font-mono text-[10px] text-fg-faint">{k.packageName}</span>
+                </p>
+                {!k.runnable && (
+                  <p className="text-[10px] text-warn/90">no start() — cannot run</p>
+                )}
+              </div>
+              {k.version && (
+                <span className="shrink-0 font-mono text-[10px] text-fg-faint">v{k.version}</span>
+              )}
+              {k.builtin ? (
+                <span className="shrink-0 rounded bg-fg/5 px-1.5 py-0.5 text-[10px] text-fg-subtle">
+                  builtin
+                </span>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (confirm(`Uninstall ${k.packageName}? Configured channels are kept.`)) {
+                      act(() => api.removeChannelPackage(k.packageName));
+                    }
+                  }}
+                  className="shrink-0 rounded p-1 text-fg-subtle hover:text-danger"
+                  title="Uninstall"
+                >
+                  <LuTrash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        {broken.length > 0 && (
+          <ul className="mt-2 space-y-1">
+            {broken.map((b) => (
+              <li
+                key={b.packageName}
+                className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
+              >
+                <LuCircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-[11px]">{b.packageName}</p>
+                  <p className="text-[11px] text-danger/80">{b.error}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <div className="flex items-start gap-2 rounded-xl border border-line bg-raised/40 px-3 py-2 text-xs text-fg-subtle">
+        <LuTriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg-faint" />
+        <p>
+          An enabled channel is started as soon as you save it, and again when the portal restarts.
+          Each conversation it sees becomes its own session on the Agent tab.
+        </p>
+      </div>
+    </>
+  );
+}
+
+function Toggle({
+  on,
+  onChange,
+  label,
+  hint,
+}: {
+  on: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  hint: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!on)}
+      className="flex w-full items-center gap-3 rounded-lg px-1 py-1.5 text-left transition hover:bg-fg/5"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-fg">{label}</p>
+        <p className="text-[11px] text-fg-subtle">{hint}</p>
+      </div>
+      <span
+        className={`relative h-5 w-9 shrink-0 rounded-full transition ${
+          on ? "bg-accent" : "bg-raised"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${
+            on ? "left-[1.125rem]" : "left-0.5"
+          }`}
+        />
+      </span>
+    </button>
+  );
+}
+
+/** A row in the list. Clicking it opens the channel's own page. */
+function ChannelRow({
+  channel: ch,
+  kind,
+  onOpen,
+}: {
+  channel: Channel;
+  kind?: ChannelKind;
+  onOpen: () => void;
+}) {
+  return (
+    <li>
+      <button
+        onClick={onOpen}
+        className="flex w-full items-center gap-2.5 rounded-xl border border-line bg-raised/40 px-3 py-2.5 text-left transition hover:bg-fg/5"
+      >
+        <LuRadio
+          className={`h-4 w-4 shrink-0 ${
+            ch.state === "running"
+              ? "text-ok"
+              : ch.state === "error"
+                ? "text-danger"
+                : "text-fg-faint"
+          }`}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm text-fg">{ch.name}</p>
+          <p className="truncate text-[11px] text-fg-faint">
+            <span className={STATE_STYLE[ch.state] ?? ""}>{ch.state}</span> ·{" "}
+            {kind?.label ?? ch.kind} · {ch.slug}
+            {ch.sessionCount ? ` · ${ch.sessionCount} chats` : ""}
+            {ch.instructions ? " · instructions" : ""}
+          </p>
+        </div>
+        {!ch.enabled && (
+          <span className="shrink-0 rounded bg-fg/5 px-1.5 py-0.5 text-[10px] text-fg-subtle">
+            disabled
+          </span>
+        )}
+        <LuChevronRight className="h-4 w-4 shrink-0 text-fg-faint" />
+      </button>
+    </li>
+  );
+}
+
+/**
+ * One channel's own page inside the modal. The list only has room for a name
+ * and a toggle; everything that needs explaining — credentials, and the
+ * instructions appended for messages arriving here — lives here instead.
+ */
+function ChannelDetail({
+  channel: ch,
+  kind,
+  onBack,
+  onError,
+  onChanged,
+}: {
+  channel: Channel;
+  kind?: ChannelKind;
+  onBack: () => void;
+  onError: (e: string) => void;
+  onChanged: () => Promise<void>;
+}) {
+  const [name, setName] = useState(ch.name);
+  const [values, setValues] = useState<Record<string, string>>({ ...ch.config });
+  const [instructions, setInstructions] = useState(ch.instructions ?? "");
+  const [slug, setSlug] = useState(ch.slug);
+  const [relayProgress, setRelayProgress] = useState(ch.relayProgress);
+  const [relayTools, setRelayTools] = useState(ch.relayTools);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setName(ch.name);
+    setValues({ ...ch.config });
+    setInstructions(ch.instructions ?? "");
+    setSlug(ch.slug);
+    setRelayProgress(ch.relayProgress);
+    setRelayTools(ch.relayTools);
+  }, [ch.id, ch.updated_at]);
+
+  const dirty =
+    name !== ch.name ||
+    slug !== ch.slug ||
+    relayProgress !== ch.relayProgress ||
+    relayTools !== ch.relayTools ||
+    instructions !== (ch.instructions ?? "") ||
+    kind?.fields.some((f) => (values[f.key] ?? "") !== (ch.config[f.key] ?? ""));
+
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await fn();
+      await onChanged();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = () =>
+    act(async () => {
+      await api.updateChannel(ch.id, {
+        name,
+        slug,
+        config: values,
+        instructions,
+        relayProgress,
+        relayTools,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    });
+
+  return (
+    <>
+      <button
+        onClick={onBack}
+        className="mb-4 inline-flex items-center gap-1.5 text-xs text-fg-subtle transition hover:text-fg-muted"
+      >
+        <LuChevronLeft className="h-3.5 w-3.5" /> Channels
+      </button>
+
+      <div className="mb-5 flex items-start gap-3">
+        <div
+          className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${
+            ch.state === "running"
+              ? "bg-ok/10 text-ok"
+              : ch.state === "error"
+                ? "bg-danger/10 text-danger"
+                : "bg-fg/5 text-fg-subtle"
+          }`}
+        >
+          <LuRadio className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full bg-transparent text-sm font-medium text-fg outline-none"
+          />
+          <p className="truncate text-xs text-fg-subtle">
+            {kind?.label ?? ch.kind} ·{" "}
+            <span className={STATE_STYLE[ch.state] ?? ""}>{ch.state}</span>
+            {ch.since && ch.state === "running" ? ` since ${new Date(ch.since).toLocaleTimeString()}` : ""}
+          </p>
+        </div>
+        <button
+          onClick={() => act(() => api.updateChannel(ch.id, { enabled: !ch.enabled }))}
+          disabled={busy}
+          title={ch.enabled ? "Disable" : "Enable"}
+          className={`relative mt-1 h-5 w-9 shrink-0 rounded-full transition disabled:opacity-40 ${
+            ch.enabled ? "bg-accent" : "bg-raised"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${
+              ch.enabled ? "left-[1.125rem]" : "left-0.5"
+            }`}
+          />
+        </button>
+      </div>
+
+      {ch.error && (
+        <div className="mb-5 flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+          <LuCircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <p className="min-w-0">{ch.error}</p>
+        </div>
+      )}
+
+      <section className="mb-6">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Identity</h3>
+        <p className="mt-0.5 text-xs text-fg-subtle">
+          The agent's conversations hang off this slug, not off the channel itself. Delete this
+          channel and recreate it under the same slug and its conversations come back; change the
+          slug and it starts fresh.
+        </p>
+        <input
+          value={slug}
+          onChange={(e) => setSlug(e.target.value)}
+          className={`${inputCls} mt-2 font-mono text-xs`}
+        />
+        <p className="mt-1 text-[11px] text-fg-faint">
+          {ch.sessionCount > 0
+            ? `${ch.sessionCount} conversation${ch.sessionCount === 1 ? "" : "s"} keyed to "${ch.slug}".`
+            : "No conversations yet."}
+        </p>
+      </section>
+
+      <section className="mb-6">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+          While it works
+        </h3>
+        <p className="mt-0.5 text-xs text-fg-subtle">
+          A real task takes minutes. These decide whether the chat shows that, or stays quiet until
+          there is an answer.
+        </p>
+        <div className="mt-2 space-y-1">
+          <Toggle
+            on={relayProgress}
+            onChange={setRelayProgress}
+            label="Progress"
+            hint="What the agent says between tool calls, as it says it"
+          />
+          <Toggle
+            on={relayTools}
+            onChange={setRelayTools}
+            label="Tool activity"
+            hint="The name of each tool as it runs — ⚙ bash · npm test"
+          />
+        </div>
+      </section>
+
+      <section className="mb-6">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+          Instructions
+        </h3>
+        <p className="mt-0.5 text-xs text-fg-subtle">
+          Appended to the agent's system prompt for every message that arrives through this
+          channel. Use it for standing guidance that only applies here — the shape of the reply,
+          who is on the other end, what to leave out.
+        </p>
+        <textarea
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+          rows={6}
+          placeholder={"You are answering over " + (kind?.label ?? "this channel") + ". Keep replies short — they are read on a phone. Never paste secrets or full file contents."}
+          className={`${inputCls} mt-2 resize-y text-xs leading-relaxed`}
+        />
+        <p className="mt-1 text-[11px] text-fg-faint">
+          Leave empty for none. The agent's own memory is shared across channels; this is not.
+        </p>
+      </section>
+
+      {kind && kind.fields.length > 0 && (
+        <section className="mb-6">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+            Connection
+          </h3>
+          <div className="mt-2 space-y-3">
+            {kind.fields.map((f) => (
+              <div key={f.key}>
+                <div className="flex items-baseline gap-2">
+                  <label className="font-mono text-xs text-fg-muted">{f.label}</label>
+                  {f.secret &&
+                    (ch.secretsSet.includes(f.key) ? (
+                      <span className="text-[10px] text-ok/80">stored</span>
+                    ) : (
+                      <span className="text-[10px] text-fg-faint">not set</span>
+                    ))}
+                </div>
+                <input
+                  type={f.secret ? "password" : "text"}
+                  value={values[f.key] ?? ""}
+                  onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+                  placeholder={
+                    f.secret && ch.secretsSet.includes(f.key)
+                      ? "leave blank to keep the stored value"
+                      : f.placeholder
+                  }
+                  className={`${inputCls} mt-1 font-mono text-xs`}
+                />
+                {f.hint && <p className="mt-1 text-[11px] text-fg-faint">{f.hint}</p>}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!kind && (
+        <div className="mb-6 flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+          <LuCircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <p>
+            No installed package provides “{ch.kind}”. Reinstall it to edit this channel, or delete
+            the channel below.
+          </p>
+        </div>
+      )}
+
+      {ch.log.length > 0 && (
+        <section className="mb-6">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Activity</h3>
+          <ul className="mt-2 max-h-40 space-y-0.5 overflow-y-auto rounded-xl border border-line bg-raised/60 p-2">
+            {[...ch.log].reverse().map((entry, i) => (
+              <li key={i} className="flex gap-2 font-mono text-[11px]">
+                <span className="shrink-0 text-fg-faint">
+                  {new Date(entry.at).toLocaleTimeString()}
+                </span>
+                <span className="min-w-0 text-fg-muted">{entry.text}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <div className="flex items-center gap-2">
+        <button onClick={save} disabled={busy || !dirty} className={primaryCls}>
+          {busy ? (
+            <LuRefreshCw className="h-4 w-4 animate-spin" />
+          ) : saved ? (
+            <>
+              <LuCheck className="h-4 w-4" /> Saved
+            </>
+          ) : (
+            "Save"
+          )}
+        </button>
+        <button
+          onClick={() => {
+            // Say what happens to the conversations rather than leaving someone
+            // to discover later that the agent forgot them.
+            const fate =
+              ch.sessionCount > 0
+                ? `\n\nIts ${ch.sessionCount} conversation${
+                    ch.sessionCount === 1 ? "" : "s"
+                  } are kept, and come back if you recreate a channel with the slug "${ch.slug}".`
+                : "";
+            if (confirm(`Remove "${ch.name}"?${fate}`)) {
+              act(async () => {
+                await api.deleteChannel(ch.id);
+                onBack();
+              });
+            }
+          }}
+          disabled={busy}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-fg-subtle transition hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+        >
+          <LuTrash2 className="h-3.5 w-3.5" /> Remove channel
+        </button>
+      </div>
+    </>
+  );
+}
+
+function NewChannelForm({
+  kind,
+  onCancel,
+  onCreated,
+  onError,
+}: {
+  kind: ChannelKind;
+  onCancel: () => void;
+  onCreated: (created: Channel) => Promise<void>;
+  onError: (e: string) => void;
+}) {
+  const [name, setName] = useState(kind.label);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setName(kind.label);
+    setValues({});
+  }, [kind.id]);
+
+  const create = async () => {
+    setBusy(true);
+    try {
+      const created = await api.createChannel(kind.id, name, values);
+      await onCreated(created);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 space-y-3 rounded-xl border border-line bg-raised/40 p-3">
+      <p className="text-xs text-fg-subtle">{kind.blurb}</p>
+
+      <div>
+        <label className="text-xs text-fg-muted">Name</label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className={`${inputCls} mt-1`}
+        />
+      </div>
+
+      {kind.fields.map((f) => (
+        <div key={f.key}>
+          <div className="flex items-baseline gap-2">
+            <label className="font-mono text-xs text-fg-muted">{f.label}</label>
+            {f.required && <span className="text-[10px] text-fg-faint">required</span>}
+          </div>
+          <input
+            type={f.secret ? "password" : "text"}
+            value={values[f.key] ?? ""}
+            onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+            placeholder={f.placeholder}
+            className={`${inputCls} mt-1 font-mono text-xs`}
+          />
+          {f.hint && <p className="mt-1 text-[11px] text-fg-faint">{f.hint}</p>}
+        </div>
+      ))}
+
+      <div className="flex items-center gap-2">
+        <button onClick={create} disabled={busy} className={primaryCls}>
+          {busy ? <LuRefreshCw className="h-4 w-4 animate-spin" /> : "Add channel"}
+        </button>
+        <button onClick={onCancel} className={btnCls}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}

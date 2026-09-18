@@ -1,0 +1,113 @@
+services:
+  portal:
+    build: .
+    container_name: pithagoras
+    restart: unless-stopped
+    network_mode: host
+    # Corre como el mismo uid/gid que el usuario del host (el usuario "node"
+    # de la imagen base ya es 1000:1000, el default más común en una
+    # instalación Ubuntu de un solo usuario) para que las carpetas y archivos
+    # que pi crea bajo /workspaces y /data queden con el dueño correcto en vez
+    # de root, y sean editables comodamente desde fuera del contenedor.
+    # Override con PUID/PGID en .env si tu uid/gid no es 1000:1000.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    cap_add:
+      - SYS_PTRACE
+      - CHOWN
+    # gid del grupo "docker" en el host, para que el usuario de arriba pueda
+    # hablar con /var/run/docker.sock cuando EXECUTOR=container. El GID de
+    # "docker" varía por máquina — DOCKER_GID lo genera el instalador con
+    # `getent group docker | cut -d: -f3`.
+    group_add:
+      - "${DOCKER_GID:-984}"
+    volumes:
+      - portal-data:/data
+      # Certificates, when you have them. Empty by default.
+      - ${PORTAL_TLS_DIR:-/dev/null}:/certs:ro
+      # Workspaces pi works in. Read-write: the whole point is that it edits code.
+      - ${WORKSPACES_DIR:-/root/repos}:/workspaces
+      # Required for managed Browser/Voice add-ons and EXECUTOR=container.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Selected host pi packages, mounted read-only at the exact path pi
+      # expects for their source string (npm:<name> / git:<host>/<path>),
+      # so pi finds them already "installed" and skips fetching. Declared
+      # in the container's own settings.json `packages` array separately —
+      # this mount alone isn't enough for pi to load them. The whole
+      # npm/node_modules tree is mounted (not just pi-web-access/) because
+      # all "npm:" installs share one flat node_modules — pi-web-access's
+      # own deps (linkedom, etc.) live as siblings, not nested inside it.
+      # This makes the other npm: packages' source readable too, but only
+      # the ones listed in settings.json `packages` actually get loaded.
+      # PI_AGENT_DIR must be an absolute path ($HOME/.pi/agent) — Compose
+      # does not expand "~". If unset, Docker silently mounts an empty dir
+      # here instead of failing, so pi loses these packages with no error.
+      - ${PI_AGENT_DIR}/npm/node_modules:/data/home/.pi/agent/npm/node_modules:ro
+      - ${PI_AGENT_DIR}/git/github.com/harms-haus/pi-processes:/data/home/.pi/agent/git/github.com/harms-haus/pi-processes:ro
+    environment:
+      # Must match container_name; managed voice shares this network namespace.
+      PORTAL_CONTAINER_NAME: pithagoras
+      # With host networking the portal binds PORT directly on the host.
+      PORT: ${PORT:-4100}
+      PORTAL_PASSWORD: ${PORTAL_PASSWORD:?set PORTAL_PASSWORD in .env}
+      # Keeps logins valid across restarts; generate with: openssl rand -hex 32
+      PORTAL_SECRET: ${PORTAL_SECRET:-}
+      # host = pi runs in this container | container = one container per task
+      EXECUTOR: ${EXECUTOR:-host}
+      # Overrides only — left empty so pi's own settings.json (defaultProvider,
+      # defaultModel) decides. Baking values in here made those unreachable.
+      PI_PROVIDER: ${PI_PROVIDER:-}
+      PI_MODEL: ${PI_MODEL:-}
+      PI_THINKING_LEVEL: ${PI_THINKING_LEVEL:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # Serve the portal over TLS when both are given. Needed for the embedded
+      # browser: the VNC client refuses to run unless every page above it is
+      # secure.
+      PORTAL_TLS_CERT: ${PORTAL_TLS_CERT:-}
+      PORTAL_TLS_KEY: ${PORTAL_TLS_KEY:-}
+      # Where a local llama.cpp server is listening. Host networking means the
+      # box's own address works from inside the container unchanged.
+      LLAMA_DISK_CACHE_MODELS: ${LLAMA_DISK_CACHE_MODELS:-}
+      LLAMA_BASE_URL: ${LLAMA_BASE_URL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Bearer token for understory's /mcp, read by pi-mcp-adapter via
+      # mcp.json's bearerTokenEnv (see /data/home/.pi/agent/mcp.json).
+      UNDERSTORY_TOKEN: ${UNDERSTORY_TOKEN:?set UNDERSTORY_TOKEN in .env}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  tailscale:
+    # Opcional — excluido de `docker compose up -d` por default (solo se
+    # levanta con `docker compose --profile vpn up -d`). Sin esto,
+    # TS_AUTHKEY:? bloquea TODO el stack (incluido portal) si no se setea,
+    # aunque no se quiera VPN.
+    profiles: ["vpn"]
+    image: tailscale/tailscale:latest
+    container_name: pithagoras-tailscale
+    restart: unless-stopped
+    network_mode: host          # mismo modelo que "portal" — sin esto el
+                                 # tráfico no llega al puerto 4100 del host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ts-state:/var/lib/tailscale
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY in .env}
+      TS_HOSTNAME: pithagoras
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_EXTRA_ARGS: --advertise-tags=tag:pithagoras --accept-dns=true
+      TS_USERSPACE: "false"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  portal-data:
+  ts-state:

@@ -1,0 +1,22 @@
+{
+  "name": "pithagoras",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "server",
+    "web",
+    "docs"
+  ],
+  "scripts": {
+    "build": "npm run build -w server && npm run build -w web",
+    "test": "npm run build -w server && npm test -w server && node --import tsx --test tests/completed-transcript.test.mts",
+    "dev:server": "npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "start": "node server/dist/index.js",
+    "docs": "npm run dev -w docs",
+    "docs:build": "npm run build -w docs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}
