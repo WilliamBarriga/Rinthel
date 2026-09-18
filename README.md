@@ -161,6 +161,32 @@ on stderr. The real failure (with a clear message) only happens if you
 pick BOOT and the llama-server spawn phase actually fails. More cases in
 [`docs/03-troubleshooting.md`](docs/03-troubleshooting.md).
 
+## Repos
+
+Understory and Pithagoras live inside this repo as `git subtree`s
+(`understory/`, `pithagoras/`), pulled from Tarkark's personal forks —
+[`WilliamBarriga/understory`](https://github.com/WilliamBarriga/understory)
+and [`WilliamBarriga/pithagoras`](https://github.com/WilliamBarriga/pithagoras)
+— not the upstream repos directly. This is groundwork for a future
+monorepo consolidation; it doesn't change how `install.sh`/`BOOT` run
+these services today (see [Credits](#credits) below).
+
+**Fork de facto**: no automatic sync, in either direction. Updates are
+manual, via `git subtree pull`/`push` plus cherry-pick when needed:
+
+```bash
+git subtree pull --prefix=understory understory-fork main
+git subtree pull --prefix=pithagoras pithagoras-fork main
+
+git subtree push --prefix=understory understory-fork main
+git subtree push --prefix=pithagoras pithagoras-fork main
+```
+
+Same policy applies between each personal fork and its own upstream
+(`thecodacus/understory`, `thecodacus/pithagoras`), and will apply between
+this repo and Plataforma Corp (a future sibling monorepo, the sellable
+product built on the same base) once it exists.
+
 ## Credits
 
 Three pieces of infrastructure that `[0] INSTALL` sets up are from
