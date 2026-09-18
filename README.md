@@ -217,3 +217,5 @@ pnpm --filter @understory/server exec tsx scripts/mcp-smoke.mts   # MCP stdio ro
 ## Environment
 
 See [.env.example](.env.example). `BUNDLE_ROOT` is required; `GIT_AUTOCOMMIT=true` commits every mutation.
+
+<!-- subtree smoke test marker: safe to ignore, will be reverted -->
