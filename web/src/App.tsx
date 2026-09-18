@@ -247,10 +247,10 @@ function Shell({
     navigate(`/s/${s.id}`);
   };
 
-  // --- Keyboard shortcut: Ctrl+Shift+N → New session in current workspace ---
+  // --- Keyboard shortcut: Ctrl+Alt+Shift+N → New session in current workspace ---
   useEffect(() => {
     const handleNewSession = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === "N") {
+      if (e.ctrlKey && e.altKey && e.shiftKey && e.key === "N") {
         e.preventDefault();
         onCreateSameWorkspace();
       }

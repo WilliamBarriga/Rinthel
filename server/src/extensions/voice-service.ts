@@ -36,7 +36,7 @@ export function containerSpec(script: string) {
     ExposedPorts: { '8178/tcp': {}, '7861/tcp': {} },
     HostConfig: { Binds: [`${VOLUME}:/voice`], DeviceRequests: [{ Driver: 'nvidia', Count: 1, Capabilities: [['gpu']] }],
       PortBindings: { '8178/tcp': [{ HostIp: '127.0.0.1', HostPort: '8188' }], '7861/tcp': [{ HostIp: '127.0.0.1', HostPort: '7862' }] },
-      RestartPolicy: { Name: 'no' }, LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '2' } } } };
+      RestartPolicy: { Name: 'on-failure', MaximumRetryCount: 3 }, LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '2' } } } };
 }
 export async function install() {
   if (pending) throw new Error('Voice setup is already in progress');

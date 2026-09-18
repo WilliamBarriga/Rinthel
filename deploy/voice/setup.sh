@@ -13,9 +13,11 @@ fi
 checkout() {
   local directory="$1" repository="$2" revision="$3"
   if [ ! -d "$directory/.git" ]; then git clone "$repository" "$directory"; fi
-  git -C "$directory" fetch --tags origin
-  git -C "$directory" checkout "$revision"
-  git -C "$directory" submodule update --init --recursive
+  if [ "$(git -C "$directory" rev-parse HEAD 2>/dev/null)" != "$revision" ]; then
+    git -C "$directory" fetch --tags origin
+    git -C "$directory" checkout "$revision"
+    git -C "$directory" submodule update --init --recursive
+  fi
 }
 echo 'VOICE_STAGE: Preparing pinned audio runtime'
 checkout audio https://github.com/0xShug0/audio.cpp.git 5ba81ac54fb071b835680973f8868546b4db372b

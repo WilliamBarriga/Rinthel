@@ -56,6 +56,7 @@ export function VoiceControl({ canvasOpen, onCanvasMinimize, onCanvasToggle, ses
   const [available, setAvailable] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [voiceSessionActive, setVoiceSessionActive] = useState(false);
   const [phase, setPhase] = useState<VoicePhase>("Listening");
   const [error, setError] = useState("");
   const [muted, setMuted] = useState(false);
@@ -112,7 +113,7 @@ export function VoiceControl({ canvasOpen, onCanvasMinimize, onCanvasToggle, ses
     stream.current?.getTracks().forEach(track => track.stop()); stream.current = null;
     const audio = context.current; context.current = null;
     if (audio && audio.state !== "closed") void audio.close();
-    if (mounted.current) { setEnabled(false); setStarting(false); setMuted(false); setSpeaking(false); setTranscript(""); }
+    if (mounted.current) { setEnabled(false); setStarting(false); setVoiceSessionActive(false); setMuted(false); setSpeaking(false); setTranscript(""); }
   };
   useEffect(() => {
     mounted.current = true;
@@ -141,9 +142,9 @@ export function VoiceControl({ canvasOpen, onCanvasMinimize, onCanvasToggle, ses
     if (compacting) transcription.current?.discard();
   }, [items, running, compacting, compactionEvent]);
   useEffect(() => {
-    onModeChange(enabled || starting);
+    onModeChange(voiceSessionActive || starting);
     return () => onModeChange(false);
-  }, [enabled, starting, onModeChange]);
+  }, [voiceSessionActive, starting, onModeChange]);
 
   const toggleMute = async () => {
     const detector = vad.current;
@@ -342,7 +343,7 @@ export function VoiceControl({ canvasOpen, onCanvasMinimize, onCanvasToggle, ses
       };
       await detector.start();
       if (!current()) return;
-      setEnabled(true); setStarting(false); cue("start");
+      setEnabled(true); setStarting(false); setVoiceSessionActive(true); cue("start");
     } catch (e) {
       if (current()) { setError((e as Error).message); stop(); }
     }
