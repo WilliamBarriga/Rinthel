@@ -21,9 +21,9 @@ checkout() {
 }
 echo 'VOICE_STAGE: Preparing pinned audio runtime'
 checkout audio https://github.com/0xShug0/audio.cpp.git 5ba81ac54fb071b835680973f8868546b4db372b
-if [ ! -x audio/build/portal/bin/audiocpp_server ] || ! grep -q 'AUDIOCPP_BUILD_NATIVE_MODEL_MANAGER:BOOL=ON' audio/build/portal/CMakeCache.txt; then
-  echo 'VOICE_STAGE: Building CPU speech runtime'
-  (cd audio && bash scripts/build_linux.sh --native-model-manager --system-openssl --cuda off --vulkan off --hip off --build-dir /voice/audio/build/portal --build-type Release --model-set custom --models pocket_tts,kokoro_tts --target audiocpp_server --jobs 4) 2>&1 | tr '\r' '\n'
+if [ ! -x audio/build/portal/bin/audiocpp_server ] || ! grep -q 'AUDIOCPP_BUILD_NATIVE_MODEL_MANAGER:BOOL=ON' audio/build/portal/CMakeCache.txt || ! grep -q 'ENGINE_ENABLE_CUDA:BOOL=ON' audio/build/portal/CMakeCache.txt; then
+  echo 'VOICE_STAGE: Building GPU speech runtime'
+  (cd audio && bash scripts/build_linux.sh --native-model-manager --system-openssl --cuda on --vulkan off --hip off --build-dir /voice/audio/build/portal --build-type Release --model-set full --target audiocpp_server --jobs 8) 2>&1 | tr '\r' '\n'
 fi
 echo 'VOICE_STAGE: Preparing CPU speech recognition'
 checkout whisper https://github.com/ggml-org/whisper.cpp.git a2b36eb677918d4f9ab1db7b8a7ff968563ed163
@@ -50,7 +50,7 @@ if [ ! -s models/kokoro-82m-q8_0.gguf ]; then
   download "https://huggingface.co/audio-cpp/audio.cpp-gguf/resolve/77af7ee6a8223df27baa2a952aebe142a8a4a929/Kokoro-82M-GGUF/kokoro-82m-q8_0.gguf" models/kokoro-82m-q8_0.gguf
 fi
 cat > /voice/server.json <<'JSON'
-{"host":"127.0.0.1","port":7862,"backend":"cpu","threads":4,"lazy_load":true,"idle_unload_ms":90000,"ui_management":true,"max_loaded_models":2,"models":[{"id":"breeze","family":"pocket_tts","path":"/voice/models/pocket-tts-spanish-q8_0.gguf","task":"tts","mode":"streaming"},{"id":"kokoro","family":"kokoro_tts","path":"/voice/models/kokoro-82m-q8_0.gguf","task":"tts","mode":"offline"}]}
+{"host":"127.0.0.1","port":7862,"backend":"cuda","threads":4,"lazy_load":true,"idle_unload_ms":90000,"ui_management":true,"max_loaded_models":2,"models":[{"id":"breeze","family":"pocket_tts","path":"/voice/models/pocket-tts-spanish-q8_0.gguf","task":"tts","mode":"streaming"},{"id":"kokoro","family":"kokoro_tts","path":"/voice/models/kokoro-82m-q8_0.gguf","task":"tts","mode":"offline"}]}
 JSON
 echo 'VOICE_STAGE: Starting speech services'
 whisper/build/bin/whisper-server --host 127.0.0.1 --port 8188 --model /voice/models/ggml-base.bin --language auto --threads 4 &

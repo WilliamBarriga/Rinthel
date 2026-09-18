@@ -172,9 +172,13 @@ export function voiceRouter(): Router {
     const settings = config();
     const form = new FormData();
     form.set("text", text); form.set("instruction", settings.instruction); form.set("cfg_scale", String(settings.cfgScale));
-    const native: Record<string, unknown> = { model: "breeze", input: text, stream: true, stream_format: "audio", response_format: "pcm", options: { instruction: settings.instruction, guidance_scale: String(settings.cfgScale), seed: "42", stream_frames_per_event: "8", stream_lookahead_margin: "4" } };
+    const native: Record<string, unknown> = { model: "breeze", input: text, stream: true, stream_format: "audio", response_format: "pcm", options: { instruction: settings.instruction, guidance_scale: String(settings.cfgScale), seed: "42", stream_frames_per_event: "8", stream_lookahead_margin: "12" } };
     const controller = new AbortController();
-    res.on("close", () => controller.abort());
+    let debugBytes = 0, debugFinished = false;
+    res.on("close", () => {
+      controller.abort();
+      if (!debugFinished) console.error(`[voice][diag] speech request closed early: bytes=${debugBytes} elapsedMs=${(performance.now()-speechStarted).toFixed(1)} textLen=${text.length}`);
+    });
     try {
       if (!['design','aria'].includes(settings.voice)) {
         const preset=readVoice(settings.voice);
@@ -226,10 +230,12 @@ export function voiceRouter(): Router {
             const { done, value } = await reader.read();
             if (done) break;
             bytes += value.length;
+            debugBytes = bytes;
             if (!res.write(value)) await once(res, "drain", { signal: controller.signal });
           }
           if (!bytes || bytes % 2) throw new Error("Breeze returned invalid PCM audio");
           res.end();
+          debugFinished = true;
         } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
         return;
       }

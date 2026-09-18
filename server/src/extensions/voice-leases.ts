@@ -9,6 +9,7 @@ export class VoiceLeases {
   }
   acquire(key:string) {
     this.leases.set(key,this.now()+75000);
+    if (this.loaded) return Promise.resolve();
     return this.serial(async()=>{try{await this.load();this.loaded=true;}catch(e){this.leases.delete(key);throw e;}});
   }
   release(key:string,lazy=true) { this.leases.delete(key);return this.sweep(lazy); }
