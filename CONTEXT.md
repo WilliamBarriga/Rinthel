@@ -1,6 +1,6 @@
 # Rinthel
 
-TUI de gestión de lifecycle para Rinthel/Understory/Pithagoras. Capa visual en migración de Textual (Python, in-process) a Ratatui (Rust) detrás de un límite de proceso — ver `.scratch/ratatui-migration/`.
+TUI de gestión de lifecycle para Rinthel/Understory/Pithagoras. Migración de Textual (Python, in-process) a Ratatui (Rust) completa — paridad alcanzada, Textual borrado del repo. La capa visual vive en `rinthel-client/` (Rust) detrás de un límite de proceso real; `rinthel_tui/` quedó como daemon headless (FastAPI). Ver `.scratch/ratatui-migration/` para el historial del porteo y [ADR 0001](docs/adr/0001-daemon-protocol-shape.md) para el protocolo.
 
 ## Language
 

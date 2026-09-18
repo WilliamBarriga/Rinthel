@@ -38,54 +38,74 @@ Settings → Add-ons.
 ## Lifecycle (async phases)
 
 The whole boot/shutdown flow is handled through explicit `async` phases —
-`rinthel_tui/lifecycle/`. The TUI starts at `SplashScreen` (duotone banner
-composing itself out of noise, glitch reveal) → `MenuScreen`:
+`rinthel_tui/lifecycle/` — but they no longer run in-process with the UI.
+`./rinthel-boot.sh` autostarts the daemon (pidfile-tracked, survives the TUI
+closing) if it isn't already up, then launches the Rust client. The client
+opens straight on the menu (glitch-reveal title, no separate splash screen)
+and drives everything through the daemon's HTTP/WS API — see
+[`docs/adr/0001-daemon-protocol-shape.md`](adr/0001-daemon-protocol-shape.md).
 
 ```
-[0] INSTALL     -- Initial setup (CUDA/model/Pithagoras/Understory)
-[1] BOOT        -- Bring everything up
-[2] RELOAD      -- Full shutdown + restart
-[3] TERMINATE   -- Full shutdown
-[4] LOGS        -- Watch llama-server live
-[5] CAPTURE     -- Capture MoE profile (routing profile)
-[6] MONITOR     -- Services/Docker/GPU/CPU status
-[7] CONFIGURE   -- Active services and parameters
-[8] EXIT        -- Close terminal
+MONITOR     -- Services/Docker/GPU/CPU status (live via /ws/monitor)
+BOOT        -- Bring everything up               (POST /boot)
+RELOAD      -- Full shutdown + restart            (POST /reload)
+TERMINATE   -- Full shutdown                      (POST /terminate)
+CONFIGURAR  -- Active services and parameters     (GET/POST /config)
+CAPTURE     -- Capture MoE profile (simulated)     (POST /capture)
+LOGS        -- Watch llama-server live
+INSTALL     -- Initial setup (CUDA/model/Pithagoras/Understory) (POST /install)
+SALIR       -- exit prompt ("¿apagar también el daemon?") → farewell
 ```
 
 ```
-SplashScreen (glitch reveal)
-       │
+Rinthel Client (Ratatui)
+       │  HTTP+WS 127.0.0.1:8765
        ▼
-   MenuScreen
+Rinthel Daemon (FastAPI, persistent — pidfile, survives client exit)
        │
-       ├── [0] INSTALL   ──▶ 6 phases: preflight → build → pithagoras → understory
-       ├── [1] BOOT       ──▶ docker → llama-server → understory → pithagoras
-       ├── [2] RELOAD     ──▶ 9 phases: full shutdown → full boot
-       └── [3] TERMINATE  ──▶ full shutdown
+       ├── INSTALL    ──▶ 6 phases: preflight → build → pithagoras → understory
+       ├── BOOT        ──▶ docker → llama-server → understory → pithagoras
+       ├── RELOAD      ──▶ 3 tandas (con phase_batch por WS): shutdown → boot → rebuild
+       └── TERMINATE   ──▶ full shutdown (sigue con lo que queda si una unidad falla)
 ```
 
 ## Project structure
 
+Two processes, one repo. The Python side is now daemon-only — no more
+`app.py`/Textual `tui/` (deleted, parity reached, see git history if you
+need it); all screens live in the Rust client.
+
 ```
-rinthel_tui/
-├── app.py               # entry point — RinthelApp
-├── config.py             # RinthelConfig — defaults + .env loading
-├── branding/              # duotone ASCII banner + composition animation
+rinthel_tui/                 # daemon (FastAPI) — headless, no UI code
+├── daemon.py                 # entry point — routes, cfg owner, /ws/monitor
+├── phase_bridge.py            # PhaseReport -> ServiceOutcome + phase_status/phase_log
+├── config_routes.py           # GET/POST /config shape + validate-before-write
+├── config.py                  # RinthelConfig — defaults + .env loading
+├── env_file.py                 # writes .env overrides
 ├── theme/
-│   ├── palette.py          # canonical palette — single source of truth
-│   └── cyberpunk_theme.py
-├── tui/
-│   ├── screens/            # Splash, Menu, PhaseRunner, Logs, Monitor, Capture, Reload, Farewell
-│   ├── widgets/             # sparkline, service_badge, checklist
-│   └── effects/             # flicker, transitions, intro
+│   └── palette.py               # canonical palette — single source of truth
+├── monitoring/
+│   ├── resources.py              # GPU/CPU/RAM sampling
+│   └── services.py                # docker compose ps
 └── lifecycle/
-    ├── install.py           # [0] INSTALL phases
-    ├── phases.py            # BOOT/DOWN/RELOAD phases
-    ├── services.py            # argv builders + LocalProcessService/DockerComposeService per service
-    ├── specs.py              # declarative phase lists
-    ├── runner.py             # async runner with per-phase progress
-    └── capture_profile.py    # MoE routing profile capture
+    ├── install.py                 # INSTALL phases
+    ├── phases.py                   # BOOT/DOWN/RELOAD phases
+    ├── managed_service.py           # LocalProcessService/DockerComposeService
+    ├── services.py                   # argv builders per service
+    ├── specs.py                       # declarative phase lists
+    ├── runner.py                       # async runner with per-phase progress
+    └── capture_profile.py               # MoE routing profile capture (POST /capture is simulated)
+
+rinthel-client/               # TUI (Ratatui) — the only UI, talks HTTP+WS to the daemon
+├── src/
+│   ├── main.rs                 # entry point
+│   ├── app.rs                    # event loop, daemon base URL, effect state
+│   ├── protocol.rs                 # serde structs mirroring the daemon's JSON
+│   ├── screens/                     # menu, monitor, logs, capture, phase_runner,
+│   │                                  settings, exit_prompt, farewell
+│   ├── widgets/                      # checklist, log_tail
+│   └── effects/                       # flicker (glitch reveal), tagline, transitions
+└── tests/                     # e2e_smoke.rs, protocol_fixtures.rs
 ```
 
 ## Ecosystem — shared palette
@@ -106,8 +126,8 @@ without updating the other side desyncs them visually.
 ## Development
 
 `scripts/test_phases.py` runs individual phases or full lists against
-real infrastructure, without going through Textual — useful for testing
-`lifecycle/` changes quickly:
+real infrastructure, without going through the daemon or the client —
+useful for testing `lifecycle/` changes quickly:
 
 ```bash
 .venv/bin/python scripts/test_phases.py list
@@ -117,4 +137,10 @@ real infrastructure, without going through Textual — useful for testing
 ```
 
 It's not a `pytest` test suite (it operates against real Docker/GPU, no
-mocks) — that's intentional, it lives in `scripts/`, not `tests/`.
+mocks) — that's intentional, it lives in `scripts/`, not `tests/`. It talks
+to `lifecycle/` directly, bypassing both the daemon's HTTP layer and the
+Rust client.
+
+For the client/daemon pair itself: `rinthel-client/tests/e2e_smoke.rs` (real
+daemon subprocess) and `protocol_fixtures.rs` (JSON shape checks) on the
+Rust side; `tests/daemon/` on the Python side.

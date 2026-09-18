@@ -77,12 +77,12 @@
       "row": 4
     },
     {
-      "id": "rinthel_tui",
+      "id": "rinthel_daemon",
       "type": "backend",
-      "label": "Rinthel TUI (INSTALL phase)",
+      "label": "Rinthel Daemon (INSTALL phase, POST /install)",
       "brand": "python",
       "size": [
-        212,
+        329,
         60
       ],
       "col": 1,
@@ -128,17 +128,17 @@
   "connections": [
     {
       "from": "github_llama_cpp",
-      "to": "rinthel_tui",
+      "to": "rinthel_daemon",
       "label": "git clone + cmake build (INSTALL phase)"
     },
     {
       "from": "github_pithagoras",
-      "to": "rinthel_tui",
+      "to": "rinthel_daemon",
       "label": "git clone + config (INSTALL phase)"
     },
     {
       "from": "hugging_face",
-      "to": "rinthel_tui",
+      "to": "rinthel_daemon",
       "label": "model download",
       "labelDy": -26
     },
@@ -154,13 +154,13 @@
       "label": "image pull"
     },
     {
-      "from": "rinthel_tui",
+      "from": "rinthel_daemon",
       "to": "llama_cpp_fork",
       "label": "cmake --build (CUDA)"
     },
     {
       "from": "test_tarkairk",
-      "to": "rinthel_tui",
+      "to": "rinthel_daemon",
       "label": "reads rinthel_tui.config / lifecycle.phases (read-only)",
       "variant": "dashed",
       "labelDy": -35

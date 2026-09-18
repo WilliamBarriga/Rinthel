@@ -10,7 +10,7 @@
       40,
       80
     ],
-    "cols": 4,
+    "cols": 5,
     "gapX": 100,
     "gapY": 90,
     "cellW": 479,
@@ -40,15 +40,27 @@
       "row": 0
     },
     {
-      "id": "rinthel_tui",
-      "type": "backend",
-      "label": "Rinthel TUI (orchestrator)",
-      "brand": "python",
+      "id": "rinthel_client",
+      "type": "frontend",
+      "label": "Rinthel Client (Ratatui, rinthel-boot.sh)",
+      "brand": "rust",
       "size": [
-        206,
+        303,
         60
       ],
       "col": 1,
+      "row": 1
+    },
+    {
+      "id": "rinthel_daemon",
+      "type": "backend",
+      "label": "Rinthel Daemon (FastAPI, persistent) 127.0.0.1:8765",
+      "brand": "python",
+      "size": [
+        368,
+        60
+      ],
+      "col": 2,
       "row": 1
     },
     {
@@ -70,7 +82,7 @@
         329,
         60
       ],
-      "col": 2,
+      "col": 3,
       "row": 0
     },
     {
@@ -81,8 +93,8 @@
         264,
         60
       ],
-      "col": 3,
-      "row": 9
+      "col": 4,
+      "row": 5
     },
     {
       "id": "portal_db",
@@ -93,7 +105,7 @@
         154,
         60
       ],
-      "col": 3,
+      "col": 4,
       "row": 0
     },
     {
@@ -104,7 +116,7 @@
         219,
         60
       ],
-      "col": 3,
+      "col": 4,
       "row": 1
     },
     {
@@ -115,7 +127,7 @@
         245,
         60
       ],
-      "col": 3,
+      "col": 4,
       "row": 2
     },
     {
@@ -126,7 +138,7 @@
         329,
         60
       ],
-      "col": 3,
+      "col": 4,
       "row": 3
     },
     {
@@ -138,7 +150,7 @@
         479,
         60
       ],
-      "col": 3,
+      "col": 4,
       "row": 4
     }
   ],
@@ -185,7 +197,8 @@
       "kind": "region",
       "label": "Host Machine",
       "wraps": [
-        "rinthel_tui",
+        "rinthel_client",
+        "rinthel_daemon",
         "llama_server",
         "understory",
         "pithagoras",
@@ -199,8 +212,8 @@
   "connections": [
     {
       "from": "tarkark",
-      "to": "rinthel_tui",
-      "label": "starts (terminal, host machine)"
+      "to": "rinthel_client",
+      "label": "starts (./rinthel-boot.sh, terminal)"
     },
     {
       "from": "tarkark",
@@ -208,18 +221,37 @@
       "label": "uses (separate from the TUI)"
     },
     {
-      "from": "rinthel_tui",
-      "to": "llama_server",
-      "label": "spawns (LocalProcessService)"
+      "from": "rinthel_client",
+      "to": "rinthel_daemon",
+      "label": "HTTP+WS 127.0.0.1:8765 (REST + /ws/monitor)",
+      "labelDy": -45
     },
     {
-      "from": "rinthel_tui",
+      "from": "rinthel_daemon",
+      "to": "rinthel_client"
+    },
+    {
+      "from": "rinthel_client",
+      "to": "rinthel_daemon",
+      "label": "autostart if not running (pidfile)",
+      "variant": "dashed",
+      "labelDy": 45
+    },
+    {
+      "from": "rinthel_daemon",
+      "to": "llama_server",
+      "label": "spawns (LocalProcessService)",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "rinthel_daemon",
       "to": "understory",
       "label": "docker compose up/down",
       "labelDy": 122
     },
     {
-      "from": "rinthel_tui",
+      "from": "rinthel_daemon",
       "to": "pithagoras",
       "label": "docker compose up/down"
     },

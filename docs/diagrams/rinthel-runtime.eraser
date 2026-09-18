@@ -3,10 +3,11 @@ direction: right
 
 Tarkark [icon: user, type: client, label: "Tarkark (user)"]
 Browser client [icon: browser]
-External LLM [icon: cloud, type: external, label: "External LLM (OpenRouter/Anthropic)", row: 9, col: 3]
+External LLM [icon: cloud, type: external, label: "External LLM (OpenRouter/Anthropic)", row: 5, col: 4]
 
 Host Machine {
-  Rinthel TUI [icon: python, label: "Rinthel TUI (orchestrator)"]
+  Rinthel Client [icon: rust, type: frontend, label: "Rinthel Client (Ratatui, rinthel-boot.sh)", row: 1, col: 1]
+  Rinthel Daemon [icon: python, label: "Rinthel Daemon (FastAPI, persistent) 127.0.0.1:8765", row: 1, col: 2]
   llama-server [icon: server, label: "llama-server (CUDA) 127.0.0.1:8080", row: 2, col: 2]
 
   Docker Engine {
@@ -27,11 +28,13 @@ Host Machine {
   }
 }
 
-Tarkark > Rinthel TUI: starts (terminal, host machine)
+Tarkark > Rinthel Client: starts (./rinthel-boot.sh, terminal)
 Tarkark > Browser client: uses (separate from the TUI)
-Rinthel TUI > llama-server: spawns (LocalProcessService)
-Rinthel TUI > Understory: docker compose up/down {labelDy: 122}
-Rinthel TUI > Pithagoras: docker compose up/down
+Rinthel Client <> Rinthel Daemon: HTTP+WS 127.0.0.1:8765 (REST + /ws/monitor)
+Rinthel Client > Rinthel Daemon: autostart if not running (pidfile) {style: dashed}
+Rinthel Daemon > llama-server: spawns (LocalProcessService) {fromSide: bottom, toSide: top}
+Rinthel Daemon > Understory: docker compose up/down {labelDy: 122}
+Rinthel Daemon > Pithagoras: docker compose up/down
 Browser client > Pithagoras: HTTPS/SSE :4100
 Pithagoras > llama-server: HTTP :8080, OpenAI-compatible {fromSide: bottom, toSide: top}
 Pithagoras > Understory: MCP :3800, bearer token

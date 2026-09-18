@@ -5159,13 +5159,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 
         <!-- Connection paths (before components for correct z-order) -->
-        <path data-edge-from="github_llama_cpp" data-edge-to="rinthel_tui" data-edge-label="git clone + cmake build (INSTALL phase)" data-edge-key="0" data-composition-points="337,96;560,96" d="M 337 96 L 560 96" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="github_pithagoras" data-edge-to="rinthel_tui" data-edge-label="git clone + config (INSTALL phase)" data-edge-key="1" data-composition-points="460,264;510,264;510,105.33333333333333;560,105.33333333333333" d="M 460 264 L 502 264 Q 510 264 510 256 L 510 113.33333333333333 Q 510 105.33333333333333 518 105.33333333333333 L 560 105.33333333333333" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="hugging_face" data-edge-to="rinthel_tui" data-edge-label="model download" data-edge-key="2" data-composition-points="369,418;464.5,418;464.5,114.66666666666667;560,114.66666666666667" d="M 369 418 L 456.5 418 Q 464.5 418 464.5 410 L 464.5 122.66666666666667 Q 464.5 114.66666666666667 472.5 114.66666666666667 L 560 114.66666666666667" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="github_llama_cpp" data-edge-to="rinthel_daemon" data-edge-label="git clone + cmake build (INSTALL phase)" data-edge-key="0" data-composition-points="337,96;560,96" d="M 337 96 L 560 96" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="github_pithagoras" data-edge-to="rinthel_daemon" data-edge-label="git clone + config (INSTALL phase)" data-edge-key="1" data-composition-points="460,264;510,264;510,105.33333333333333;560,105.33333333333333" d="M 460 264 L 502 264 Q 510 264 510 256 L 510 113.33333333333333 Q 510 105.33333333333333 518 105.33333333333333 L 560 105.33333333333333" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="hugging_face" data-edge-to="rinthel_daemon" data-edge-label="model download" data-edge-key="2" data-composition-points="369,418;464.5,418;464.5,114.66666666666667;560,114.66666666666667" d="M 369 418 L 456.5 418 Q 464.5 418 464.5 410 L 464.5 122.66666666666667 Q 464.5 114.66666666666667 472.5 114.66666666666667 L 560 114.66666666666667" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="ghcr" data-edge-to="understory_image" data-edge-label="image pull" data-edge-key="3" data-composition-points="259,565;536,565;536,264;560,264" d="M 259 565 L 528 565 Q 536 565 536 557 L 536 272 Q 536 264 544 264 L 560 264" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="ghcr" data-edge-to="pithagoras_image" data-edge-label="image pull" data-edge-key="4" data-composition-points="259,579;409.5,579;409.5,418;560,418" d="M 259 579 L 401.5 579 Q 409.5 579 409.5 571 L 409.5 426 Q 409.5 418 417.5 418 L 560 418" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="rinthel_tui" data-edge-to="llama_cpp_fork" data-edge-label="cmake --build (CUDA)" data-edge-key="5" data-composition-points="772,103;1080,103" d="M 772 103 L 1080 103" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="test_tarkairk" data-edge-to="rinthel_tui" data-edge-label="reads rinthel_tui.config / lifecycle.phases (read-only)" data-edge-key="6" data-composition-points="330,733;536,733;536,124;560,124" d="M 330 733 L 528 733 Q 536 733 536 725 L 536 132 Q 536 124 544 124 L 560 124" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="rinthel_daemon" data-edge-to="llama_cpp_fork" data-edge-label="cmake --build (CUDA)" data-edge-key="5" data-composition-points="889,103;1080,103" d="M 889 103 L 1080 103" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="test_tarkairk" data-edge-to="rinthel_daemon" data-edge-label="reads rinthel_tui.config / lifecycle.phases (read-only)" data-edge-key="6" data-composition-points="330,733;536,733;536,124;560,124" d="M 330 733 L 528 733 Q 536 733 536 725 L 536 132 Q 536 124 544 124 L 560 124" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="test_tarkairk" data-edge-to="llama_cpp_fork" data-edge-label="spawns throwaway llama-server (benchmarking)" data-edge-key="7" data-composition-points="330,719;1056,719;1056,117;1080,117" d="M 330 719 L 1048 719 Q 1056 719 1056 711 L 1056 125 Q 1056 117 1064 117 L 1080 117" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
 
         <!-- Components -->
@@ -5239,19 +5239,19 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <text data-node-label="" x="185" y="730" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">~/test-tarkAIrk (perf R&amp;D lab, offline)</text>
         </g>
 
-        <g id="node-rinthel_tui" data-node-id="rinthel_tui" data-node-label="Rinthel TUI (INSTALL phase)" tabindex="0" role="button" aria-label="Focus Rinthel TUI (INSTALL phase), Architecture component, Python" aria-pressed="false" data-node-kind="backend" data-node-context="Architecture component" data-node-brand="Python" data-node-brand-id="python" data-node-brand-status="preset" data-node-brand-source="https://www.python.org/community/logos/">
-          <title>Rinthel TUI (INSTALL phase) · Architecture component · Python</title>
-          <rect x="560" y="80" width="212" height="60" rx="6" class="c-mask"/>
-          <rect x="560" y="80" width="212" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
+        <g id="node-rinthel_daemon" data-node-id="rinthel_daemon" data-node-label="Rinthel Daemon (INSTALL phase, POST /install)" tabindex="0" role="button" aria-label="Focus Rinthel Daemon (INSTALL phase, POST /install), Architecture component, Python" aria-pressed="false" data-node-kind="backend" data-node-context="Architecture component" data-node-brand="Python" data-node-brand-id="python" data-node-brand-status="preset" data-node-brand-source="https://www.python.org/community/logos/">
+          <title>Rinthel Daemon (INSTALL phase, POST /install) · Architecture component · Python</title>
+          <rect x="560" y="80" width="329" height="60" rx="6" class="c-mask"/>
+          <rect x="560" y="80" width="329" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(566 86) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <g aria-hidden="true" data-brand-mark="python" data-brand-title="Python" data-brand-status="preset" data-brand-source="https://www.python.org/community/logos/" class="brand-mark" transform="translate(750 86)">
+          <g aria-hidden="true" data-brand-mark="python" data-brand-title="Python" data-brand-status="preset" data-brand-source="https://www.python.org/community/logos/" class="brand-mark" transform="translate(867 86)">
             <rect width="16" height="16" rx="4" class="brand-mark-badge"/>
             <path d="M14.25.18l.9.2.73.26.59.3.45.32.34.34.25.34.16.33.1.3.04.26.02.2-.01.13V8.5l-.05.63-.13.55-.21.46-.26.38-.3.31-.33.25-.35.19-.35.14-.33.1-.3.07-.26.04-.21.02H8.77l-.69.05-.59.14-.5.22-.41.27-.33.32-.27.35-.2.36-.15.37-.1.35-.07.32-.04.27-.02.21v3.06H3.17l-.21-.03-.28-.07-.32-.12-.35-.18-.36-.26-.36-.36-.35-.46-.32-.59-.28-.73-.21-.88-.14-1.05-.05-1.23.06-1.22.16-1.04.24-.87.32-.71.36-.57.4-.44.42-.33.42-.24.4-.16.36-.1.32-.05.24-.01h.16l.06.01h8.16v-.83H6.18l-.01-2.75-.02-.37.05-.34.11-.31.17-.28.25-.26.31-.23.38-.2.44-.18.51-.15.58-.12.64-.1.71-.06.77-.04.84-.02 1.27.05zm-6.3 1.98l-.23.33-.08.41.08.41.23.34.33.22.41.09.41-.09.33-.22.23-.34.08-.41-.08-.41-.23-.33-.33-.22-.41-.09-.41.09zm13.09 3.95l.28.06.32.12.35.18.36.27.36.35.35.47.32.59.28.73.21.88.14 1.04.05 1.23-.06 1.23-.16 1.04-.24.86-.32.71-.36.57-.4.45-.42.33-.42.24-.4.16-.36.09-.32.05-.24.02-.16-.01h-8.22v.82h5.84l.01 2.76.02.36-.05.34-.11.31-.17.29-.25.25-.31.24-.38.2-.44.17-.51.15-.58.13-.64.09-.71.07-.77.04-.84.01-1.27-.04-1.07-.14-.9-.2-.73-.25-.59-.3-.45-.33-.34-.34-.25-.34-.16-.33-.1-.3-.04-.25-.02-.2.01-.13v-5.34l.05-.64.13-.54.21-.46.26-.38.3-.32.33-.24.35-.2.35-.14.33-.1.3-.06.26-.04.21-.02.13-.01h5.84l.69-.05.59-.14.5-.21.41-.28.33-.32.27-.35.2-.36.15-.36.1-.35.07-.32.04-.28.02-.21V6.07h2.09l.14.01zm-6.47 14.25l-.23.33-.08.41.08.41.23.33.33.23.41.08.41-.08.33-.23.23-.33.08-.41-.08-.41-.23-.33-.33-.23-.41-.08-.41.08z" transform="translate(3 3) scale(0.4166666666666667)" fill="#3776AB"/>
             <rect width="16" height="16" rx="4" class="brand-mark-frame"/>
           </g>
-          <text data-node-label="" x="666" y="114" class="t-primary" font-size="9.6" font-weight="600" text-anchor="middle">Rinthel TUI (INSTALL phase)</text>
+          <text data-node-label="" x="724.5" y="114" class="t-primary" font-size="10.1" font-weight="600" text-anchor="middle">Rinthel Daemon (INSTALL phase, POST /install)</text>
         </g>
 
         <g id="node-understory_image" data-node-id="understory_image" data-node-label="Understory image" tabindex="0" role="button" aria-label="Focus Understory image, Architecture component, Docker" aria-pressed="false" data-node-kind="cloud" data-node-context="Architecture component" data-node-brand="Docker" data-node-brand-id="docker" data-node-brand-status="preset" data-node-brand-source="https://www.docker.com/company/newsroom/media-resources">
@@ -5295,15 +5295,15 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         </g>
 
         <!-- Connection labels -->
-        <g data-detail="context" data-edge-from="github_llama_cpp" data-edge-to="rinthel_tui" data-edge-label="git clone + cmake build (INSTALL phase)" data-edge-key="0">
+        <g data-detail="context" data-edge-from="github_llama_cpp" data-edge-to="rinthel_daemon" data-edge-label="git clone + cmake build (INSTALL phase)" data-edge-key="0">
           <rect x="349.9" y="76" width="197.2" height="14" rx="3" class="c-mask"/>
           <text x="448.5" y="86" class="t-muted" font-size="8" text-anchor="middle">git clone + cmake build (INSTALL phase)</text>
         </g>
-        <g data-detail="context" data-edge-from="github_pithagoras" data-edge-to="rinthel_tui" data-edge-label="git clone + config (INSTALL phase)" data-edge-key="1">
+        <g data-detail="context" data-edge-from="github_pithagoras" data-edge-to="rinthel_daemon" data-edge-label="git clone + config (INSTALL phase)" data-edge-key="1">
           <rect x="423.4" y="164.66666666666666" width="173.2" height="14" rx="3" class="c-mask"/>
           <text x="510" y="174.66666666666666" class="t-muted" font-size="8" text-anchor="middle">git clone + config (INSTALL phase)</text>
         </g>
-        <g data-detail="context" data-edge-from="hugging_face" data-edge-to="rinthel_tui" data-edge-label="model download" data-edge-key="2">
+        <g data-detail="context" data-edge-from="hugging_face" data-edge-to="rinthel_daemon" data-edge-label="model download" data-edge-key="2">
           <rect x="425.9" y="220.33333333333331" width="77.2" height="14" rx="3" class="c-mask"/>
           <text x="464.5" y="230.33333333333331" class="t-muted" font-size="8" text-anchor="middle">model download</text>
         </g>
@@ -5315,11 +5315,11 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <rect x="380.5" y="478.5" width="58" height="14" rx="3" class="c-mask"/>
           <text x="409.5" y="488.5" class="t-muted" font-size="8" text-anchor="middle">image pull</text>
         </g>
-        <g data-detail="context" data-edge-from="rinthel_tui" data-edge-to="llama_cpp_fork" data-edge-label="cmake --build (CUDA)" data-edge-key="5">
-          <rect x="873" y="83" width="106" height="14" rx="3" class="c-mask"/>
-          <text x="926" y="93" class="t-muted" font-size="8" text-anchor="middle">cmake --build (CUDA)</text>
+        <g data-detail="context" data-edge-from="rinthel_daemon" data-edge-to="llama_cpp_fork" data-edge-label="cmake --build (CUDA)" data-edge-key="5">
+          <rect x="931.5" y="83" width="106" height="14" rx="3" class="c-mask"/>
+          <text x="984.5" y="93" class="t-muted" font-size="8" text-anchor="middle">cmake --build (CUDA)</text>
         </g>
-        <g data-detail="context" data-edge-from="test_tarkairk" data-edge-to="rinthel_tui" data-edge-label="reads rinthel_tui.config / lifecycle.phases (read-only)" data-edge-key="6">
+        <g data-detail="context" data-edge-from="test_tarkairk" data-edge-to="rinthel_daemon" data-edge-label="reads rinthel_tui.config / lifecycle.phases (read-only)" data-edge-key="6">
           <rect x="399" y="373.5" width="274" height="14" rx="3" class="c-mask"/>
           <text x="536" y="383.5" class="t-messagebus" font-size="8" text-anchor="middle">reads rinthel_tui.config / lifecycle.phases (read-only)</text>
         </g>
