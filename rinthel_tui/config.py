@@ -30,13 +30,34 @@ from typing import Any, Callable
 
 from dotenv import load_dotenv
 
+def _find_repo_root(start: Path) -> Path:
+    """Ancestro más cercano con ``.git`` — no ``parent.parent`` fijo.
+
+    Este mismo archivo vive a distinta profundidad según el monorepo: a un
+    nivel de la raíz acá (Monorepo Rinthel), pero un nivel más adentro en
+    Plataforma Corp (``rinthel/rinthel_tui/``, subtree congelado). Buscar
+    ``.git`` hacia arriba da el resultado correcto en los dos sin bifurcar
+    esta constante — el subtree no trae ``.git`` propio (merge, no nested
+    repo), así que no hay falso positivo a mitad de camino.
+    """
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return start.parent.parent  # fallback si se corre fuera de un repo git
+
+
+# Raíz del repo — ancla tanto la búsqueda de .env como los defaults de
+# understory.dir/pithagoras.dir más abajo, independiente de con qué cwd se
+# lance el TUI/daemon (y de a qué profundidad viva este archivo).
+REPO_ROOT = _find_repo_root(Path(__file__).resolve().parent)
+
 # find_dotenv()/load_dotenv() sin argumentos busca a partir del cwd del
 # proceso, no de este archivo — si el TUI se lanza desde fuera del repo
 # (p. ej. el menú principal, o cualquier launcher con otro cwd), el .env
 # queda mudo y default_config() vuelve a sus defaults (context_window=112000
 # en vez de lo que diga .env), sin ningún aviso. Anclamos la búsqueda a la
 # raíz del repo (padre de este archivo) para que sea independiente del cwd.
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+load_dotenv(REPO_ROOT / ".env")
 
 
 def _p(path: str) -> Path:
@@ -231,7 +252,10 @@ class UnderstoryConfig:
 
 
 UNDERSTORY_FIELDS: list[Field] = [
-    Field("dir", "RINTHEL_UNDERSTORY_DIR", Path, "~/understory-poc"),
+    # Subtree del monorepo (Fase 1) desde la migración a Fase 2 — ya no
+    # ~/understory-poc. Estado real (bundle) vive en REPO_ROOT/data/
+    # understory, fuera del subtree; ver docker-compose.yaml de la raíz.
+    Field("dir", "RINTHEL_UNDERSTORY_DIR", Path, str(REPO_ROOT / "understory")),
     Field("port", "RINTHEL_UNDERSTORY_PORT", int, 3800, port=True),
     Field("enabled", "RINTHEL_UNDERSTORY_ENABLED", bool, True),
 ]
@@ -245,9 +269,26 @@ class PithagorasConfig:
 
 
 PITHAGORAS_FIELDS: list[Field] = [
-    Field("dir", "RINTHEL_PITHAGORAS_DIR", Path, "~/pithagoras"),
+    # Subtree del monorepo — ya no ~/pithagoras. Estado real (portal.db/
+    # sessions) vive en REPO_ROOT/data/pithagoras.
+    Field("dir", "RINTHEL_PITHAGORAS_DIR", Path, str(REPO_ROOT / "pithagoras")),
     Field("port", "RINTHEL_PITHAGORAS_PORT", int, 4100, port=True),
     Field("enabled", "RINTHEL_PITHAGORAS_ENABLED", bool, True),
+]
+
+
+@dataclass(frozen=True)
+class MlflowConfig:
+    port: int
+    enabled: bool
+
+
+MLFLOW_FIELDS: list[Field] = [
+    # Sin campo `dir` propio: mlflow no es un subtree, su servicio vive
+    # directo en el docker-compose.yaml de la raíz (ver services.py,
+    # DockerComposeService.dir_of == REPO_ROOT para los 3 managed services).
+    Field("port", "RINTHEL_MLFLOW_PORT", int, 5000, port=True),
+    Field("enabled", "RINTHEL_MLFLOW_ENABLED", bool, True),
 ]
 
 
@@ -288,6 +329,7 @@ _ENTRIES: list[tuple[str, list[Field]]] = [
     ("moe", MOE_FIELDS),
     ("understory", UNDERSTORY_FIELDS),
     ("pithagoras", PITHAGORAS_FIELDS),
+    ("mlflow", MLFLOW_FIELDS),
     ("install", INSTALL_FIELDS),
 ]
 
@@ -303,6 +345,7 @@ class RinthelConfig:
     moe: MoeConfig
     understory: UnderstoryConfig
     pithagoras: PithagorasConfig
+    mlflow: MlflowConfig
     install: InstallConfig
 
     def apply_env(self) -> None:
@@ -425,11 +468,12 @@ def default_config() -> RinthelConfig:
     moe = _load(MoeConfig, MOE_FIELDS, cache_profile=moe_cache_profile)
     understory = _load(UnderstoryConfig, UNDERSTORY_FIELDS)
     pithagoras = _load(PithagorasConfig, PITHAGORAS_FIELDS)
+    mlflow = _load(MlflowConfig, MLFLOW_FIELDS)
     install = _load(InstallConfig, INSTALL_FIELDS)
 
     return RinthelConfig(
         llama=llama, moe=moe,
-        understory=understory, pithagoras=pithagoras, install=install,
+        understory=understory, pithagoras=pithagoras, mlflow=mlflow, install=install,
     )
 
 

@@ -468,7 +468,7 @@ async def test_down_succeeds(monkeypatch, cfg, report, tmp_path, service):
 
     await managed_service.phase_down(cfg, report, service=service)
 
-    assert calls[0] == ["down"]
+    assert calls[0] == ["down", service.compose_service_name]
     assert any("parado" in msg for msg in report.successes)
 
 

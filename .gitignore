@@ -222,6 +222,12 @@ logs/
 plans/
 .claude/
 
+# Estado real de los managed services (bundle de Understory, portal.db/
+# sessions de Pithagoras, tracking db/artifacts de MLflow) — nunca dentro de
+# understory/ ni pithagoras/ (esos son subtrees, pueden pushearse de vuelta
+# al fork) para que un secret/dato real nunca termine en ese push.
+data/
+
 # graphify — generated knowledge graph, regenerable, not source
 graphify-out/
 graphify-vault/

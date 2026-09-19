@@ -4,7 +4,7 @@ Understory/Pithagoras vía docker compose) sin tocar ``managed_service.py``
 ni triplicar fases en ``phases.py`` como antes de este refactor.
 """
 
-from rinthel_tui.config import RinthelConfig
+from rinthel_tui.config import REPO_ROOT, RinthelConfig
 from rinthel_tui.lifecycle.managed_service import DockerComposeService, LocalProcessService
 
 
@@ -72,13 +72,20 @@ LLAMA_SERVICE = LocalProcessService(
 )
 
 # ── DockerComposeService ──────────────────────────────────────────────
+#
+# Fase 2 de plataforma-corp: los 3 comparten un único docker-compose.yaml en
+# la raíz del repo (`include:` de understory/pithagoras + mlflow inline —
+# ver docker-compose.yaml), así que los 3 ``dir_of`` apuntan a ``REPO_ROOT``
+# (no a ``cfg.understory.dir``/``cfg.pithagoras.dir``, que ahora describen
+# dónde vive el *código fuente* del subtree, usado por install.py — un
+# concepto distinto de "desde dónde corro docker compose").
 
 UNDERSTORY_SERVICE = DockerComposeService(
     display_name="Understory",
     menu_label="UNDERSTORY  --  MCP MEMORY LAYER",
     wait_label="UNDERSTORY",
     kill_label="UNDERSTORY  --  MCP MEMORY LAYER",
-    dir_of=lambda cfg: cfg.understory.dir,
+    dir_of=lambda cfg: REPO_ROOT,
     port_of=lambda cfg: cfg.understory.port,
     enabled_of=lambda cfg: cfg.understory.enabled,
     compose_service_name="understory",
@@ -90,7 +97,7 @@ PITHAGORAS_SERVICE = DockerComposeService(
     menu_label="PITHAGORAS  --  PI TASK PORTAL",
     wait_label="PITHAGORAS",
     kill_label="PITHAGORAS  --  PI TASK PORTAL",
-    dir_of=lambda cfg: cfg.pithagoras.dir,
+    dir_of=lambda cfg: REPO_ROOT,
     port_of=lambda cfg: cfg.pithagoras.port,
     enabled_of=lambda cfg: cfg.pithagoras.enabled,
     compose_service_name="portal",
@@ -99,9 +106,21 @@ PITHAGORAS_SERVICE = DockerComposeService(
     ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.pithagoras.port}/",
 )
 
+MLFLOW_SERVICE = DockerComposeService(
+    display_name="MLflow",
+    menu_label="MLFLOW  --  TRACKING + AI GATEWAY",
+    wait_label="MLFLOW",
+    kill_label="MLFLOW  --  TRACKING + AI GATEWAY",
+    dir_of=lambda cfg: REPO_ROOT,
+    port_of=lambda cfg: cfg.mlflow.port,
+    enabled_of=lambda cfg: cfg.mlflow.enabled,
+    compose_service_name="mlflow",
+    ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.mlflow.port}/health",
+)
+
 
 # Orden de aparición en BOOT/DOWN/RELOAD — agregar o sacar un servicio de
 # estas listas alcanza para que las 4 secuencias lo reflejen (specs.py no
 # tiene ninguna referencia hardcodeada a un servicio puntual).
 LOCAL_SERVICES: list[LocalProcessService] = [LLAMA_SERVICE]
-DOCKER_SERVICES: list[DockerComposeService] = [UNDERSTORY_SERVICE, PITHAGORAS_SERVICE]
+DOCKER_SERVICES: list[DockerComposeService] = [UNDERSTORY_SERVICE, PITHAGORAS_SERVICE, MLFLOW_SERVICE]

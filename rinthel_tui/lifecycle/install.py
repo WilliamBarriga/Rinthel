@@ -135,7 +135,12 @@ async def phase_install_download_model(cfg: RinthelConfig, report: PhaseReport) 
 
 
 async def phase_install_setup_pithagoras(cfg: RinthelConfig, report: PhaseReport) -> None:
-    if (cfg.pithagoras.dir / ".git").exists():
+    # ``.git`` propio (checkout standalone, pre-monorepo) o directorio no
+    # vacío (subtree del monorepo desde Fase 1 — sin ``.git`` propio, pero
+    # ya tiene contenido) — en los dos casos, no hay nada que clonar.
+    if (cfg.pithagoras.dir / ".git").exists() or (
+        cfg.pithagoras.dir.is_dir() and any(cfg.pithagoras.dir.iterdir())
+    ):
         report.warn(f"{cfg.pithagoras.dir} ya existe — omito clone")
     else:
         cfg.pithagoras.dir.parent.mkdir(parents=True, exist_ok=True)

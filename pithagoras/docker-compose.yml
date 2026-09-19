@@ -21,7 +21,11 @@ services:
     group_add:
       - "${DOCKER_GID:-984}"
     volumes:
-      - portal-data:/data
+      # Bind mount, no volumen nombrado — estado real fuera del subtree
+      # (ver understory/docker-compose.yml) y bind-mount plano por la
+      # política de continuidad operativa (ticket 13, sin volúmenes
+      # Docker nombrados en el backup).
+      - ../data/pithagoras:/data
       # Certificates, when you have them. Empty by default.
       - ${PORTAL_TLS_DIR:-/dev/null}:/certs:ro
       # Workspaces pi works in. Read-write: the whole point is that it edits code.
@@ -109,5 +113,4 @@ services:
         max-file: "3"
 
 volumes:
-  portal-data:
   ts-state:

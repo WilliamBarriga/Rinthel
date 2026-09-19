@@ -21,7 +21,7 @@ def _disable(cfg, attr):
 
 def test_boot_units_groups_two_phases_per_service(cfg):
     units = dict(specs.boot_units(cfg))
-    assert set(units) == {"llama-server", "understory", "pithagoras"}
+    assert set(units) == {"llama-server", "understory", "pithagoras", "mlflow"}
     for service_specs in units.values():
         assert len(service_specs) == 2  # spawn/up + wait, siempre en pares
 
@@ -37,12 +37,12 @@ def test_boot_units_does_not_include_the_docker_check(cfg):
 def test_boot_units_excludes_disabled_service(cfg):
     disabled = _disable(cfg, "understory")
     units = dict(specs.boot_units(disabled))
-    assert set(units) == {"llama-server", "pithagoras"}
+    assert set(units) == {"llama-server", "pithagoras", "mlflow"}
 
 
 def test_down_units_groups_one_phase_per_service(cfg):
     units = dict(specs.down_units(cfg))
-    assert set(units) == {"llama-server", "understory", "pithagoras"}
+    assert set(units) == {"llama-server", "understory", "pithagoras", "mlflow"}
     for service_specs in units.values():
         assert len(service_specs) == 1
 
@@ -50,7 +50,7 @@ def test_down_units_groups_one_phase_per_service(cfg):
 def test_down_units_excludes_disabled_service(cfg):
     disabled = _disable(cfg, "pithagoras")
     units = dict(specs.down_units(disabled))
-    assert set(units) == {"llama-server", "understory"}
+    assert set(units) == {"llama-server", "understory", "mlflow"}
 
 
 # ── reload_units ───────────────────────────────────────────────────────────
@@ -66,6 +66,7 @@ def test_reload_units_shutdown_groups_kill_and_down(cfg):
         "llama-server",
         "understory",
         "pithagoras",
+        "mlflow",
         "llama-server",
     ]
     understory_specs = next(specs_ for service, specs_ in shutdown if service == "understory")
@@ -87,7 +88,7 @@ def test_reload_units_boot_is_local_only_no_docker_check(cfg):
 def test_reload_units_rebuild_is_docker_only_with_no_cache(cfg):
     _shutdown, _boot, rebuild = specs.reload_units(cfg)
     units = dict(rebuild)
-    assert set(units) == {"understory", "pithagoras"}
+    assert set(units) == {"understory", "pithagoras", "mlflow"}
     for service, unit_specs in rebuild:
         up_spec = unit_specs[0]
         assert up_spec.kwargs["no_cache"] is True

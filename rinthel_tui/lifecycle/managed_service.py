@@ -324,7 +324,10 @@ async def phase_down(cfg: RinthelConfig, report: PhaseReport, *, service: Docker
     if not directory.is_dir():
         report.warn(f"{directory} no encontrado — omitido")
         return
-    rc = await _docker_compose(["down"], directory, report)
+    # Service name explícito: desde Fase 2 los 3 DockerComposeService
+    # comparten un mismo compose project (docker-compose.yaml en la raíz,
+    # ver services.py) — un `down` a secas tumbaría los otros dos también.
+    rc = await _docker_compose(["down", service.compose_service_name], directory, report)
     if rc != 0:
         report.error(f"{service.display_name}: docker compose down falló (rc {rc})")
         raise PhaseError(f"{service.display_name.lower()} down failed (rc {rc})")

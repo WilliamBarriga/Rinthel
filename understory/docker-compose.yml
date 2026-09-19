@@ -8,7 +8,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./sample-bundle:/bundle
+      # Bundle real (memoria viva), no el demo del fork — vive fuera del
+      # subtree para que nunca se cuele en un `git subtree push`.
+      - ../data/understory:/bundle
     environment:
       BUNDLE_ROOT: /bundle
       AUTH_TOKEN: ${AUTH_TOKEN:-}
@@ -25,7 +27,13 @@ services:
       LLM_FALLBACK_ALLOW_FOR: ${LLM_FALLBACK_ALLOW_FOR:-query}
       # Legacy compat (still supported)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # OJO: no ${OPENROUTER_API_KEY} a secas — Pithagoras declara esa misma
+      # var (su propio fallback provider) en el mismo .env compartido de la
+      # raíz desde la consolidación de Fase 2. Si understory la heredara,
+      # aborta con "Ambiguous legacy LLM configuration" al tenerla sola sin
+      # LLM_API_BASE_URL/LLM_API_KEY. Nombre propio, sin setear todavía —
+      # wiring real de model provider es Fase 4, no esta.
+      OPENROUTER_API_KEY: ${UNDERSTORY_OPENROUTER_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       LLAMACPP_BASE_URL: ${LLAMACPP_BASE_URL:-}
       LLAMACPP_API_KEY: ${LLAMACPP_API_KEY:-}

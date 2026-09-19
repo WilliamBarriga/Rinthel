@@ -1,0 +1,40 @@
+# Managed services de Monorepo Rinthel — Fase 2 de plataforma-corp
+# (.scratch/plataforma-corp/implementation/02-managed-services.md).
+#
+# `include:` en vez de fusionar los YAML a mano: understory/ y pithagoras/
+# son subtrees (git subtree, ver README "Repos") que en algún momento se
+# pushean de vuelta a sus forks — dejarlos con su propio docker-compose.yml
+# intacto evita que ese diff arrastre nada de este archivo. mlflow no tiene
+# subtree (no es código vendored, solo la imagen oficial), así que su
+# definición vive acá directo.
+#
+# `docker compose up -d <service>` sigue siendo por-servicio (understory,
+# portal, mlflow) aunque los tres compartan este único archivo — ver
+# rinthel_tui/lifecycle/services.py (DOCKER_SERVICES).
+include:
+  - understory/docker-compose.yml
+  - pithagoras/docker-compose.yml
+
+services:
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.16.1-full
+    restart: unless-stopped
+    ports:
+      - "${RINTHEL_MLFLOW_PORT:-5000}:5000"
+    # Bind mount plano, no volumen nombrado — misma razón que
+    # pithagoras/docker-compose.yml (ticket 13, continuidad operativa).
+    volumes:
+      - ./data/mlflow:/mlflow
+    # Arquitectura moderna: tracking + AI Gateway en el mismo proceso
+    # `mlflow server` (v3.16.1) — sin el modo legacy de dos comandos.
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
