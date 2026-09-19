@@ -92,6 +92,52 @@ Ambas deberían dar `/data/home/.pi/agent` dentro del contenedor (porque `HOME=/
 5. El modelo recibe el texto pero no tiene `/wayfinder` en los comandos disponibles
 6. El modelo "razona" sobre si podría ser una skill, en vez de ejecutarla
 
+## Sesión de investigación (2026-01-19)
+
+### Lo que se confirmó
+
+1. **`HOME=/data/home`** está explícitamente en el Dockerfile (línea 86) → dentro del contenedor debería ser correcto.
+2. **Los skills existen** en `/data/home/.pi/agent/skills/` con wayfinder, codebase-design, domain-modeling, grill-me, research.
+3. **El package manager auto-descubre skills** desde `{agentDir}/skills/` a través de `addAutoDiscoveredResources()` en `package-manager.js`. Esta llamada es incondicional para user skills.
+4. **`settings.json` no tiene key `skills`** → `globalSettings.skills` es `[]`, lo que significa que `isEnabledByOverrides` retorna `true` para todos los skills descubiertos (sin overrides).
+5. **No hay `PI_CODING_AGENT_DIR`** ni en docker-compose.yml ni en `.env` → ambas funciones usan el fallback.
+
+### Diferencia entre las dos funciones
+
+| Función | Fallback |
+|---------|----------|
+| `pi.getAgentDir()` | `os.homedir()` → Node.js lee HOME o `/etc/passwd` |
+| `piAgentDir()` | `process.env.HOME \|\| "/data/home"` → hardcoded |
+
+`os.homedir()` puede comportarse distinto a leer `process.env.HOME` directamente dependiendo de la versión de Node y el sistema. Si por alguna razón `homedir()` no respeta HOME en este entorno, devolvería `/root` o `/home/node` y los skills no se encontrarían.
+
+El fix de usar `piAgentDir()` es más seguro porque tiene un fallback hardcoded a `/data/home` que no depende del comportamiento de `os.homedir()`.
+
+### No se pudo verificar en caliente
+
+No se pudo ejecutar Node dentro del contenedor para comparar `os.homedir()` vs `process.env.HOME`. Se necesita que Tarkark ejecute:
+```
+docker exec pithagoras node -e "console.log('HOME:', process.env.HOME); console.log('homedir:', require('os').homedir())"
+```
+
+### Flujo actual de carga de skills en Pithagoras
+
+1. `sdk-client.ts` crea `DefaultResourceLoader` con `agentDir: pi.getAgentDir()` y `additionalSkillPaths: [builtinSkills]`
+2. `resourceLoader.reload()` llama a `packageManager.resolve()`
+3. `resolve()` llama a `addAutoDiscoveredResources()` que escanea `{agentDir}/skills/` → encuentra wayfinder, etc.
+4. `enabledSkills` se construyen desde los recursos habilitados del package manager
+5. `skillPaths = mergePaths(cliEnabledSkills, enabledSkills, additionalSkillPaths)`
+6. `updateSkillsFromPaths(skillPaths)` llama a `loadSkills({ skillPaths, includeDefaults: false })`
+7. Los skills cargados quedan en `this.session.resourceLoader.skills`
+8. `getCommands()` itera sobre `session.resourceLoader.getSkills().skills` → genera `skill:wayfinder`
+
+### Archivos afectados
+
+| Archivo | Cambio |
+|---------|--------|
+| `server/src/pi/sdk-client.ts` | Reemplazar `pi.getAgentDir()` por `piAgentDir()` |
+| `server/src/pi/sdk-client.ts` | Agregar import de `piAgentDir` desde `../pi-settings.js` |
+
 ## Solución
 
 ### Fix principal: usar `piAgentDir()` en vez de `pi.getAgentDir()`
@@ -137,7 +183,21 @@ Opciones:
 
 ## Verificación post-fix
 
-1. Iniciar Pithagoras
-2. Crear/abrir una sesión
-3. Llamar a `GET /api/skills` → verificar que `wayfinder` aparece en el listado
-4. Enviar `/wayfinder` como mensaje → debería ejecutarse como comando, no como texto del modelo
+1. Iniciar Pithagoras ✅
+2. Crear/abrir una sesión ✅
+3. Llamar a `GET /api/skills` → verificar que `wayfinder` aparece en el listado ✅
+4. Enviar `/skill:wayfinder` como mensaje → ✅ **funciona** como comando de skill
+5. Enviar `/wayfinder` como mensaje → ❌ no funciona (no encuentra sin prefijo `skill:`)
+
+## Estado actual
+
+- **Fix del path de agentDir:** Aplicado y verificado. `piAgentDir()` en vez de `pi.getAgentDir()` en `sdk-client.ts`.
+- **Invocación de skills:** `/skill:wayfinder` funciona correctamente (confirmado).
+- **Pendiente:** `/wayfinder` sin prefijo `skill:` no funciona. Ver plan en `../plans/slash-command-discovery.md`.
+
+## Bugs pendientes
+
+1. **Skills no descubribles con `/name`:** El usuario debe escribir `/skill:wayfinder` en vez de `/wayfinder`. Ver plan.
+2. **Menú de slash commands limitado:** Al escribir `/` solo se muestran 8 comandos (todos builtins). Skills nunca aparecen.
+3. **Sin navegación por teclado:** El menú de slash commands no responde a flechas arriba/abajo ni Tab.
+4. **Tipo `where` ausente en `PiCommand`:** Los comandos de skills/extensions no tienen `where`, causando que `c.where === "client"` sea siempre false.

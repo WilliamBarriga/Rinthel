@@ -47,5 +47,9 @@ voice-runtime/
 # Generated, version-matched VAD model and WebAssembly assets
 web/public/voice-assets/
 
+# Bug reports and implementation plans
+bugs/
+plans/
+
 playwright-report/
 test-results/
