@@ -65,7 +65,7 @@ async function loadFromPi(): Promise<{ skills: LoadedSkill[]; diagnostics: any[]
   const builtin = builtinSkillsDir();
   const loader = new pi.DefaultResourceLoader({
     cwd: agentHome(),
-    agentDir: pi.getAgentDir(),
+    agentDir: piAgentDir(),
     // Same list a session gets, builtins included — this page disagreeing with
     // what the model is offered is the failure it exists to prevent.
     ...(builtin ? { additionalSkillPaths: [builtin] } : {}),

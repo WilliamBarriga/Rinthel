@@ -13,6 +13,7 @@ import { reportTool, reportToFor } from "./report-tool.js";
 import { guardExtension } from "./guard.js";
 import { askPrimaryTool } from "./ask-primary.js";
 import { proxyBaseUrl } from "../llama-progress.js";
+import { piAgentDir } from "../pi-settings.js";
 
 function asArray(v: any): any[] {
   const resolved = typeof v === "function" ? v() : v;
@@ -241,7 +242,7 @@ export class SdkPiClient extends EventEmitter implements PiClient {
       }
       resourceLoader = new pi.DefaultResourceLoader({
         cwd: opts.cwd,
-        agentDir: pi.getAgentDir(),
+        agentDir: piAgentDir(),
         // Available everywhere without being installed, and not editable in
         // place: they belong to the image, so an edit would be lost on the next
         // deploy without saying so.
