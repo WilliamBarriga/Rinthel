@@ -95,6 +95,7 @@ export function Chat({
   onClientCommand: (name: string, args: string) => void | Promise<void>;
 }) {
   const [input, setInput] = useState("");
+  const [selectedMatchIndex, setSelectedMatchIndex] = useState(-1);
   const [voiceMode, setVoiceMode] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [voiceHost, setVoiceHost] = useState<HTMLDivElement | null>(null);
@@ -223,9 +224,59 @@ export function Chat({
 
   // Show the palette while the composer holds a bare "/name" prefix.
   const slashQuery = /^\/([\w:-]*)$/.exec(input.trimStart());
+
+  // Inverse alias map: visible name → full command with prefix.
+  // Allows /wayfinder to find skill:wayfinder automatically.
+  const commandAliasMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of commands) {
+      if (!c.name.includes(':')) {
+        map.set(c.name.toLowerCase(), c.name);
+      }
+      if (c.source === 'skill' && c.name.startsWith('skill:')) {
+        const alias = c.name.slice(6); // quita "skill:"
+        map.set(alias.toLowerCase(), c.name);
+      }
+      if (c.source === 'extension' && c.name.includes(':')) {
+        const alias = c.name.split(':')[1];
+        map.set(alias.toLowerCase(), c.name);
+      }
+    }
+    return map;
+  }, [commands]);
+
   const matches = slashQuery
-    ? commands.filter((c) => c.name.toLowerCase().startsWith(slashQuery[1].toLowerCase())).slice(0, 8)
+    ? (() => {
+        const prefix = slashQuery[1].toLowerCase();
+        // Exact alias or name match
+        const direct = commandAliasMap.get(prefix);
+        // Partial match on alias or full name
+        const partial: typeof commands = [];
+        for (const c of commands) {
+          const nameLower = c.name.toLowerCase();
+          const isSkill = c.source === 'skill' && c.name.startsWith('skill:');
+          const alias = isSkill ? nameLower.slice(6) : nameLower;
+          if (alias.startsWith(prefix) || nameLower.startsWith(prefix)) {
+            partial.push(c);
+          }
+        }
+        // Prioritize exact match, then partials
+        const all = direct ? [commands.find(c => c.name === direct), ...partial] : partial;
+        // `.filter(Boolean)` alone doesn't narrow `(PiCommand | undefined)[]` —
+        // needs an explicit type predicate, or every `c` downstream stays
+        // "possibly undefined" for tsc.
+        return all.filter((c): c is (typeof commands)[number] => Boolean(c)).slice(0, 12);
+      })()
     : [];
+
+  // Reset selection when matches change
+  useEffect(() => {
+    if (matches.length === 0) {
+      setSelectedMatchIndex(-1);
+    } else if (selectedMatchIndex >= matches.length) {
+      setSelectedMatchIndex(matches.length - 1);
+    }
+  }, [matches.length]);
 
   useEffect(() => {
     // Only offered where it would work: an iframe needs a secure context, and
@@ -455,30 +506,68 @@ export function Chat({
         <div className="prompt-shell relative mx-auto w-full max-w-3xl">
         {matches.length > 0 && (
           <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-line bg-surface shadow-pop">
-            {matches.map((c) => (
-              <button
-                key={c.name}
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  setInput(`/${c.name} `);
-                }}
-                className="flex w-full items-baseline gap-2 px-3 py-2 text-left transition hover:bg-fg/5"
-              >
-                <span className="font-mono text-xs text-accent">/{c.name}</span>
-                <span className="truncate text-xs text-fg-subtle">{c.description}</span>
-                <span className="ml-auto shrink-0 text-[10px] text-fg-faint">{c.source}</span>
-              </button>
-            ))}
+            {matches.map((c, idx) => {
+              // Clean display name: strip internal prefixes
+              const displayName = c.name.startsWith('skill:') ? c.name.slice(6) : c.name;
+              return (
+                <button
+                  key={c.name}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setInput(`/${c.name} `);
+                    setSelectedMatchIndex(-1);
+                  }}
+                  className={`flex w-full items-baseline gap-2 px-3 py-2 text-left transition ${
+                    idx === selectedMatchIndex
+                      ? 'bg-accent/10 text-accent'
+                      : 'hover:bg-fg/5'
+                  }`}
+                >
+                  <span className="font-mono text-xs text-accent">/{displayName}</span>
+                  <span className="truncate text-xs text-fg-subtle">{c.description}</span>
+                  <span className="ml-auto shrink-0 text-[10px] text-fg-faint">{c.source}</span>
+                </button>
+              );
+            })}
           </div>
         )}
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
+            // Enter without Shift → send message
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send();
+              return;
+            }
+            // ArrowUp → select previous match
+            if (e.key === "ArrowUp" && matches.length > 0) {
+              e.preventDefault();
+              setSelectedMatchIndex(prev => prev <= 0 ? matches.length - 1 : prev - 1);
+              return;
+            }
+            // ArrowDown → select next match
+            if (e.key === "ArrowDown" && matches.length > 0) {
+              e.preventDefault();
+              setSelectedMatchIndex(prev => prev >= matches.length - 1 ? -1 : prev + 1);
+              return;
+            }
+            // Tab → autocomplete with selected match
+            if (e.key === "Tab" && matches.length > 0 && selectedMatchIndex >= 0) {
+              e.preventDefault();
+              const selected = matches[selectedMatchIndex];
+              setInput(`/${selected.name} `);
+              setSelectedMatchIndex(-1);
+              return;
+            }
+            // Escape → close command menu
+            if (e.key === "Escape" && matches.length > 0) {
+              e.preventDefault();
+              setInput(input.replace(/\/([\w:-]*)$/, '').trimStart());
+              setSelectedMatchIndex(-1);
+              return;
             }
           }}
           rows={2}
