@@ -1,0 +1,22 @@
+title: Rinthel Monorepo Structure
+direction: right
+
+Understory upstream [icon: github, type: external, label: "GitHub thecodacus/understory (upstream)"]
+Pithagoras upstream [icon: github, type: external, label: "GitHub thecodacus/pithagoras (upstream)"]
+Understory fork [icon: github, label: "GitHub WilliamBarriga/understory (personal fork)"]
+Pithagoras fork [icon: github, label: "GitHub WilliamBarriga/pithagoras (personal fork)"]
+
+Rinthel-general [label: "Rinthel-general (this repo, monorepo)"] {
+  rinthel_tui [icon: python, label: "rinthel_tui/ (daemon, Python)"]
+  rinthel-client [icon: rust, label: "rinthel-client/ (TUI, Rust)"]
+  understory subtree [icon: docker, type: container, label: "understory/ (git subtree)"]
+  pithagoras subtree [icon: docker, type: container, label: "pithagoras/ (git subtree)"]
+  root compose [icon: docker, label: "docker-compose.yaml (root, include:)"]
+}
+
+Understory fork <> Understory upstream: manual sync, no auto {style: dashed}
+Pithagoras fork <> Pithagoras upstream: manual sync, no auto {style: dashed}
+understory subtree <> Understory fork: git subtree pull/push --prefix=understory {labelDy: 42}
+pithagoras subtree <> Pithagoras fork: git subtree pull/push --prefix=pithagoras {labelDy: 42}
+root compose > understory subtree: compose include
+root compose > pithagoras subtree: compose include

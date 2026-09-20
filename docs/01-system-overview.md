@@ -5,7 +5,8 @@ What's running, how it boots, and how the code is organized. For the
 [`02-hardware-optimization.md`](02-hardware-optimization.md). For common
 errors, see [`03-troubleshooting.md`](03-troubleshooting.md).
 
-See also: [runtime architecture diagram](diagrams/out/rinthel-runtime.html)
+See also: [monorepo structure diagram](diagrams/out/rinthel-monorepo-structure.html),
+[runtime architecture diagram](diagrams/out/rinthel-runtime.html),
 and [install/build sources diagram](diagrams/out/rinthel-install-sources.html)
 (interactive — open the `.html` in a browser; generated with
 [Archify](https://github.com/tt-a1i/archify) from
@@ -71,11 +72,19 @@ Rinthel Daemon (FastAPI, persistent — pidfile, survives client exit)
 
 ## Project structure
 
-Two processes, one repo. The Python side is now daemon-only — no more
-`app.py`/Textual `tui/` (deleted, parity reached, see git history if you
-need it); all screens live in the Rust client.
+This is a monorepo: two native processes (daemon + client) plus Understory
+and Pithagoras vendored in as `git subtree`s, each still pushable back to
+its own personal fork — see [Repos](../README.md#repos) in the README and
+the [monorepo structure diagram](diagrams/out/rinthel-monorepo-structure.html)
+for the fork/upstream relationships. A single root `docker-compose.yaml`
+(`include:`) brings up both subtrees' stacks; the Python side is daemon-only
+— no more `app.py`/Textual `tui/` (deleted, parity reached, see git history
+if you need it); all screens live in the Rust client.
 
 ```
+docker-compose.yaml           # root — include: understory/ + pithagoras/
+understory/                  # git subtree (WilliamBarriga/understory fork)
+pithagoras/                  # git subtree (WilliamBarriga/pithagoras fork)
 rinthel_tui/                 # daemon (FastAPI) — headless, no UI code
 ├── daemon.py                 # entry point — routes, cfg owner, /ws/monitor
 ├── phase_bridge.py            # PhaseReport -> ServiceOutcome + phase_status/phase_log

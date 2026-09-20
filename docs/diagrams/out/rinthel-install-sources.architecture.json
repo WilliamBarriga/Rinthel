@@ -134,7 +134,8 @@
     {
       "from": "github_pithagoras",
       "to": "rinthel_daemon",
-      "label": "git clone + config (INSTALL phase)"
+      "label": "git clone + config (fallback only — pithagoras/ ships as a subtree)",
+      "variant": "dashed"
     },
     {
       "from": "hugging_face",

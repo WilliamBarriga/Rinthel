@@ -12,7 +12,7 @@ pithagoras-image [icon: docker, type: cloud, label: "Pithagoras portal image"]
 test-tarkAIrk [icon: python, label: "~/test-tarkAIrk (perf R&D lab, offline)"]
 
 GitHub llama.cpp > Rinthel Daemon: git clone + cmake build (INSTALL phase)
-GitHub Pithagoras > Rinthel Daemon: git clone + config (INSTALL phase)
+GitHub Pithagoras > Rinthel Daemon: git clone + config (fallback only — pithagoras/ ships as a subtree) {style: dashed}
 Hugging Face > Rinthel Daemon: model download {labelDy: -26}
 ghcr > understory-image: image pull {labelDy: -21}
 ghcr > pithagoras-image: image pull

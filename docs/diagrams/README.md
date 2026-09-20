@@ -108,6 +108,7 @@ coordinate and a suggested fix (`labelDy +54` / `labelAt [x, y]` / etc.)
 docs/diagrams/
 ├── _ir_builder.py               # shared logic: dict -> Archify IR
 ├── eraser_to_archify.py         # DSL parser + CLI (the only entrypoint)
+├── rinthel-monorepo-structure.eraser # source: subtrees, forks, upstreams
 ├── rinthel-runtime.eraser        # source: runtime architecture
 ├── rinthel-install-sources.eraser # source: where INSTALL pulls things from
 ├── examples/

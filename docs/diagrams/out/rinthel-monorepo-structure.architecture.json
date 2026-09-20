@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Rinthel Monorepo Structure"
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [
+      40,
+      80
+    ],
+    "cols": 3,
+    "gapX": 100,
+    "gapY": 90,
+    "cellW": 349,
+    "cellH": 64
+  },
+  "components": [
+    {
+      "id": "understory_upstream",
+      "type": "external",
+      "label": "GitHub thecodacus/understory (upstream)",
+      "brand": "github",
+      "size": [
+        290,
+        60
+      ],
+      "col": 0,
+      "row": 0
+    },
+    {
+      "id": "pithagoras_upstream",
+      "type": "external",
+      "label": "GitHub thecodacus/pithagoras (upstream)",
+      "brand": "github",
+      "size": [
+        290,
+        60
+      ],
+      "col": 0,
+      "row": 1
+    },
+    {
+      "id": "rinthel_tui",
+      "type": "backend",
+      "label": "rinthel_tui/ (daemon, Python)",
+      "brand": "python",
+      "size": [
+        225,
+        60
+      ],
+      "col": 0,
+      "row": 2
+    },
+    {
+      "id": "rinthel_client",
+      "type": "backend",
+      "label": "rinthel-client/ (TUI, Rust)",
+      "brand": "rust",
+      "size": [
+        212,
+        60
+      ],
+      "col": 0,
+      "row": 3
+    },
+    {
+      "id": "root_compose",
+      "type": "backend",
+      "label": "docker-compose.yaml (root, include:)",
+      "brand": "docker",
+      "size": [
+        271,
+        60
+      ],
+      "col": 0,
+      "row": 4
+    },
+    {
+      "id": "understory_fork",
+      "type": "backend",
+      "label": "GitHub WilliamBarriga/understory (personal fork)",
+      "brand": "github",
+      "size": [
+        349,
+        60
+      ],
+      "col": 1,
+      "row": 0
+    },
+    {
+      "id": "pithagoras_fork",
+      "type": "backend",
+      "label": "GitHub WilliamBarriga/pithagoras (personal fork)",
+      "brand": "github",
+      "size": [
+        349,
+        60
+      ],
+      "col": 1,
+      "row": 1
+    },
+    {
+      "id": "understory_subtree",
+      "type": "cloud",
+      "label": "understory/ (git subtree)",
+      "brand": "docker",
+      "size": [
+        199,
+        60
+      ],
+      "col": 2,
+      "row": 0
+    },
+    {
+      "id": "pithagoras_subtree",
+      "type": "cloud",
+      "label": "pithagoras/ (git subtree)",
+      "brand": "docker",
+      "size": [
+        199,
+        60
+      ],
+      "col": 2,
+      "row": 1
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Rinthel-general (this repo, monorepo)",
+      "wraps": [
+        "rinthel_tui",
+        "rinthel_client",
+        "understory_subtree",
+        "pithagoras_subtree",
+        "root_compose"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "understory_fork",
+      "to": "understory_upstream",
+      "label": "manual sync, no auto",
+      "variant": "dashed"
+    },
+    {
+      "from": "understory_upstream",
+      "to": "understory_fork"
+    },
+    {
+      "from": "pithagoras_fork",
+      "to": "pithagoras_upstream",
+      "label": "manual sync, no auto",
+      "variant": "dashed"
+    },
+    {
+      "from": "pithagoras_upstream",
+      "to": "pithagoras_fork"
+    },
+    {
+      "from": "understory_subtree",
+      "to": "understory_fork",
+      "label": "git subtree pull/push --prefix=understory",
+      "labelDy": 42
+    },
+    {
+      "from": "understory_fork",
+      "to": "understory_subtree"
+    },
+    {
+      "from": "pithagoras_subtree",
+      "to": "pithagoras_fork",
+      "label": "git subtree pull/push --prefix=pithagoras",
+      "labelDy": 42
+    },
+    {
+      "from": "pithagoras_fork",
+      "to": "pithagoras_subtree"
+    },
+    {
+      "from": "root_compose",
+      "to": "understory_subtree",
+      "label": "compose include"
+    },
+    {
+      "from": "root_compose",
+      "to": "pithagoras_subtree",
+      "label": "compose include"
+    }
+  ]
+}
