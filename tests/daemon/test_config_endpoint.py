@@ -26,7 +26,7 @@ def _isolated_env_paths(tmp_path, monkeypatch):
 def test_get_config_lists_every_sub_config_including_install():
     body = json.loads(daemon.get_config().body)
     attrs = [s["attr"] for s in body["services"]]
-    assert attrs == ["llama", "moe", "understory", "pithagoras", "mlflow", "install"]
+    assert attrs == ["llama", "moe", "understory", "pithagoras", "install"]
 
 
 def test_get_config_excludes_enabled_from_fields_but_surfaces_it_at_top_level():

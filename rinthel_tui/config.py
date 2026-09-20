@@ -278,21 +278,6 @@ PITHAGORAS_FIELDS: list[Field] = [
 
 
 @dataclass(frozen=True)
-class MlflowConfig:
-    port: int
-    enabled: bool
-
-
-MLFLOW_FIELDS: list[Field] = [
-    # Sin campo `dir` propio: mlflow no es un subtree, su servicio vive
-    # directo en el docker-compose.yaml de la raíz (ver services.py,
-    # DockerComposeService.dir_of == REPO_ROOT para los 3 managed services).
-    Field("port", "RINTHEL_MLFLOW_PORT", int, 5000, port=True),
-    Field("enabled", "RINTHEL_MLFLOW_ENABLED", bool, True),
-]
-
-
-@dataclass(frozen=True)
 class InstallConfig:
     llamacpp_repo_dir: Path
     llamacpp_repo_url: str
@@ -329,7 +314,6 @@ _ENTRIES: list[tuple[str, list[Field]]] = [
     ("moe", MOE_FIELDS),
     ("understory", UNDERSTORY_FIELDS),
     ("pithagoras", PITHAGORAS_FIELDS),
-    ("mlflow", MLFLOW_FIELDS),
     ("install", INSTALL_FIELDS),
 ]
 
@@ -345,7 +329,6 @@ class RinthelConfig:
     moe: MoeConfig
     understory: UnderstoryConfig
     pithagoras: PithagorasConfig
-    mlflow: MlflowConfig
     install: InstallConfig
 
     def apply_env(self) -> None:
@@ -468,12 +451,11 @@ def default_config() -> RinthelConfig:
     moe = _load(MoeConfig, MOE_FIELDS, cache_profile=moe_cache_profile)
     understory = _load(UnderstoryConfig, UNDERSTORY_FIELDS)
     pithagoras = _load(PithagorasConfig, PITHAGORAS_FIELDS)
-    mlflow = _load(MlflowConfig, MLFLOW_FIELDS)
     install = _load(InstallConfig, INSTALL_FIELDS)
 
     return RinthelConfig(
         llama=llama, moe=moe,
-        understory=understory, pithagoras=pithagoras, mlflow=mlflow, install=install,
+        understory=understory, pithagoras=pithagoras, install=install,
     )
 
 

@@ -4,37 +4,44 @@
 # `include:` en vez de fusionar los YAML a mano: understory/ y pithagoras/
 # son subtrees (git subtree, ver README "Repos") que en algún momento se
 # pushean de vuelta a sus forks — dejarlos con su propio docker-compose.yml
-# intacto evita que ese diff arrastre nada de este archivo. mlflow no tiene
-# subtree (no es código vendored, solo la imagen oficial), así que su
-# definición vive acá directo.
+# intacto evita que ese diff arrastre nada de este archivo.
 #
 # `docker compose up -d <service>` sigue siendo por-servicio (understory,
-# portal, mlflow) aunque los tres compartan este único archivo — ver
+# portal) aunque los dos compartan este único archivo — ver
 # rinthel_tui/lifecycle/services.py (DOCKER_SERVICES).
 include:
   - understory/docker-compose.yml
   - pithagoras/docker-compose.yml
 
+# Red propia para understory, no la default del proyecto: así el
+# gateway/nombre de interfaz quedan fijos entre `compose down && up`, y las
+# reglas de iptables/route_localnet en el host (que reenvían ese gateway a
+# 127.0.0.1:8080, donde escucha llama-server) no quedan huérfanas. Nombre e
+# interfaz (br-rgunderstory) llevan el sufijo "rg" a propósito — Rinthel-corp
+# es un checkout/entorno completamente distinto y podría implementar el mismo
+# patrón algún día; los nombres de red e interfaz son globales por host, así
+# que deben no colisionar con lo que use ese otro repo.
+networks:
+  understory-net:
+    name: rinthel-general_understory_net
+    driver_opts:
+      com.docker.network.bridge.name: br-rgunderstory
+    ipam:
+      config:
+        - subnet: 172.30.99.0/24
+
 services:
-  mlflow:
-    image: ghcr.io/mlflow/mlflow:v3.16.1-full
-    restart: unless-stopped
-    ports:
-      - "${RINTHEL_MLFLOW_PORT:-5000}:5000"
-    # Bind mount plano, no volumen nombrado — misma razón que
-    # pithagoras/docker-compose.yml (ticket 13, continuidad operativa).
-    volumes:
-      - ./data/mlflow:/mlflow
-    # Arquitectura moderna: tracking + AI Gateway en el mismo proceso
-    # `mlflow server` (v3.16.1) — sin el modo legacy de dos comandos.
-    command: >
-      mlflow server
-      --host 0.0.0.0
-      --port 5000
-      --backend-store-uri sqlite:////mlflow/mlflow.db
-      --default-artifact-root /mlflow/artifacts
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+  # `include:` no fusiona el `networks:` top-level de understory/docker-
+  # compose.yml (probado: docker compose config lo omite), así que el
+  # attach a la red custom se declara acá y no en el subtree.
+  understory:
+    networks:
+      - understory-net
+    # El subtree ya trae "host.docker.internal:host-gateway", pero Docker
+    # resuelve ese alias contra el gateway de la red "bridge" default
+    # (172.17.0.1), no contra el de la red custom de acá arriba. Compose
+    # normalmente concatena extra_hosts entre archivos (quedarían las dos
+    # entradas, con la vieja ganando en /etc/hosts) — "!override" reemplaza
+    # la lista entera en vez de sumarse.
+    extra_hosts: !override
+      - "host.docker.internal:172.30.99.1"
