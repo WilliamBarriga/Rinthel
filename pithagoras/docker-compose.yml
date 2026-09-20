@@ -101,7 +101,7 @@ services:
     volumes:
       - ts-state:/var/lib/tailscale
     environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY in .env}
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
       TS_HOSTNAME: pithagoras
       TS_STATE_DIR: /var/lib/tailscale
       TS_EXTRA_ARGS: --advertise-tags=tag:pithagoras --accept-dns=true
