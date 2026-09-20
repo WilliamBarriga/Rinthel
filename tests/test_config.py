@@ -48,6 +48,31 @@ def test_default_config_respects_port_override(monkeypatch):
     assert cfg.llama.port == 9999
 
 
+def test_default_config_uses_validated_memory_profile(monkeypatch):
+    for name in (
+        "RINTHEL_CONTEXT_WINDOW",
+        "RINTHEL_N_CPU_MOE",
+        "RINTHEL_UBATCH_SIZE",
+        "RINTHEL_BATCH_SIZE",
+        "RINTHEL_SPEC_TYPE",
+        "RINTHEL_SCHED_ASYNC_CPU",
+        "RINTHEL_CACHE_TYPE_K",
+        "RINTHEL_CACHE_TYPE_V",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    cfg = default_config()
+
+    assert cfg.llama.context_window == 65536
+    assert cfg.llama.n_cpu_moe == 34
+    assert cfg.llama.ubatch_size == 2048
+    assert cfg.llama.batch_size == 2048
+    assert cfg.llama.spec_type == "none"
+    assert cfg.llama.sched_async_cpu is False
+    assert cfg.llama.cache_type_k == "q8_0"
+    assert cfg.llama.cache_type_v == "q8_0"
+
+
 # ── RinthelConfig.validate() ──────────────────────────────────────────────
 
 

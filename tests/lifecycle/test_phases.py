@@ -4,21 +4,15 @@ up/down docker) se prueba en test_managed_service.py, parametrizado por
 service en vez de por función.
 """
 
-import asyncio
-
 from rinthel_tui.lifecycle import phases
 from rinthel_tui.lifecycle.types import PhaseError
 
 
 async def test_check_docker_succeeds_when_daemon_active(monkeypatch, cfg, report):
-    async def fake_exec(*args, **kwargs):
-        class _Proc:
-            async def wait(self):
-                return 0
+    async def ready():
+        return True
 
-        return _Proc()
-
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(phases, "_docker_daemon_is_ready", ready)
 
     await phases.phase_check_docker(cfg, report)
 
@@ -26,14 +20,11 @@ async def test_check_docker_succeeds_when_daemon_active(monkeypatch, cfg, report
 
 
 async def test_check_docker_raises_when_daemon_inactive(monkeypatch, cfg, report):
-    async def fake_exec(*args, **kwargs):
-        class _Proc:
-            async def wait(self):
-                return 1
+    async def not_ready():
+        return False
 
-        return _Proc()
-
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(phases, "_docker_daemon_is_ready", not_ready)
+    monkeypatch.setattr(phases, "_IS_WINDOWS", True)
 
     try:
         await phases.phase_check_docker(cfg, report)
@@ -42,26 +33,32 @@ async def test_check_docker_raises_when_daemon_inactive(monkeypatch, cfg, report
         raised = True
 
     assert raised
-    assert any("no hay sudo passwordless" in msg for msg in report.errors)
+    assert any("Docker Desktop" in msg for msg in report.errors)
 
 
 async def test_check_docker_auto_starts_with_passwordless_sudo(monkeypatch, cfg, report):
     """Docker inactivo + `sudo -n systemctl start docker` disponible: el
     daemon lo levanta solo en vez de solo avisar."""
+    import asyncio
+
     calls: list[tuple[str, ...]] = []
+    checks = iter([False, True])
+
+    async def docker_ready():
+        return next(checks)
 
     async def fake_exec(*args, **kwargs):
         calls.append(args)
 
         class _Proc:
             async def wait(self):
-                # is-active (1ra vez): inactivo. sudo -n start: éxito.
-                # is-active (recheck): ya activo.
-                return 1 if args == ("systemctl", "is-active", "--quiet", "docker") and len(calls) == 1 else 0
+                return 0
 
         return _Proc()
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(phases, "_docker_daemon_is_ready", docker_ready)
+    monkeypatch.setattr(phases, "_IS_WINDOWS", False)
 
     await phases.phase_check_docker(cfg, report)
 
@@ -71,6 +68,11 @@ async def test_check_docker_auto_starts_with_passwordless_sudo(monkeypatch, cfg,
 
 
 async def test_check_docker_reports_actionable_command_without_passwordless_sudo(monkeypatch, cfg, report):
+    import asyncio
+
+    async def not_ready():
+        return False
+
     async def fake_exec(*args, **kwargs):
         class _Proc:
             async def wait(self):
@@ -79,6 +81,8 @@ async def test_check_docker_reports_actionable_command_without_passwordless_sudo
         return _Proc()
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(phases, "_docker_daemon_is_ready", not_ready)
+    monkeypatch.setattr(phases, "_IS_WINDOWS", False)
 
     try:
         await phases.phase_check_docker(cfg, report)

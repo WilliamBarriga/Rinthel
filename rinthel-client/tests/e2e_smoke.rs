@@ -3,24 +3,21 @@
 //! `tokio-tungstenite` que usa `app.rs`) conectados por HTTP/WS real en
 //! loopback — boot→terminate→cerrar.
 //!
-//! `boot`/`terminate` corren `run_phase_list` REAL — pero contra dobles de
-//! `LocalProcessService`/`DockerComposeService`, nunca contra llama-server/
-//! Understory/Pithagoras reales (ver `../../tests/fixtures/fake_ready_server.py`):
-//! las env vars de abajo redirigen los 3 managed services a un único proceso
-//! Python que solo responde 200 en los puertos de prueba, y a directorios
-//! docker inexistentes (`phase_up`/`phase_down` los saltean con un warn, sin
-//! invocar `docker compose`). Único componente real e inevitable: el chequeo
-//! de `systemctl is-active docker` al principio de boot — lee el estado real
-//! del docker daemon del host, no lo simula; en este proyecto (sin CI,
-//! corrido a mano) siempre corre con Docker ya activo.
+//! `boot`/`terminate` corren `run_phase_list` REAL contra el doble de
+//! `LocalProcessService` de `../../tests/fixtures/fake_ready_server.py`.
+//! Understory y Pithagoras se deshabilitan explícitamente para que este smoke
+//! no ejecute el `docker-compose.yaml` real del monorepo. El chequeo inicial
+//! del daemon Docker sí usa el estado del host; en este proyecto (sin CI,
+//! corrido a mano) la prueba se ejecuta con Docker ya activo.
 //!
 //! Lo que valida es el cable completo: WS/HTTP, serialización, el wiring
 //! real de `lifecycle/runner.py` de punta a punta, cliente parseando en vivo.
 //!
-//! Requiere que no haya nada más escuchando ya en :8765 ni en los puertos de
+//! Requiere que no haya nada más escuchando ya en :18765 ni en los puertos de
 //! prueba 18080-18082 (proyecto de un solo dev/host, sin CI — cortá
 //! cualquier `rinthel_tui.daemon` que tengas corriendo antes de `cargo test`).
 
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -29,12 +26,13 @@ use futures_util::StreamExt;
 use rinthel::protocol::{CommandResult, Envelope, Theme};
 use tokio::sync::mpsc;
 
-const DAEMON: &str = "http://127.0.0.1:8765";
-const WS: &str = "ws://127.0.0.1:8765/ws/monitor";
+const DAEMON_PORT: u16 = 18765;
+const DAEMON: &str = "http://127.0.0.1:18765";
+const WS: &str = "ws://127.0.0.1:18765/ws/monitor";
 
 // Puertos de prueba para los dobles de llama-server/Understory/Pithagoras —
 // distintos de los defaults reales (8080/3800/4100) y del puerto del propio
-// daemon (8765), para no chocar con nada que ya esté corriendo de verdad.
+// daemon (18765), para no chocar con nada que ya esté corriendo de verdad.
 const FAKE_LLAMA_PORT: u16 = 18080;
 const FAKE_UNDERSTORY_PORT: u16 = 18081;
 const FAKE_PITHAGORAS_PORT: u16 = 18082;
@@ -55,19 +53,32 @@ impl Drop for DaemonGuard {
 
 fn spawn_daemon() -> DaemonGuard {
     let repo_root = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
-    let python = format!("{repo_root}/.venv/bin/python");
+    let python = Path::new(repo_root).join(".venv").join(if cfg!(windows) {
+        "Scripts/python.exe"
+    } else {
+        "bin/python"
+    });
     let fake_bin = format!("{repo_root}/tests/fixtures/fake_ready_server.py");
     let tmp = std::env::temp_dir();
     let scratch = tmp.join(format!("rinthel-e2e-smoke-{}", std::process::id()));
     let child = Command::new(&python)
         .args(["-m", "rinthel_tui.daemon"])
         .current_dir(repo_root)
+        .env("RINTHEL_DAEMON_PORT", DAEMON_PORT.to_string())
         .env("RINTHEL_LLAMA_BIN", &fake_bin)
         .env("RINTHEL_LLAMA_PORT", FAKE_LLAMA_PORT.to_string())
         .env("RINTHEL_LLAMA_LOG_PATH", scratch.join("llama.log"))
-        .env("RINTHEL_UNDERSTORY_DIR", scratch.join("understory-no-existe"))
+        .env("RINTHEL_UNDERSTORY_ENABLED", "false")
+        .env(
+            "RINTHEL_UNDERSTORY_DIR",
+            scratch.join("understory-no-existe"),
+        )
         .env("RINTHEL_UNDERSTORY_PORT", FAKE_UNDERSTORY_PORT.to_string())
-        .env("RINTHEL_PITHAGORAS_DIR", scratch.join("pithagoras-no-existe"))
+        .env("RINTHEL_PITHAGORAS_ENABLED", "false")
+        .env(
+            "RINTHEL_PITHAGORAS_DIR",
+            scratch.join("pithagoras-no-existe"),
+        )
         .env("RINTHEL_PITHAGORAS_PORT", FAKE_PITHAGORAS_PORT.to_string())
         .env(
             "RINTHEL_E2E_FAKE_PORTS",
@@ -76,7 +87,12 @@ fn spawn_daemon() -> DaemonGuard {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .unwrap_or_else(|e| panic!("no pude lanzar {python} -m rinthel_tui.daemon: {e}"));
+        .unwrap_or_else(|e| {
+            panic!(
+                "no pude lanzar {} -m rinthel_tui.daemon: {e}",
+                python.display()
+            )
+        });
     DaemonGuard(child)
 }
 
@@ -144,7 +160,11 @@ async fn boot_then_terminate_over_real_wire() {
         .json()
         .await
         .expect("respuesta de /boot no matchea CommandResult");
-    assert!(boot.results.iter().all(|r| r.ok), "boot real (contra dobles) no debería fallar");
+    assert!(
+        boot.results.iter().all(|r| r.ok),
+        "boot real (contra dobles) no debería fallar: {:?}",
+        boot.results
+    );
 
     let terminate: CommandResult = client
         .post(format!("{DAEMON}/terminate"))
@@ -154,7 +174,10 @@ async fn boot_then_terminate_over_real_wire() {
         .json()
         .await
         .expect("respuesta de /terminate no matchea CommandResult");
-    assert!(terminate.results.iter().all(|r| r.ok), "terminate real (contra dobles) no debería fallar");
+    assert!(
+        terminate.results.iter().all(|r| r.ok),
+        "terminate real (contra dobles) no debería fallar"
+    );
 
     // Deja que el reader procese los últimos frames en vuelo antes de leer.
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -196,7 +219,9 @@ async fn reload_over_real_wire() {
     // phase_batch("rebuild") por el mismo túnel (ver docs/adr/0001) — sin
     // esto el cliente no tiene forma de disparar Datamosh/Vignette en el
     // límite entre tandas.
-    let (ws_stream, _) = tokio_tungstenite::connect_async(WS).await.expect("no pude conectar a /ws/monitor");
+    let (ws_stream, _) = tokio_tungstenite::connect_async(WS)
+        .await
+        .expect("no pude conectar a /ws/monitor");
     let (_write, mut read) = ws_stream.split();
     let (batch_tx, mut batch_rx) = mpsc::unbounded_channel::<String>();
     tokio::spawn(async move {
@@ -224,7 +249,11 @@ async fn reload_over_real_wire() {
         .json()
         .await
         .expect("respuesta de /boot no matchea CommandResult");
-    assert!(boot.results.iter().all(|r| r.ok), "boot previo (contra dobles) no debería fallar");
+    assert!(
+        boot.results.iter().all(|r| r.ok),
+        "boot previo (contra dobles) no debería fallar: {:?}",
+        boot.results
+    );
 
     let reload: CommandResult = client
         .post(format!("{DAEMON}/reload"))
@@ -239,16 +268,19 @@ async fn reload_over_real_wire() {
         "reload real (contra dobles) no debería fallar: {:?}",
         reload.results
     );
-    // shutdown (kill llama + down x2 + wait-port-free = 4 unidades) + DOCKER
-    // (1) + boot (spawn+wait llama, 1 unidad) + rebuild (up+wait x2) — mismo
-    // total que specs.reload_units + el chequeo de DOCKER que daemon.py
-    // inserta aparte.
-    assert_eq!(reload.results.len(), 8, "resultados: {:?}", reload.results);
+    // Con los stacks Docker deshabilitados para este smoke: shutdown aporta
+    // kill+wait-port-free de llama, luego vienen el preflight Docker y el
+    // nuevo boot de llama. Las fases Docker se cubren en los tests Python.
+    assert_eq!(reload.results.len(), 4, "resultados: {:?}", reload.results);
 
     tokio::time::sleep(Duration::from_millis(200)).await;
     let mut batches = Vec::new();
     while let Ok(b) = batch_rx.try_recv() {
         batches.push(b);
     }
-    assert_eq!(batches, vec!["boot", "rebuild"], "phase_batch visto durante /reload real: {batches:?}");
+    assert_eq!(
+        batches,
+        vec!["boot", "rebuild"],
+        "phase_batch visto durante /reload real: {batches:?}"
+    );
 }

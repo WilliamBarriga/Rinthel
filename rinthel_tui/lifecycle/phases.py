@@ -10,12 +10,31 @@ fases con eso.
 """
 
 import asyncio
+import os
+import shutil
 
 from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle.types import PhaseError, PhaseReport
 
+_IS_WINDOWS = os.name == "nt"
+
+
+async def _docker_daemon_is_ready() -> bool:
+    if shutil.which("docker") is None:
+        return False
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "info",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except OSError:
+        return False
+    return await proc.wait() == 0
 
 async def _systemctl_is_active(unit: str) -> bool:
+    if shutil.which("systemctl") is None:
+        return False
     proc = await asyncio.create_subprocess_exec(
         "systemctl", "is-active", "--quiet", unit,
         stdout=asyncio.subprocess.DEVNULL,
@@ -25,21 +44,30 @@ async def _systemctl_is_active(unit: str) -> bool:
 
 
 async def phase_check_docker(cfg: RinthelConfig, report: PhaseReport) -> None:
-    if await _systemctl_is_active("docker"):
+    if await _docker_daemon_is_ready():
         report.success("Docker daemon activo")
         return
+    if _IS_WINDOWS:
+        report.error(
+            "DOCKER DAEMON INACTIVO — instala y abre Docker Desktop; "
+            "espera a que indique que el motor está ejecutándose y vuelve a intentar"
+        )
+        raise PhaseError("docker daemon inactive; start Docker Desktop")
     # Intento de auto-levante no interactivo (`sudo -n`): si ya hay una regla
     # NOPASSWD para este comando, boot sigue solo; si no, `sudo` falla al
     # toque en vez de colgarse esperando una contraseña que nunca va a llegar
     # (este proceso no tiene TTY). Sin NOPASSWD configurado, el daemon nunca
     # levanta Docker solo — solo le pasa al usuario el comando exacto para
     # que lo corra a mano y el PRÓXIMO boot ya lo encuentre activo.
-    proc = await asyncio.create_subprocess_exec(
-        "sudo", "-n", "systemctl", "start", "docker",
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    if await proc.wait() == 0 and await _systemctl_is_active("docker"):
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "sudo", "-n", "systemctl", "start", "docker",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except OSError:
+        proc = None
+    if proc is not None and await proc.wait() == 0 and await _docker_daemon_is_ready():
         report.success("Docker daemon estaba inactivo — levantado solo (sudo -n systemctl start docker)")
         return
     report.error(

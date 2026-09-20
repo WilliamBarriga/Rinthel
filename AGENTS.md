@@ -21,3 +21,12 @@ architecture or code relationships as a query against that graph first
   pipeline — these rebuild clusters and rename communities (spend LLM
   budget and can overwrite the already-curated `.graphify_labels.json`).
 
+## Windows runtime
+
+For changes to Windows installation, Docker Desktop networking, the local
+model provider, or inference tuning, read `docs/04-windows-installation.md`
+and `docs/05-windows-validation.md` first. Preserve the validated Windows
+profile unless the change includes a new benchmark on the reference hardware;
+record new measurements in the validation document and keep machine-local
+paths, passwords, tokens, and `.env` files out of Git.
+

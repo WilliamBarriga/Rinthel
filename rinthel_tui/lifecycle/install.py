@@ -10,6 +10,7 @@ es idempotente: reruns seguros, nunca pisa algo que ya funciona.
 """
 
 import importlib.resources
+import json
 import os
 import secrets
 import shutil
@@ -35,6 +36,97 @@ _PITHAGORAS_BRANCH = "rinthel-pithagoras"
 _UNDERSTORY_BUNDLE_DIRS = ("agents", "extensions", "projects", "reference", "users")
 
 
+def _prepare_pithagoras_for_windows(
+    pithagoras_dir: Path,
+    report: PhaseReport,
+    *,
+    platform: str = os.name,
+) -> None:
+    """Adapta el compose Linux del fork a Docker Desktop de forma idempotente."""
+    if platform != "nt":
+        return
+
+    compose_path = pithagoras_dir / "docker-compose.yml"
+    if compose_path.exists():
+        compose = compose_path.read_text()
+        updated = compose.replace(
+            "    network_mode: host\n",
+            '    ports:\n      - "127.0.0.1:${PORT:-4100}:${PORT:-4100}"\n',
+        ).replace(
+            "TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY in .env}",
+            "TS_AUTHKEY: ${TS_AUTHKEY:-}",
+        )
+        models_mount = (
+            "      - ${PI_AGENT_DIR}/models.json:"
+            "/data/home/.pi/agent/models.json:ro\n"
+        )
+        mount_anchor = (
+            "      - ${PI_AGENT_DIR}/git/github.com/harms-haus/pi-processes:"
+            "/data/home/.pi/agent/git/github.com/harms-haus/pi-processes:ro\n"
+        )
+        if models_mount not in updated and mount_anchor in updated:
+            updated = updated.replace(mount_anchor, mount_anchor + models_mount)
+        if updated != compose:
+            compose_path.write_text(updated)
+            report.success("Pithagoras adaptado a la red local de Docker Desktop")
+
+    dockerfile_path = pithagoras_dir / "Dockerfile"
+    if dockerfile_path.exists():
+        dockerfile = dockerfile_path.read_text()
+        updated = dockerfile
+        if "chown -R node:node /data" not in dockerfile:
+            updated = dockerfile.replace(
+                "RUN mkdir -p /data/home /data/bin\n",
+                "RUN mkdir -p /data/home /data/bin /data/sessions /data/channels /data/agent-home \\\n"
+                "    && chown -R node:node /data\n",
+            )
+        if updated != dockerfile:
+            dockerfile_path.write_text(updated)
+            report.success("Permisos persistentes de Pithagoras preparados para Windows")
+
+
+def _write_local_model_config(
+    pi_agent_dir: Path,
+    model_path: Path,
+    llama_port: int,
+    report: PhaseReport,
+    *,
+    platform: str = os.name,
+) -> None:
+    """Registra el llama-server de Windows como proveedor local de Pi."""
+    if platform != "nt":
+        return
+
+    models_path = pi_agent_dir / "models.json"
+    pi_agent_dir.mkdir(parents=True, exist_ok=True)
+    config: dict[str, Any] = {"providers": {}}
+    if models_path.exists():
+        try:
+            existing = json.loads(models_path.read_text())
+            if isinstance(existing, dict):
+                config = existing
+        except (json.JSONDecodeError, OSError) as exc:
+            report.error(f"{models_path} no es JSON válido: {exc}")
+            raise PhaseError("invalid pi models.json") from exc
+
+    providers = config.setdefault("providers", {})
+    if not isinstance(providers, dict):
+        report.error(f"{models_path}: 'providers' debe ser un objeto JSON")
+        raise PhaseError("invalid providers in pi models.json")
+    providers["local-llm"] = {
+        "baseUrl": f"http://host.docker.internal:{llama_port}/v1",
+        "api": "openai-completions",
+        "apiKey": "local",
+        "compat": {
+            "supportsDeveloperRole": False,
+            "supportsReasoningEffort": False,
+        },
+        "models": [{"id": str(model_path), "name": "Qwen3.6 35B Local"}],
+    }
+    models_path.write_text(json.dumps(config, indent=2) + "\n")
+    report.success(f"Proveedor local de Pi configurado en {models_path}")
+
+
 def _require_tool(name: str, report: PhaseReport, hint: str) -> None:
     if shutil.which(name) is None:
         report.error(f"falta '{name}' — {hint}")
@@ -45,16 +137,44 @@ def _require_tool(name: str, report: PhaseReport, hint: str) -> None:
 def _find_nvcc() -> bool:
     if shutil.which("nvcc") is not None:
         return True
-    return any(Path("/usr/local").glob("cuda*/bin/nvcc"))
+    candidates = list(Path("/usr/local").glob("cuda*/bin/nvcc"))
+    cuda_path = os.environ.get("CUDA_PATH")
+    if cuda_path:
+        candidates.append(Path(cuda_path) / "bin" / "nvcc.exe")
+    program_files = os.environ.get("ProgramFiles")
+    if program_files:
+        candidates.extend(
+            Path(program_files).glob("NVIDIA GPU Computing Toolkit/CUDA/v*/bin/nvcc.exe")
+        )
+    return any(candidate.exists() for candidate in candidates)
+
+
+def _tool_hint(name: str) -> str:
+    if os.name == "nt":
+        return {
+            "git": "instala Git for Windows (winget install --id Git.Git -e)",
+            "curl": "actualiza Windows o instala curl y agrégalo a PATH",
+            "cmake": "instala CMake (winget install --id Kitware.CMake -e)",
+        }[name]
+    return f"sudo apt-get install -y {name}"
+
+
+def _llama_server_binary(build_dir: Path) -> Path:
+    candidates = (
+        build_dir / "bin" / "llama-server",
+        build_dir / "bin" / "llama-server.exe",
+        build_dir / "bin" / "Release" / "llama-server.exe",
+    )
+    return next((candidate for candidate in candidates if candidate.exists()), candidates[0])
 
 
 async def phase_install_preflight(cfg: RinthelConfig, report: PhaseReport) -> None:
     """Detecta lo que hace falta para compilar/correr todo — no instala
     drivers ni el CUDA toolkit, solo avisa qué falta con un mensaje
     accionable."""
-    _require_tool("git", report, "sudo apt-get install -y git")
-    _require_tool("curl", report, "sudo apt-get install -y curl")
-    _require_tool("cmake", report, "sudo apt-get install -y cmake")
+    _require_tool("git", report, _tool_hint("git"))
+    _require_tool("curl", report, _tool_hint("curl"))
+    _require_tool("cmake", report, _tool_hint("cmake"))
     _require_tool("nvidia-smi", report, "instalá el driver NVIDIA antes de continuar")
 
     if not _find_nvcc():
@@ -82,8 +202,9 @@ async def phase_install_clone_llamacpp(cfg: RinthelConfig, report: PhaseReport) 
 
 async def phase_install_build_llamacpp(cfg: RinthelConfig, report: PhaseReport) -> None:
     build_dir = cfg.install.llamacpp_repo_dir / "build-cuda"
-    if (build_dir / "bin" / "llama-server").exists():
-        report.warn(f"{build_dir}/bin/llama-server ya existe — omito build")
+    existing_binary = _llama_server_binary(build_dir)
+    if existing_binary.exists():
+        report.warn(f"{existing_binary} ya existe — omito build")
         return
 
     report.warn("Compilando llama.cpp con CUDA — puede tardar 10-30 minutos")
@@ -106,7 +227,8 @@ async def phase_install_build_llamacpp(cfg: RinthelConfig, report: PhaseReport) 
     rc = await _run(
         [
             "cmake", "--build", str(build_dir),
-            "-j", str(os.cpu_count() or 4),
+            "--config", "Release",
+            "--parallel", str(os.cpu_count() or 4),
             "--target", "llama-server", "llama-moe-trace",
         ],
         report,
@@ -153,9 +275,27 @@ async def phase_install_setup_pithagoras(cfg: RinthelConfig, report: PhaseReport
             raise PhaseError(f"pithagoras clone failed (rc {rc})")
         report.success(f"Pithagoras clonado en {cfg.pithagoras.dir}")
 
+    _prepare_pithagoras_for_windows(cfg.pithagoras.dir, report)
+    _write_local_model_config(
+        cfg.install.pi_agent_dir,
+        cfg.llama.model,
+        cfg.llama.port,
+        report,
+    )
+
     env_path = cfg.pithagoras.dir / ".env"
     if env_path.exists():
-        report.warn(f"{env_path} ya existe — no lo piso")
+        if os.name == "nt":
+            update_env_file(
+                env_path,
+                {
+                    "LLAMA_BASE_URL": f"http://host.docker.internal:{cfg.llama.port}",
+                    "PI_PROVIDER": "local-llm",
+                    "PI_MODEL": str(cfg.llama.model),
+                },
+            )
+            report.success("Ruta de llama.cpp actualizada para Docker Desktop")
+        report.warn(f"{env_path} ya existe — conservo sus secretos")
         return
 
     example_path = cfg.pithagoras.dir / ".env.example"
@@ -176,6 +316,15 @@ async def phase_install_setup_pithagoras(cfg: RinthelConfig, report: PhaseReport
         # code 254" porque ese mount queda de solo lectura. Ver .env.example
         # de pithagoras.
         "PI_AGENT_DIR": str(cfg.install.pi_agent_dir),
+        # Con red bridge en Docker Desktop, 127.0.0.1 sería el propio
+        # contenedor; este nombre reservado alcanza el llama-server de Windows.
+        "LLAMA_BASE_URL": (
+            f"http://host.docker.internal:{cfg.llama.port}"
+            if os.name == "nt"
+            else f"http://127.0.0.1:{cfg.llama.port}"
+        ),
+        "PI_PROVIDER": "local-llm" if os.name == "nt" else "",
+        "PI_MODEL": str(cfg.llama.model) if os.name == "nt" else "",
     }
     update_env_file(env_path, overrides, seed_from=example_path)
     report.success(f"{env_path} generado")
