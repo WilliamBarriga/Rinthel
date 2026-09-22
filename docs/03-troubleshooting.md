@@ -24,6 +24,16 @@
 > [`02-hardware-optimization.md`](02-hardware-optimization.md) for the
 > ~300 MiB safety margin and which flag to lower first.
 
+> [!WARNING]
+> **Server dies right after enabling MTP** (`RINTHEL_MTP_ENABLED=true`,
+> `cudaMalloc failed: out of memory` in `ggml_cuda_graph_evaluate_and_capture`)
+> — MTP's compute buffer needs ~650 MiB that the current batch size is
+> already using. Lower `--ubatch-size`/`--batch-size` to `1024` or `512`
+> in `[N] CONFIGURAR > CÓMPUTO` (512 is the config with measured headroom
+> for MTP), or flip `mtp_enabled` off again in
+> `SPECULATIVE DECODING` — one checkbox, no `.env` editing. The save
+> itself warns about this combination before you get there.
+
 > [!NOTE]
 > **Model/binary not found** — the app warns on stderr at startup but
 > doesn't block the menu; adjust

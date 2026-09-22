@@ -81,6 +81,53 @@ def test_validate_warns_on_missing_paths_but_does_not_raise():
     assert any("no existe todavía" in w for w in warnings)
 
 
+# ── MTP: interruptor único + warnings de los combos inseguros ─────────────
+
+
+def test_validate_warns_when_mtp_is_on_with_a_batch_that_does_not_fit(cfg):
+    # test-tarkAIrk/logs/27: MTP + batch 2048 = 48 MiB libres, CUDA OOM.
+    risky = dataclasses.replace(
+        cfg, llama=dataclasses.replace(cfg.llama, mtp_enabled=True, batch_size=2048, ubatch_size=2048)
+    )
+    warnings = risky.validate()
+    assert any("MTP + batch/ubatch 2048/2048" in w and "logs/27" in w for w in warnings)
+
+
+def test_validate_does_not_warn_about_batch_size_with_mtp_off(cfg):
+    off = dataclasses.replace(
+        cfg, llama=dataclasses.replace(cfg.llama, mtp_enabled=False, batch_size=2048, ubatch_size=2048)
+    )
+    assert not any("MTP + batch/ubatch" in w for w in off.validate())
+
+
+def test_validate_warns_on_mtp_with_parallel_gt_1_and_with_vision(cfg):
+    # Las dos limitaciones propias de llama.cpp (handoff/03), no de VRAM.
+    combo = dataclasses.replace(
+        cfg,
+        llama=dataclasses.replace(
+            cfg.llama,
+            mtp_enabled=True,
+            batch_size=512,
+            ubatch_size=512,
+            parallel=2,
+            mmproj="~/llama.cpp/models/mmproj-F16.gguf",
+            mmproj_enabled=True,
+        ),
+    )
+    warnings = combo.validate()
+    assert any("--parallel > 1" in w for w in warnings)
+    assert any("--mmproj" in w for w in warnings)
+
+
+def test_validate_warns_when_the_mtp_switch_contradicts_spec_type(cfg):
+    # Interruptor prendido pero modo "none": el argv arrancaría con
+    # --spec-type none, MTP apagado pese al checkbox.
+    contradictory = dataclasses.replace(
+        cfg, llama=dataclasses.replace(cfg.llama, mtp_enabled=True, spec_type="none", batch_size=512, ubatch_size=512)
+    )
+    assert any("queda apagado" in w for w in contradictory.validate())
+
+
 # ── enabled ────────────────────────────────────────────────────────────────
 
 
@@ -111,7 +158,11 @@ def test_validate_no_warnings_when_all_paths_exist(tmp_path):
     existing.write_text("")
     cfg = dataclasses.replace(
         base,
-        llama=dataclasses.replace(base.llama, bin=existing, model=existing),
+        # mtp_enabled=False para aislar este chequeo (paths) de los warnings
+        # de MTP de `_mtp_warnings` — el .env real de esta máquina tiene MTP
+        # prendido con batch 2048, combination que SÍ debe warniar (ver
+        # test de más abajo).
+        llama=dataclasses.replace(base.llama, bin=existing, model=existing, mtp_enabled=False),
     )
     assert cfg.validate() == []
 

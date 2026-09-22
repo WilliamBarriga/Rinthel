@@ -5,6 +5,7 @@ config; estos tests cubren el shape genérico de
 real del repo (`_ENV_PATH`/`_ENV_EXAMPLE_PATH` se monkeypatchean a rutas de
 `tmp_path`)."""
 
+import dataclasses
 import json
 
 import pytest
@@ -19,8 +20,17 @@ def _isolated_env_paths(tmp_path, monkeypatch):
     # `post_config` reasigna `daemon.cfg` en memoria tras un write exitoso —
     # sin este snapshot/restore, un test que guarda algo dejaría `daemon.cfg`
     # mutado para el resto de la sesión de pytest (es un global de módulo,
-    # no algo por-test).
-    monkeypatch.setattr(daemon, "cfg", daemon.cfg)
+    # no algo por-test). MTP arranca apagado en ese snapshot: el .env real de
+    # esta máquina lo tiene prendido con batch 2048, y el warning correcto de
+    # `validate()` para esa combinación (ver test-tarkAIrk/logs/27) haría
+    # fallar cada aserción de "warnings: []" de este módulo. Encenderlo de
+    # verdad se testea en los dos tests de MTP de más abajo.
+    base = daemon.cfg
+    monkeypatch.setattr(
+        daemon,
+        "cfg",
+        dataclasses.replace(base, llama=dataclasses.replace(base.llama, mtp_enabled=False)),
+    )
 
 
 def test_get_config_lists_every_sub_config_including_install():
@@ -114,3 +124,41 @@ async def test_post_config_allows_reverting_to_the_original_value_after_a_save()
 
     assert body == {"ok": True, "written": 1, "warnings": []}
     assert f"RINTHEL_CACHE_REUSE={original}" in daemon._ENV_PATH.read_text()
+
+
+# ── El interruptor único de MTP llega al cliente con sus warnings ─────────
+
+
+async def test_post_config_toggles_mtp_with_a_single_parameter():
+    # Un solo override prende MTP — es el mismo parámetro que el checkbox de
+    # [N] CONFIGURAR manda, no hace falta tocar spec_type a mano.
+    response = await daemon.post_config({"overrides": {"RINTHEL_MTP_ENABLED": "true"}})
+    body = json.loads(response.body)
+    assert body["ok"] is True
+    assert body["written"] == 1
+    assert daemon.cfg.llama.mtp_enabled is True
+    assert "RINTHEL_MTP_ENABLED=true" in daemon._ENV_PATH.read_text()
+
+    # Y el campo aparece en GET /config con su kind/group, que es lo que el
+    # TUI necesita para pintarlo como checkbox en SPECULATIVE DECODING.
+    llama = next(s for s in json.loads(daemon.get_config().body)["services"] if s["attr"] == "llama")
+    field = next(f for f in llama["fields"] if f["attr"] == "mtp_enabled")
+    assert field == {
+        "attr": "mtp_enabled",
+        "env": "RINTHEL_MTP_ENABLED",
+        "kind": "bool",
+        "group": "speculative",
+        "value": "true",
+    }
+
+
+async def test_post_config_surfaces_the_mtp_batch_warning():
+    # Encender MTP sobre el batch 2048 real del .env debe devolver el
+    # warning de logs/27 en la respuesta — es lo único que el TUI pinta
+    # (barra de estado de [N] CONFIGURAR), así que es el momento en que el
+    # usuario se entera de que tiene que bajar el batch si quiere margen.
+    response = await daemon.post_config({"overrides": {"RINTHEL_MTP_ENABLED": "true"}})
+    body = json.loads(response.body)
+    assert body["ok"] is True
+    assert daemon.cfg.llama.mtp_enabled is True
+    assert any("MTP + batch/ubatch" in w for w in body["warnings"])

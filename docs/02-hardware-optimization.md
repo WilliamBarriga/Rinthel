@@ -42,17 +42,31 @@ stable value with the expert cache active (next section) and a `131072`
 context without running out of memory. With more VRAM available, this
 number can be lowered to gain prefill speed.
 
-## `--spec-type none` — MTP disabled
+## `RINTHEL_MTP_ENABLED` — MTP on/off with a single parameter
 
 The gguf ships with MTP (multi-token prediction, speculative decoding)
-baked in, but enabling it (`--spec-type draft-mtp`) reproduces a **real
-OOM** on this hardware — confirmed reproducible, not a one-off fluke.
-The VRAM headroom freed by KV cache quantization and spent on the larger
-batch size (both below) doesn't leave enough for MTP's compute buffer on
-top; the two don't stack. MTP in `llama.cpp` also has two limitations of
-its own, aside from the OOM: it doesn't support `--parallel` > 1 or
-`--mmproj`. It stays disabled until there's VRAM headroom to spare for it
-specifically.
+baked in. One boolean turns it on and off — `true` → `--spec-type
+draft-mtp` (mode from `RINTHEL_SPEC_TYPE`), `false` → `--spec-type
+none`, regardless of what the mode variable says. Same checkbox in
+`[N] CONFIGURAR > LLAMA-SERVER > SPECULATIVE DECODING`, so toggling it
+never means editing `.env` by hand.
+
+MTP is **on** in this setup as of 2026-09-22, at batch/ubatch 2048 — a
+combination that has *not* been validated and that the research expects
+to be tight: MTP needs ~650 MiB of extra compute buffer for its CUDA
+graph capture (`test-tarkAIrk/logs/08`), and at 2048 the headroom freed
+by KV cache quantization is already spent on the batch size: the retry
+in `test-tarkAIrk/logs/27` bottomed out at 48 MiB free and died with
+`cudaMalloc failed: out of memory`. What to do if the server dies on the
+first real request: lower `--ubatch-size`/`--batch-size` to `1024` or
+`512` from `[N] CONFIGURAR > CÓMPUTO` (512 is the minimum-VRAM candidate
+with MTP — q8_0 leaves 1270-1370 MiB free there against the ~650 MiB MTP
+needs, `test-tarkAIrk/handoff/04`), or flip the switch off again.
+
+Two limitations of MTP in `llama.cpp`, independent of VRAM: it does not
+support `--parallel` > 1, nor `--mmproj`. The config warns about the
+first one and omits the second flag from the command while MTP is on
+(the stored vision config is left untouched).
 
 ## Expert cache (`--moe-cache-profile` + `--moe-cache-slots 16`)
 
@@ -81,8 +95,13 @@ The single largest driver of `prompt_tps` on this hardware — larger than
 any effect from `--n-cpu-moe` or the expert cache profile. Raising it
 keeps improving prefill speed at the cost of VRAM; `2048` is the largest
 value that still clears the ~300 MiB safety threshold with the rest of
-this config active. Going past it (3072) crosses the threshold and is not
-usable.
+this config active **without MTP**. Going past it (3072) crosses the
+threshold and is not usable.
+
+This is the flag to lower first when MTP is enabled and the server runs
+out of memory (see the MTP section above): 2048 leaves 706 MiB free, of
+which MTP's compute buffer alone needs ~650 — nothing left for the rest
+of the session.
 
 ## `-c 131072` — context window
 
@@ -111,9 +130,9 @@ of its own). Don't touch without re-measuring before/after.
 
 Priority order for relaxing this tuning: raise `--batch-size`/
 `--ubatch-size` past 2048 first (biggest prefill gain per MiB of VRAM
-spent), then raise `--n-cpu-moe` less aggressively (more layers to GPU),
-then consider turning on `--spec-type draft-mtp` (gains generation speed,
-but only with enough headroom for long sessions). Raising
+spent), then raise `--n-cpu-moe` less aggressively (more layers to GPU) —
+MTP (`RINTHEL_MTP_ENABLED`) is already on in this setup, so don't count
+its ~650 MiB as available headroom when doing any of the above. Raising
 `--moe-cache-slots` past 16 is not worth it regardless of available VRAM
 — see the expert cache section above. Changing more than one flag at a
 time makes it impossible to tell which one caused what if something
