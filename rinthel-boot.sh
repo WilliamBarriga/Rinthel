@@ -18,6 +18,11 @@ BINARY="$DIR/rinthel-client/target/release/rinthel"
 PIDFILE="$DIR/.rinthel-daemon.pid"
 ENV_FILE="$DIR/.env"
 DAEMON_LOG="$DIR/logs/daemon.log"
+# hostexecd: daemon separado que ejecuta comandos de shell en el host real
+# (ver plans/rinthel-host-exec.md) — mismo patrón de pidfile/autostart que
+# el daemon de arriba, en paralelo, sin pisar nada de lo suyo.
+HOSTEXECD_PIDFILE="$DIR/.rinthel-hostexecd.pid"
+HOSTEXECD_LOG="$DIR/logs/hostexecd.log"
 READY_TIMEOUT=10 # segundos de poll tras autostart antes de rendirse
 
 # `cargo build` es incremental — sin cambios desde el último boot, esto es
@@ -45,12 +50,15 @@ build_client() {
     fi
 }
 
+# Generalizada sobre la var de entorno y el default (antes hardcodeaba
+# RINTHEL_DAEMON_PORT/8765) para que hostexecd pueda reusarla en vez de
+# duplicar la lógica de parseo del .env.
 port_from_env() {
-    local value="8765"
+    local var_name="$1" default_value="$2" value="$2"
     if [[ -f "$ENV_FILE" ]]; then
         local line
-        line="$(grep -E '^RINTHEL_DAEMON_PORT=' "$ENV_FILE" | tail -n1 || true)"
-        [[ -n "$line" ]] && value="${line#RINTHEL_DAEMON_PORT=}"
+        line="$(grep -E "^${var_name}=" "$ENV_FILE" | tail -n1 || true)"
+        [[ -n "$line" ]] && value="${line#${var_name}=}"
     fi
     echo "$value"
 }
@@ -63,45 +71,50 @@ pid_alive() {
     kill -0 "$1" 2>/dev/null
 }
 
-# PID guardado en el pidfile si sigue vivo, o "" si no hay pidfile o quedó
-# stale (proceso muerto sin limpiar — la norma en una máquina que se
+# PID guardado en el pidfile dado si sigue vivo, o "" si no hay pidfile o
+# quedó stale (proceso muerto sin limpiar — la norma en una máquina que se
 # reinicia, no la excepción: se trata como "no corriendo", sin quejarse).
+# Generalizada sobre el pidfile (antes hardcodeaba $PIDFILE) para que
+# hostexecd la reuse en vez de duplicarla.
 running_pid() {
-    if [[ -f "$PIDFILE" ]]; then
+    local pidfile="$1"
+    if [[ -f "$pidfile" ]]; then
         local pid
-        pid="$(cat "$PIDFILE")"
+        pid="$(cat "$pidfile")"
         if [[ -n "$pid" ]] && pid_alive "$pid"; then
             echo "$pid"
             return
         fi
-        rm -f "$PIDFILE"
+        rm -f "$pidfile"
     fi
     echo ""
 }
 
+# $1: pidfile, $2: nombre para los mensajes ("daemon"/"hostexecd").
 stop_daemon() {
-    local pid
-    pid="$(running_pid)"
+    local pidfile="$1" label="$2" pid
+    pid="$(running_pid "$pidfile")"
     if [[ -z "$pid" ]]; then
-        echo "[boot] el daemon no está corriendo (o no fue lanzado por este script — sin pidfile)."
+        echo "[boot] $label no está corriendo (o no fue lanzado por este script — sin pidfile)."
         return
     fi
-    echo "[boot] apagando daemon (PID $pid)..."
+    echo "[boot] apagando $label (PID $pid)..."
     kill -TERM "$pid"
     for _ in $(seq 1 20); do
         pid_alive "$pid" || break
         sleep 0.25
     done
     if pid_alive "$pid"; then
-        echo "[boot] error: el daemon (PID $pid) no terminó a tiempo tras SIGTERM." >&2
+        echo "[boot] error: $label (PID $pid) no terminó a tiempo tras SIGTERM." >&2
         exit 1
     fi
-    rm -f "$PIDFILE"
-    echo "[boot] daemon apagado."
+    rm -f "$pidfile"
+    echo "[boot] $label apagado."
 }
 
 if [[ "${1:-}" == "--stop" ]]; then
-    stop_daemon
+    stop_daemon "$PIDFILE" "daemon"
+    stop_daemon "$HOSTEXECD_PIDFILE" "hostexecd"
     exit 0
 fi
 
@@ -111,8 +124,8 @@ if [[ ! -x "$PYTHON" ]]; then
 fi
 build_client
 
-PORT="$(port_from_env)"
-pid="$(running_pid)"
+PORT="$(port_from_env RINTHEL_DAEMON_PORT 8765)"
+pid="$(running_pid "$PIDFILE")"
 
 if [[ -n "$pid" ]]; then
     echo "[boot] daemon ya corriendo (PID $pid, puerto $PORT)."
@@ -137,6 +150,35 @@ else
         tries=$((tries + 1))
     done
     echo "[boot] daemon arriba (PID $(cat "$PIDFILE"))."
+fi
+
+# hostexecd — mismo patrón exacto que el bloque de arriba, en paralelo. Sin
+# cliente propio (no lo usa el binario Rust), solo necesita estar arriba
+# antes de que Rinthel intente llamar a la tool host_exec.
+HOSTEXECD_PORT="$(port_from_env RINTHEL_HOSTEXECD_PORT 8766)"
+hostexecd_pid="$(running_pid "$HOSTEXECD_PIDFILE")"
+
+if [[ -n "$hostexecd_pid" ]]; then
+    echo "[boot] hostexecd ya corriendo (PID $hostexecd_pid, puerto $HOSTEXECD_PORT)."
+elif port_in_use "$HOSTEXECD_PORT"; then
+    echo "[boot] puerto $HOSTEXECD_PORT ya en uso (proceso ajeno a este script) — asumiendo que es hostexecd."
+else
+    echo "[boot] hostexecd no está corriendo — autostarteando en puerto $HOSTEXECD_PORT..."
+    mkdir -p "$(dirname "$HOSTEXECD_LOG")"
+    RINTHEL_HOSTEXECD_PORT="$HOSTEXECD_PORT" nohup "$PYTHON" -m hostexecd.daemon >>"$HOSTEXECD_LOG" 2>&1 &
+    echo $! >"$HOSTEXECD_PIDFILE"
+    disown
+    tries=0
+    max_tries=$((READY_TIMEOUT * 2)) # poll cada 0.5s
+    until port_in_use "$HOSTEXECD_PORT"; do
+        if (( tries >= max_tries )); then
+            echo "[boot] error: hostexecd no respondió en :$HOSTEXECD_PORT tras ${READY_TIMEOUT}s — revisá $HOSTEXECD_LOG." >&2
+            exit 1
+        fi
+        sleep 0.5
+        tries=$((tries + 1))
+    done
+    echo "[boot] hostexecd arriba (PID $(cat "$HOSTEXECD_PIDFILE"))."
 fi
 
 exec "$BINARY" --port "$PORT" "$@"
