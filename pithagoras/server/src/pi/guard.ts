@@ -52,6 +52,19 @@ const target = (input: Record<string, unknown>) =>
 /** Directories on PATH: a file here is executed later, by something else. */
 const PATH_DIRS = /(^|[^\w/])(\/data\/bin|\/usr\/local\/bin|\/usr\/bin|\/usr\/local\/sbin)\//;
 
+/**
+ * `rinthel_host_exec` runs on the real host machine, not the Pithagoras
+ * container — see extensions/rinthel-host-exec/ and
+ * plans/rinthel-host-exec.md. That makes it a different kind of risk than
+ * `bash`: the blast radius is the actual box this all runs on, not a
+ * disposable container. So unlike `RULES` below, which lets any shape of
+ * `bash` through except the specific dangerous ones, a tainted session
+ * loses `rinthel_host_exec` entirely, with no pattern-matching exception.
+ * The cost of a false positive here (asking Tarkark to run it himself) is
+ * low next to an attack shape `RULES` doesn't happen to cover yet.
+ */
+const HOST_EXEC_TOOLS = new Set(["rinthel_host_exec"]);
+
 const RULES: Rule[] = [
   {
     name: "pipe-to-shell",
@@ -449,6 +462,23 @@ export function guardExtension(
             `needs the primary user, and pass the request along — with the exact command as the ` +
             `action, so they can approve that and only that. If you have already asked about ` +
             `this, do not ask again: say you are waiting.`,
+        };
+      }
+
+      // Full block, ahead of and separate from the RULES/hit() mechanism
+      // below: RULES.find() would return undefined for rinthel_host_exec
+      // (no rule names it) and let the call through. See HOST_EXEC_TOOLS
+      // above for why this tool gets no pattern-matching exceptions.
+      if (tainted && HOST_EXEC_TOOLS.has(event.toolName)) {
+        console.warn(`[guard ${sessionId}] blocked ${event.toolName}: tainted`);
+        note("refused", "rinthel_host_exec blocked entirely while the session is tainted");
+        return {
+          block: true,
+          reason:
+            "Refused: this session has read untrusted content, and rinthel_host_exec runs on " +
+            "the real host, not the container. No form of this command is allowed while the " +
+            "session is tainted. If a human asked for this, they can run it themselves, or " +
+            "start a session that has not read anything untrusted.",
         };
       }
 
