@@ -52,6 +52,24 @@
 > in on tailscale0 to any port <port>` instead of (or in addition to) the
 > subnet rule.
 
+> [!WARNING]
+> **Understory `memory_query` fails with `Connect Timeout Error
+> (attempted address: host.docker.internal:8080)`** while
+> `memory_status` works — the container can't reach llama-server. A
+> timeout (not "refused") means a packet is being dropped on the host.
+> 1. `docker exec rinthel-general-understory-1 nc -zv -w3 host.docker.internal 8080`
+>    reproduces it.
+> 2. `sudo iptables -t nat -S PREROUTING | grep 8080` — any `DNAT
+>    --to-destination 127.0.0.1:8080` is a leftover of the old
+>    `route_localnet` scheme and is the usual culprit: after the bridge is
+>    recreated `route_localnet` resets to `0` and the kernel drops the
+>    DNAT'ed SYN silently (no `[UFW BLOCK]` log). Delete it, and disable
+>    `understory-llama-nat.service` if it exists.
+> 3. `sudo ufw status | grep 8080` must include
+>    `8080/tcp on br-rgunderstory ALLOW IN`.
+>
+> Setup and rationale: [`01-system-overview.md`](01-system-overview.md#understory--llama-server).
+
 > [!NOTE]
 > **Phone shows "offline" in `tailscale status` with no config change**
 > — not a network issue, the app got killed in the background. Check

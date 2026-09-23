@@ -107,6 +107,9 @@ export class ContainerExecutor implements Executor {
       "OPENROUTER_API_KEY",
       "ANTHROPIC_API_KEY",
       "OPENAI_API_KEY",
+      // OpenCode Zen — sin esto un task en contenedor no resuelve la auth de
+      // los providers `opencode`/`opencode-go` y sus modelos no aparecen.
+      "OPENCODE_API_KEY",
       "PI_PROVIDER",
       "PI_MODEL",
     ].flatMap((key) => (process.env[key] ? ["-e", `${key}=${process.env[key]}`] : []));

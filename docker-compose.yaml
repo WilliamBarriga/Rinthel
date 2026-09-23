@@ -14,9 +14,12 @@ include:
   - pithagoras/docker-compose.yml
 
 # Red propia para understory, no la default del proyecto: así el
-# gateway/nombre de interfaz quedan fijos entre `compose down && up`, y las
-# reglas de iptables/route_localnet en el host (que reenvían ese gateway a
-# 127.0.0.1:8080, donde escucha llama-server) no quedan huérfanas. Nombre e
+# gateway/nombre de interfaz quedan fijos entre `compose down && up`, y la
+# regla de ufw que abre 8080 (llama-server, bind 0.0.0.0) a este bridge no
+# queda huérfana. Si se renombra la interfaz o cambia la subnet, hay que
+# actualizar esa regla — ver docs/01-system-overview.md "Understory ->
+# llama-server". Nada de DNAT/route_localnet: se reseteaba al recrear el
+# bridge y dejaba el DNAT a 127.0.0.1 tirando paquetes en silencio. Nombre e
 # interfaz (br-rgunderstory) llevan el sufijo "rg" a propósito — Rinthel-corp
 # es un checkout/entorno completamente distinto y podría implementar el mismo
 # patrón algún día; los nombres de red e interfaz son globales por host, así
