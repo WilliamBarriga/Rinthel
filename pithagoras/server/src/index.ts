@@ -491,7 +491,17 @@ app.post("/api/sessions/:id/config", async (req, res) => {
   try {
     const client = await sessions.client(session.id);
     if (typeof modelId === "string" && modelId) {
-      await client.setModel(provider || getSettings().provider, modelId);
+      // pi's catalogue mixes several providers, so the id alone is not enough:
+      // pairing it with the default provider made every other provider's model
+      // a "Model not found" 500 that left the picker open with no feedback.
+      // The picker now sends the provider; a request carrying only the id
+      // (curl, an older client) resolves it from the catalogue instead.
+      let who = provider;
+      if (!who) {
+        const catalogue = await client.getModels().catch(() => []);
+        who = catalogue.find((m: { id: string }) => m.id === modelId)?.provider;
+      }
+      await client.setModel(who || getSettings().provider, modelId);
       applied.push("model");
     }
     if (typeof thinkingLevel === "string" && thinkingLevel) {

@@ -150,6 +150,8 @@ export function ComposerBar({
   const [filter, setFilter] = useState("");
   const [recents, setRecents] = useState<string[]>(readRecents);
   const [busy, setBusy] = useState(false);
+  /** Last picker failure, shown inside the panel — a 500 used to be silent. */
+  const [pickError, setPickError] = useState<string | null>(null);
   /** Where the handle sits mid-drag, before the change is sent. */
   const [dragEffort, setDragEffort] = useState<number | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -172,6 +174,7 @@ export function ComposerBar({
     setCfg(seed(session));
     setOpen(null);
     setDragEffort(null);
+    setPickError(null);
     load();
   }, [sessionId]);
 
@@ -211,6 +214,7 @@ export function ComposerBar({
         setOpen(null);
         setShowAll(false);
         setFilter("");
+        setPickError(null);
       }
     };
     document.addEventListener("mousedown", onDown);
@@ -232,15 +236,23 @@ export function ComposerBar({
     return (q ? models.filter((m) => (m.id + m.name).toLowerCase().includes(q)) : models).slice(0, 200);
   }, [models, filter]);
 
-  const applyModel = async (id: string) => {
+  const applyModel = async (m: PiModel) => {
     setBusy(true);
+    setPickError(null);
     try {
-      await api.setConfig(sessionId, { modelId: id });
-      setRecents(pushRecent(id));
+      // The provider travels with the id: the server pairs the two to call
+      // pi, and guessing the default provider made every model from another
+      // provider fail with "Model not found".
+      await api.setConfig(sessionId, { provider: m.provider, modelId: m.id });
+      setRecents(pushRecent(m.id));
       await load();
       setOpen(null);
       setShowAll(false);
       setFilter("");
+    } catch (e) {
+      // Kept open on purpose: without this the rejection vanished, the panel
+      // sat there unchanged, and the click read as a dead button.
+      setPickError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -275,7 +287,10 @@ export function ComposerBar({
         <button
           type="button"
           disabled={busy}
-          onClick={() => setOpen(open === "model" ? null : "model")}
+          onClick={() => {
+            setPickError(null);
+            setOpen(open === "model" ? null : "model");
+          }}
           className={`max-w-[220px] truncate rounded-lg px-2 py-1.5 transition disabled:opacity-50 ${
             open === "model" ? "bg-fg/10 text-fg" : "text-fg-subtle hover:bg-fg/5 hover:text-fg-muted"
           }`}
@@ -353,13 +368,18 @@ export function ComposerBar({
               {loadingCatalogue ? "refreshing…" : "refresh"}
             </button>
           </div>
+          {pickError && (
+            <p className="mx-3 mb-1 rounded border border-danger/30 bg-danger/10 px-2 py-1 text-[11px] text-danger">
+              {pickError}
+            </p>
+          )}
           {!showAll ? (
             <>
               {quick.map((m) => (
                 <button
                   key={m.id}
                   type="button"
-                  onClick={() => applyModel(m.id)}
+                  onClick={() => applyModel(m)}
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-fg hover:bg-raised"
                   title={m.id}
                 >
@@ -393,7 +413,7 @@ export function ComposerBar({
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => applyModel(m.id)}
+                    onClick={() => applyModel(m)}
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-fg-muted hover:bg-raised"
                     title={m.id}
                   >

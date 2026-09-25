@@ -20,6 +20,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git openssh-client ca-certificates curl wget \
     && rm -rf /var/lib/apt/lists/*
 
+# GitHub CLI (gh) for issue management — installed in the image.
+# Auth is configured at runtime via GH_TOKEN env var or gh auth login.
+RUN (type -p wget >/dev/null || (apt-get update && apt-get install -y wget)) \
+    && mkdir -p -m 755 /etc/apt/keyrings \
+    && out=$(mktemp) && wget -qO "$out" https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    && cat "$out" > /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y gh \
+    && rm -f "$out" && rm -rf /var/lib/apt/lists/*
+
 # Python 3.14, via uv's prebuilt python-build-standalone binaries — seconds
 # instead of the ~10-15min a from-source compile took, and no build-essential
 # or -dev headers needed in this image. uv itself is copied in below (right
