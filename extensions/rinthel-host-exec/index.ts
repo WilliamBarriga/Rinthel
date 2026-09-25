@@ -118,7 +118,7 @@ export default function (pi: ExtensionAPI) {
 				Type.String({ description: "Directorio de trabajo en el host (default: $HOME del host)" }),
 			),
 			timeout: Type.Optional(
-				Type.Integer({ description: "Timeout en segundos (default: el del daemon, 60s)" }),
+				Type.Integer({ description: "Timeout en segundos, de 1 a 600 (default: el del daemon, 60s)" }),
 			),
 		}),
 		execute: async (_toolCallId, params) => {

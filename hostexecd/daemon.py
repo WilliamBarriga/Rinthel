@@ -51,6 +51,8 @@ load_dotenv(_REPO_ROOT / ".env")
 
 app = FastAPI()
 
+MAX_HISTORY = 200
+
 
 def _require_token(token: str | None) -> None:
     if not auth.check_token(token):
@@ -69,9 +71,21 @@ def exec_command(
     cwd = payload.get("cwd")
     if cwd is not None and not isinstance(cwd, str):
         raise HTTPException(status_code=400, detail="'cwd' must be a string or null")
+    # Chequeado acá y no dejado a subprocess: su FileNotFoundError salía como
+    # un 500 sin auditar, y el modelo no se enteraba de qué había pedido mal.
+    if cwd is not None and not Path(cwd).is_dir():
+        raise HTTPException(status_code=400, detail=f"'cwd' is not a directory on the host: {cwd}")
     timeout = payload.get("timeout")
-    if timeout is not None and not isinstance(timeout, (int, float)):
-        raise HTTPException(status_code=400, detail="'timeout' must be a number or null")
+    # bool es subclase de int en Python: sin excluirlo, `true` pasaba como 1s.
+    if timeout is not None and (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not 1 <= timeout <= executor.MAX_TIMEOUT
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"'timeout' must be a number of seconds from 1 to {executor.MAX_TIMEOUT}, or null",
+        )
 
     result = executor.run_command(command, cwd, int(timeout) if timeout else None)
 
@@ -80,8 +94,8 @@ def exec_command(
         cwd=cwd,
         exit_code=result.exit_code,
         duration_ms=result.duration_ms,
-        stdout_len=len(result.stdout),
-        stderr_len=len(result.stderr),
+        stdout_len=result.stdout_bytes,
+        stderr_len=result.stderr_bytes,
         timed_out=result.timed_out,
     )
 
@@ -101,6 +115,9 @@ def history(
     limit: int = 20, x_rinthel_token: str | None = Header(default=None, alias=auth.TOKEN_HEADER)
 ) -> JSONResponse:
     _require_token(x_rinthel_token)
+    # limit=0 devolvía el log entero (`lines[-0:]` es la lista completa).
+    if not 1 <= limit <= MAX_HISTORY:
+        raise HTTPException(status_code=400, detail=f"'limit' must be from 1 to {MAX_HISTORY}")
     return JSONResponse({"entries": audit.read_recent(limit)})
 
 

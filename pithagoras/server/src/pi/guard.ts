@@ -65,6 +65,15 @@ const PATH_DIRS = /(^|[^\w/])(\/data\/bin|\/usr\/local\/bin|\/usr\/bin|\/usr\/lo
  */
 const HOST_EXEC_TOOLS = new Set(["rinthel_host_exec"]);
 
+/**
+ * extensions/rinthel-agents/ runs each subagent in its own AgentSession, which
+ * this guard is not loaded into: whatever a subagent read never taints anyone.
+ * Its answer carries those words back into this session, so the answer itself
+ * counts as untrusted — even when the subagent only read code. A false
+ * positive costs a command run by hand; a miss costs the host.
+ */
+const SUBAGENT_TOOLS = new Set(["subagent", "subagentChain", "subagentSeries", "subagentVariants"]);
+
 const RULES: Rule[] = [
   {
     name: "pipe-to-shell",
@@ -369,11 +378,18 @@ export function guardExtension(
       const formatted = compact ? (event.content ?? []).map((part: any) =>
         part?.type === 'text' && typeof part.text === 'string' ? { ...part, text: cleanBrowserSnapshot(part.text) } : part,
       ) : event.content;
+      // rinthel_host_exec is a shell too, one on the host: judged by its command
+      // like bash, or `curl` through it would read the web without tainting.
       const source =
-        event.toolName === "bash" ? cmd(event.input ?? {}) : String(event.toolName ?? "");
+        event.toolName === "bash" || HOST_EXEC_TOOLS.has(event.toolName)
+          ? cmd(event.input ?? {})
+          : String(event.toolName ?? "");
       // MCP tools reach servers the portal does not control, so their output is
       // treated the same way as mail: someone else's words.
-      const untrusted = UNTRUSTED_COMMAND.test(source) || /^mcp(_|$)/.test(source);
+      const untrusted =
+        UNTRUSTED_COMMAND.test(source) ||
+        /^mcp(_|$)/.test(source) ||
+        SUBAGENT_TOOLS.has(event.toolName);
       if (!untrusted || event.isError) return compact ? { content: formatted } : undefined;
 
       tainted = true;

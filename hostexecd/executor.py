@@ -19,6 +19,13 @@ from pathlib import Path
 # esto no es lo que /exec está pensado para cubrir. Overrideable por
 # request (campo "timeout" del body).
 DEFAULT_TIMEOUT = 60
+# Techo del override por request: sin él, la LLM podía pedir un timeout
+# arbitrario y dejar /exec colgado — este daemon es de un solo worker.
+MAX_TIMEOUT = 600
+# Tope por stream (stdout y stderr por separado): la salida vuelve entera al
+# contexto del modelo, y un `cat` de un log grande se lo comería. Se queda
+# con el principio y avisa cuánto había en total.
+MAX_OUTPUT_BYTES = 50_000
 
 HOME = str(Path.home())
 
@@ -30,6 +37,21 @@ class ExecResult:
     stderr: str
     duration_ms: int
     timed_out: bool
+    # Tamaño real de cada stream antes de truncar — lo que va al audit log.
+    stdout_bytes: int
+    stderr_bytes: int
+
+
+def _read_capped(f) -> tuple[str, int]:
+    """Lee hasta MAX_OUTPUT_BYTES de ``f`` (ya escrito, en cualquier
+    posición) y devuelve ``(texto, bytes_totales)``, con un aviso al final
+    si hubo que cortar."""
+    total = f.seek(0, 2)
+    f.seek(0)
+    text = f.read(MAX_OUTPUT_BYTES).decode(errors="replace")
+    if total > MAX_OUTPUT_BYTES:
+        text += f"\n[hostexecd: salida truncada a {MAX_OUTPUT_BYTES} de {total} bytes]\n"
+    return text, total
 
 
 def run_command(command: str, cwd: str | None, timeout: int | None) -> ExecResult:
@@ -76,10 +98,8 @@ def run_command(command: str, cwd: str | None, timeout: int | None) -> ExecResul
         except subprocess.TimeoutExpired:
             timed_out = True
             exit_code = -1
-        stdout_f.seek(0)
-        stderr_f.seek(0)
-        stdout = stdout_f.read().decode(errors="replace")
-        stderr = stderr_f.read().decode(errors="replace")
+        stdout, stdout_bytes = _read_capped(stdout_f)
+        stderr, stderr_bytes = _read_capped(stderr_f)
     duration_ms = int((time.monotonic() - start) * 1000)
     return ExecResult(
         exit_code=exit_code,
@@ -87,4 +107,6 @@ def run_command(command: str, cwd: str | None, timeout: int | None) -> ExecResul
         stderr=stderr,
         duration_ms=duration_ms,
         timed_out=timed_out,
+        stdout_bytes=stdout_bytes,
+        stderr_bytes=stderr_bytes,
     )

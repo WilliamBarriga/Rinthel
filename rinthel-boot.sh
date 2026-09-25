@@ -22,7 +22,9 @@ DAEMON_LOG="$DIR/logs/daemon.log"
 # (ver plans/rinthel-host-exec.md) — mismo patrón de pidfile/autostart que
 # el daemon de arriba, en paralelo, sin pisar nada de lo suyo.
 HOSTEXECD_PIDFILE="$DIR/.rinthel-hostexecd.pid"
-HOSTEXECD_LOG="$DIR/logs/hostexecd.log"
+# stdout/stderr del proceso — NO logs/hostexecd.log, que es el audit log
+# JSONL de hostexecd/audit.py: mezclarlos llenaba la auditoría de tracebacks.
+HOSTEXECD_LOG="$DIR/logs/hostexecd.out.log"
 READY_TIMEOUT=10 # segundos de poll tras autostart antes de rendirse
 
 # `cargo build` es incremental — sin cambios desde el último boot, esto es
