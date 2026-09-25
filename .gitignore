@@ -243,6 +243,7 @@ archify-demo/
 !.pi/agent/skills/
 .pi/agent/skills/*
 !.pi/agent/skills/graphify/
+.pi/agent/git-workflow.md
 
 # wayfinder — local markdown issue tracker, not source
 .scratch/

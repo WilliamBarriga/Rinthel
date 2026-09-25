@@ -13,6 +13,11 @@ can be relaxed — see each flag's section.
 
 ## The safety threshold: ~300 MiB of free VRAM
 
+`--n-cpu-moe`, the expert cache, the batch sizes and the KV quantization
+below are all knobs on the same trade: keep free VRAM above this floor
+while pushing prefill speed. Values shown are the ones production runs
+with (verified 2026-09-24).
+
 The rule governing almost every decision below: under real load, at least
 **~300 MiB of free VRAM** must be kept available. Below that, overflow
 into shared memory over PCIe happens silently — no error in the log, just
@@ -33,14 +38,16 @@ native context 262144. The `UD-Q4_K_XL` quant is what unsloth recommends
 for setups with ~24 GB of combined VRAM+RAM; it's the point where the
 model fits on this hardware without degrading output quality too much.
 
-## `--n-cpu-moe 60` — GPU/CPU split for MoE experts
+## `--n-cpu-moe 99` — GPU/CPU split for MoE experts
 
-How many expert layers run on CPU instead of GPU. Lowering the number
-moves more compute to GPU (faster prefill) but raises VRAM usage: on 8 GB,
-the real ceiling is free VRAM under load, not compute speed. `60` is the
-stable value with the expert cache active (next section) and a `131072`
-context without running out of memory. With more VRAM available, this
-number can be lowered to gain prefill speed.
+How many expert layers run on CPU instead of GPU (`99` = all of them;
+the `config.py` default is 60). Lowering the number moves more compute to
+GPU (faster prefill) but raises VRAM usage: on 8 GB, the real ceiling is
+free VRAM under load, not compute speed. `99` is the value production
+runs with the expert cache active (next section) and a `131072` context
+without running out of memory — the cache is what keeps the hot experts
+resident in VRAM even though every MoE layer is CPU-side. With more VRAM
+available, lowering this number gains prefill speed.
 
 ## `RINTHEL_MTP_ENABLED` — MTP on/off with a single parameter
 
@@ -51,17 +58,18 @@ none`, regardless of what the mode variable says. Same checkbox in
 `[N] CONFIGURAR > LLAMA-SERVER > SPECULATIVE DECODING`, so toggling it
 never means editing `.env` by hand.
 
-MTP is **on** in this setup as of 2026-09-22, at batch/ubatch 2048 — a
-combination that has *not* been validated and that the research expects
-to be tight: MTP needs ~650 MiB of extra compute buffer for its CUDA
-graph capture (`test-tarkAIrk/logs/08`), and at 2048 the headroom freed
-by KV cache quantization is already spent on the batch size: the retry
-in `test-tarkAIrk/logs/27` bottomed out at 48 MiB free and died with
-`cudaMalloc failed: out of memory`. What to do if the server dies on the
-first real request: lower `--ubatch-size`/`--batch-size` to `1024` or
-`512` from `[N] CONFIGURAR > CÓMPUTO` (512 is the minimum-VRAM candidate
-with MTP — q8_0 leaves 1270-1370 MiB free there against the ~650 MiB MTP
-needs, `test-tarkAIrk/handoff/04`), or flip the switch off again.
+MTP is **off** in this setup (decision 2026-09-24): it needs ~650 MiB of
+extra compute buffer for its CUDA graph capture (`test-tarkAIrk/logs/08`)
+and at batch/ubatch 2048 the headroom freed by KV cache quantization is
+already spent on the batch size — the retry in `test-tarkAIrk/logs/27`
+bottomed out at 48 MiB free and died with `cudaMalloc failed: out of
+memory`. It was briefly turned on (2026-09-22) and turned back off once
+the trade was on the table: ~650 MiB-1 GB of VRAM for ~+6-7 `gen_tps`.
+What to do if it is re-enabled and the server dies on the first real
+request: lower `--ubatch-size`/`--batch-size` to `1024` or `512` from `[N]
+CONFIGURAR > CÓMPUTO` (512 is the minimum-VRAM candidate with MTP — q8_0
+leaves 1270-1370 MiB free there against the ~650 MiB MTP needs,
+`test-tarkAIrk/handoff/04`), or flip the switch off again.
 
 Two limitations of MTP in `llama.cpp`, independent of VRAM: it does not
 support `--parallel` > 1, nor `--mmproj`. The config warns about the
@@ -118,21 +126,22 @@ Tuned for an 8-physical-core CPU: `--threads` uses all 8 for generation,
 saturate the core that's also carrying the rest of the system (Docker
 stacks, the TUI, etc.) while the model processes the prompt.
 
-## `--no-sched-async-cpu`
+## `RINTHEL_SCHED_ASYNC_CPU` — async CPU scheduling (currently ON)
 
-Disables `llama.cpp`'s async CPU scheduling. Part of the config currently
-verified in production; its isolated contribution to speed hasn't been
-precisely measured (it was ruled out as the explanation for a separate
-VRAM gap between builds, but that doesn't confirm or rule out an effect
-of its own). Don't touch without re-measuring before/after.
+`true` (production value) leaves `llama.cpp`'s async CPU scheduling
+enabled, so no `--no-sched-async-cpu` flag is passed at all. Its isolated
+contribution to speed hasn't been precisely measured (it was ruled out as
+the explanation for a separate VRAM gap between builds, but that doesn't
+confirm or rule out an effect of its own). Don't flip it without
+re-measuring before/after.
 
 ## If you have more than 8 GB of VRAM
 
 Priority order for relaxing this tuning: raise `--batch-size`/
 `--ubatch-size` past 2048 first (biggest prefill gain per MiB of VRAM
-spent), then raise `--n-cpu-moe` less aggressively (more layers to GPU) —
-MTP (`RINTHEL_MTP_ENABLED`) is already on in this setup, so don't count
-its ~650 MiB as available headroom when doing any of the above. Raising
+spent), then lower `--n-cpu-moe` (more layers to GPU) — and if MTP
+(`RINTHEL_MTP_ENABLED`) gets switched on, don't count its ~650 MiB as
+available headroom when doing any of the above. Raising
 `--moe-cache-slots` past 16 is not worth it regardless of available VRAM
 — see the expert cache section above. Changing more than one flag at a
 time makes it impossible to tell which one caused what if something
