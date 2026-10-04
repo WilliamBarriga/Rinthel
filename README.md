@@ -28,13 +28,15 @@ for **Understory** (MCP memory layer) and **Pithagoras** (task portal).
 - [`docs/01-system-overview.md`](docs/01-system-overview.md) — what runs,
   lifecycle phases, code structure.
 - [`docs/02-hardware-optimization.md`](docs/02-hardware-optimization.md) —
-  why each inference flag is set the way it is (VRAM, quant, MoE cache).
+  established Linux inference profile (VRAM, quant, MoE cache).
 - [`docs/03-troubleshooting.md`](docs/03-troubleshooting.md) — common errors
   and how to fix them.
 - [`docs/04-windows-installation.md`](docs/04-windows-installation.md) —
   native Windows bootstrap and Docker Desktop integration.
 - [`docs/05-windows-validation.md`](docs/05-windows-validation.md) —
   validated Windows profile, measured performance and grounded-use cases.
+- [`docs/windows-hardware-optimization.md`](docs/windows-hardware-optimization.md) —
+  inference settings for the validated Windows hardware.
 
 ## `[0]` Quick install (new machine)
 

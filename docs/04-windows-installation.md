@@ -34,7 +34,13 @@ El script crea un entorno virtual en `.venv`, instala el daemon, compila
 `rinthel.exe`, crea una configuración local `.env` si todavía no existe y
 abre la TUI. No sobrescribe una configuración existente. La configuración
 nueva incluye el perfil Windows validado de
-[`02-hardware-optimization.md`](02-hardware-optimization.md).
+[`windows-hardware-optimization.md`](windows-hardware-optimization.md).
+
+El archivo `.env.example` de la raíz conserva el perfil Linux. En Windows,
+usa `install.ps1` para crear la configuración; no copies ese ejemplo sobre
+la configuración Windows existente. Sin variables explícitas, el daemon
+selecciona los defaults de su plataforma. No se cambian las mediciones
+registradas ni los valores del perfil Windows validado.
 
 En la TUI, ejecuta `INSTALL` para validar CUDA/Docker, compilar llama.cpp,
 descargar el modelo y preparar Pithagoras/Understory. La descarga del modelo

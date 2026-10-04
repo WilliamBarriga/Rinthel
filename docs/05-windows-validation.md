@@ -17,7 +17,7 @@ un modelo y un perfil concretos.
 | Modelo | Qwen3.6-35B-A3B UD-Q4_K_XL, 21.28 GiB |
 
 La configuración exacta está en
-[`02-hardware-optimization.md`](02-hardware-optimization.md). Los archivos
+[`windows-hardware-optimization.md`](windows-hardware-optimization.md). Los archivos
 locales viven por defecto bajo `%USERPROFILE%\Rinthel-data`; ninguna ruta de
 usuario, contraseña ni token forma parte del repositorio.
 

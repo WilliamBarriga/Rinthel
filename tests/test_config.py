@@ -48,7 +48,11 @@ def test_default_config_respects_port_override(monkeypatch):
     assert cfg.llama.port == 9999
 
 
-def test_default_config_uses_validated_memory_profile(monkeypatch):
+@pytest.mark.parametrize("platform,expected", [
+    ("nt", (65536, 34, 2048, 2048, "none", False, "q8_0", "q8_0")),
+    ("posix", (112000, 60, 512, 512, "draft-mtp", True, "f16", "f16")),
+])
+def test_default_config_keeps_platform_profiles_separate(monkeypatch, platform, expected):
     for name in (
         "RINTHEL_CONTEXT_WINDOW",
         "RINTHEL_N_CPU_MOE",
@@ -61,16 +65,22 @@ def test_default_config_uses_validated_memory_profile(monkeypatch):
     ):
         monkeypatch.delenv(name, raising=False)
 
-    cfg = default_config()
+    cfg = default_config(platform=platform)
+    assert (
+        cfg.llama.context_window, cfg.llama.n_cpu_moe,
+        cfg.llama.ubatch_size, cfg.llama.batch_size,
+        cfg.llama.spec_type, cfg.llama.sched_async_cpu,
+        cfg.llama.cache_type_k, cfg.llama.cache_type_v,
+    ) == expected
 
-    assert cfg.llama.context_window == 65536
-    assert cfg.llama.n_cpu_moe == 34
-    assert cfg.llama.ubatch_size == 2048
-    assert cfg.llama.batch_size == 2048
-    assert cfg.llama.spec_type == "none"
-    assert cfg.llama.sched_async_cpu is False
-    assert cfg.llama.cache_type_k == "q8_0"
-    assert cfg.llama.cache_type_v == "q8_0"
+
+@pytest.mark.parametrize("platform", ["nt", "posix"])
+def test_platform_profile_preserves_explicit_env_overrides(monkeypatch, platform):
+    monkeypatch.setenv("RINTHEL_CONTEXT_WINDOW", "32768")
+    monkeypatch.setenv("RINTHEL_N_CPU_MOE", "42")
+    cfg = default_config(platform=platform)
+    assert cfg.llama.context_window == 32768
+    assert cfg.llama.n_cpu_moe == 42
 
 
 # ── RinthelConfig.validate() ──────────────────────────────────────────────
