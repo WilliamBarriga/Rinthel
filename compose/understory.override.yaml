@@ -1,0 +1,16 @@
+# Same validated Linux bridge and host alias, merged before include.
+services:
+  understory:
+    networks:
+      - understory-net
+    extra_hosts: !override
+      - "host.docker.internal:172.30.99.1"
+
+networks:
+  understory-net:
+    name: rinthel-general_understory_net
+    driver_opts:
+      com.docker.network.bridge.name: br-rgunderstory
+    ipam:
+      config:
+        - subnet: 172.30.99.0/24

@@ -157,6 +157,9 @@ async def test_post_config_surfaces_the_mtp_batch_warning():
     # warning de logs/27 en la respuesta — es lo único que el TUI pinta
     # (barra de estado de [N] CONFIGURAR), así que es el momento en que el
     # usuario se entera de que tiene que bajar el batch si quiere margen.
+    daemon.cfg = dataclasses.replace(
+        daemon.cfg, llama=dataclasses.replace(daemon.cfg.llama, batch_size=2048, ubatch_size=2048)
+    )
     response = await daemon.post_config({"overrides": {"RINTHEL_MTP_ENABLED": "true"}})
     body = json.loads(response.body)
     assert body["ok"] is True

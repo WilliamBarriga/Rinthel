@@ -17,8 +17,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
-from rinthel_tui.config import RinthelConfig
+from rinthel_tui.config import REPO_ROOT, RinthelConfig
 from rinthel_tui.env_file import update_env_file
+from rinthel_tui.install.host_exec import prepare_host_exec
 from rinthel_tui.lifecycle.managed_service import _run
 from rinthel_tui.lifecycle.phases import phase_check_docker
 from rinthel_tui.lifecycle.types import PhaseError, PhaseReport
@@ -156,29 +157,32 @@ async def phase_install_setup_pithagoras(cfg: RinthelConfig, report: PhaseReport
     env_path = cfg.pithagoras.dir / ".env"
     if env_path.exists():
         report.warn(f"{env_path} ya existe — no lo piso")
-        return
+    else:
+        example_path = cfg.pithagoras.dir / ".env.example"
+        if not example_path.exists():
+            report.error(f"{example_path} no existe — no puedo generar .env")
+            raise PhaseError("pithagoras .env.example missing")
 
-    example_path = cfg.pithagoras.dir / ".env.example"
-    if not example_path.exists():
-        report.error(f"{example_path} no existe — no puedo generar .env")
-        raise PhaseError("pithagoras .env.example missing")
+        overrides = {
+            "PORTAL_PASSWORD": secrets.token_urlsafe(16),
+            "PORTAL_SECRET": secrets.token_hex(32),
+            "UNDERSTORY_TOKEN": secrets.token_hex(24),
+            # No es un secreto — es la carpeta real que Pithagoras monta en
+            # /workspaces (ver RinthelConfig.workspaces_dir).
+            "WORKSPACES_DIR": str(cfg.install.workspaces_dir),
+            # Sin esto, Compose monta un directorio vacío donde Pi espera sus
+            # paquetes y luego intenta instalar sobre un mount de solo lectura.
+            "PI_AGENT_DIR": str(cfg.install.pi_agent_dir),
+        }
+        update_env_file(env_path, overrides, seed_from=example_path)
+        report.success(f"{env_path} generado")
 
-    overrides = {
-        "PORTAL_PASSWORD": secrets.token_urlsafe(16),
-        "PORTAL_SECRET": secrets.token_hex(32),
-        "UNDERSTORY_TOKEN": secrets.token_hex(24),
-        # No es un secreto — es la carpeta real que Pithagoras monta en
-        # /workspaces (ver RinthelConfig.workspaces_dir).
-        "WORKSPACES_DIR": str(cfg.install.workspaces_dir),
-        # Sin esto, Compose monta en silencio un directorio vacío
-        # (dueño root) donde va node_modules de pi-web-access/pi-mcp-adapter
-        # — la primera conversación falla con "npm install ... failed with
-        # code 254" porque ese mount queda de solo lectura. Ver .env.example
-        # de pithagoras.
-        "PI_AGENT_DIR": str(cfg.install.pi_agent_dir),
-    }
-    update_env_file(env_path, overrides, seed_from=example_path)
-    report.success(f"{env_path} generado")
+    try:
+        prepare_host_exec(REPO_ROOT, cfg.pithagoras.dir)
+    except ValueError as exc:
+        report.error(str(exc))
+        raise PhaseError("host exec token conflict") from exc
+    report.success("Token compartido de host exec preparado")
 
 
 def _read_understory_token(pithagoras_env: Path) -> str | None:

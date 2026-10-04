@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { inlineBrowserScreenshot } from "./browser-screenshot.js";
 import { cleanBrowserSnapshot, isBrowserSnapshot } from "./browser-snapshot-format.js";
 import { listToolRules, recordAudit, useGrant, type ToolRule } from "../db.js";
+import { SessionTaint } from "./session-taint.js";
 
 /**
  * A blast-radius limiter for prompt injection.
@@ -27,9 +28,6 @@ import { listToolRules, recordAudit, useGrant, type ToolRule } from "../db.js";
  * around a pattern list. The point is to make the easy path stop working, and to
  * make an attempt visible instead of silent.
  */
-
-/** Commands whose output is somebody else's words. */
-const UNTRUSTED_COMMAND = /\b(himalaya|mutt|neomutt|notmuch|offlineimap|mbsync|curl|wget|lynx|w3m)\b/;
 
 interface Rule {
   name: string;
@@ -72,8 +70,6 @@ const HOST_EXEC_TOOLS = new Set(["rinthel_host_exec"]);
  * counts as untrusted — even when the subagent only read code. A false
  * positive costs a command run by hand; a miss costs the host.
  */
-const SUBAGENT_TOOLS = new Set(["subagent", "subagentChain", "subagentSeries", "subagentVariants"]);
-
 const RULES: Rule[] = [
   {
     name: "pipe-to-shell",
@@ -369,30 +365,19 @@ export function guardExtension(
   })
 ) {
   return (pi: any): void => {
-    // Per session, not global: a taint belongs to the conversation that read the
-    // content, and this factory runs once per session.
-    let tainted = false;
+    const taint = new SessionTaint(() => pi.appendEntry(SessionTaint.entryType, { tainted: true }));
+    pi.on("session_start", (_event: any, ctx: any) => {
+      // Scan all entries, not just the active branch: compaction/tree navigation
+      // must not erase a security decision already made in this conversation.
+      taint.restore(ctx.sessionManager.getEntries());
+    });
 
     pi.on("tool_result", (event: any) => {
       const compact = !event.isError && isBrowserSnapshot(event.toolName, event.input ?? {});
       const formatted = compact ? (event.content ?? []).map((part: any) =>
         part?.type === 'text' && typeof part.text === 'string' ? { ...part, text: cleanBrowserSnapshot(part.text) } : part,
       ) : event.content;
-      // rinthel_host_exec is a shell too, one on the host: judged by its command
-      // like bash, or `curl` through it would read the web without tainting.
-      const source =
-        event.toolName === "bash" || HOST_EXEC_TOOLS.has(event.toolName)
-          ? cmd(event.input ?? {})
-          : String(event.toolName ?? "");
-      // MCP tools reach servers the portal does not control, so their output is
-      // treated the same way as mail: someone else's words.
-      const untrusted =
-        UNTRUSTED_COMMAND.test(source) ||
-        /^mcp(_|$)/.test(source) ||
-        SUBAGENT_TOOLS.has(event.toolName);
-      if (!untrusted || event.isError) return compact ? { content: formatted } : undefined;
-
-      tainted = true;
+      if (!taint.observe(event)) return compact ? { content: formatted } : undefined;
       const { open, close } = envelope(randomBytes(8).toString("hex"));
       const content = (Array.isArray(formatted) ? formatted : []).map((part: any) =>
         part?.type === "text" && typeof part.text === "string"
@@ -485,7 +470,7 @@ export function guardExtension(
       // below: RULES.find() would return undefined for rinthel_host_exec
       // (no rule names it) and let the call through. See HOST_EXEC_TOOLS
       // above for why this tool gets no pattern-matching exceptions.
-      if (tainted && HOST_EXEC_TOOLS.has(event.toolName)) {
+      if (taint.isTainted() && HOST_EXEC_TOOLS.has(event.toolName)) {
         console.warn(`[guard ${sessionId}] blocked ${event.toolName}: tainted`);
         note("refused", "rinthel_host_exec blocked entirely while the session is tainted");
         return {
@@ -498,7 +483,7 @@ export function guardExtension(
         };
       }
 
-      if (!tainted) return undefined;
+      if (!taint.isTainted()) return undefined;
       const rule = RULES.find((r) => r.hit(event.toolName, event.input ?? {}));
       if (!rule) return undefined;
 

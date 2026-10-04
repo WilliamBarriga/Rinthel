@@ -87,8 +87,9 @@ services:
       # runs shell commands as the host user. Host networking means
       # 127.0.0.1 here is already the host's loopback — no mount needed,
       # just these two vars reaching the pi process. Shared secret, same
-      # criterion as UNDERSTORY_TOKEN; generate with: openssl rand -hex 32
-      RINTHEL_HOSTEXECD_TOKEN: ${RINTHEL_HOSTEXECD_TOKEN:?set RINTHEL_HOSTEXECD_TOKEN in .env}
+      # Provisioned by Rinthel BOOT/INSTALL. Without a token, host exec is
+      # disabled; it must not prevent an existing portal from starting.
+      RINTHEL_HOSTEXECD_TOKEN: ${RINTHEL_HOSTEXECD_TOKEN:-}
       RINTHEL_HOSTEXECD_PORT: ${RINTHEL_HOSTEXECD_PORT:-8766}
     logging:
       driver: json-file

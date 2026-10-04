@@ -11,6 +11,7 @@ import type { PiClient, PiCommand, PiState, PiStats } from "./types.js";
 import { routineTools } from "./routine-tools.js";
 import { reportTool, reportToFor } from "./report-tool.js";
 import { guardExtension } from "./guard.js";
+import { hostExecExtensionPaths } from "./host-exec.js";
 import { askPrimaryTool } from "./ask-primary.js";
 import { proxyBaseUrl } from "../llama-progress.js";
 import { piAgentDir } from "../pi-settings.js";
@@ -211,6 +212,7 @@ export class SdkPiClient extends EventEmitter implements PiClient {
     const voiceFirst = new VoiceFirstTurn();
     const canvases = opts.sessionId ? new CanvasTools(opts.sessionId) : undefined;
     let resourceLoader: any;
+    const hostExtensions = hostExecExtensionPaths();
     try {
       // Both are required: the constructor resolves each and throws on
       // undefined, which previously left every session with no extensions.
@@ -243,6 +245,7 @@ export class SdkPiClient extends EventEmitter implements PiClient {
       resourceLoader = new pi.DefaultResourceLoader({
         cwd: opts.cwd,
         agentDir: piAgentDir(),
+        additionalExtensionPaths: hostExtensions,
         // Available everywhere without being installed, and not editable in
         // place: they belong to the image, so an edit would be lost on the next
         // deploy without saying so.
@@ -269,7 +272,11 @@ export class SdkPiClient extends EventEmitter implements PiClient {
         appendSystemPrompt: framing(opts.cwd, opts.role),
       });
       await resourceLoader.reload();
+      if (hostExtensions.length && resourceLoader.getExtensions().errors.length) {
+        throw new Error("No se pudo cargar la extensión host exec con sus protecciones");
+      }
     } catch (e) {
+      if (hostExtensions.length) throw e;
       console.error(`[portal] resource loader unavailable: ${(e as Error).message}`);
       resourceLoader = undefined;
     }
