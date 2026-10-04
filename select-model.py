@@ -9,7 +9,7 @@ from pathlib import Path
 
 from rinthel_tui.config import default_config, with_overrides
 from rinthel_tui.env_file import update_env_file
-from rinthel_tui.local_models import load_profiles, model_env_overrides, register_models
+from rinthel_tui.local_models import load_profiles, model_env_overrides, register_models, validate_model
 
 
 def main() -> None:
@@ -28,12 +28,7 @@ def main() -> None:
             if connection.connect_ex(('127.0.0.1', port)) == 0:
                 sys.exit('Detén los servicios y el daemon antes de usar el selector offline')
     values = profiles[key]
-    model = Path(values['RINTHEL_LLAMA_MODEL_PATH']).expanduser()
-    if not model.is_file() or model.stat().st_size < int(values.get('RINTHEL_MODEL_MIN_BYTES', '4')):
-        sys.exit('El modelo falta o está incompleto')
-    with model.open('rb') as stream:
-        if stream.read(4) != b'GGUF':
-            sys.exit('El archivo no es un modelo GGUF')
+    validate_model(values)
     with_overrides(cfg, values).validate()
     env = root / '.env'
     shutil.copy2(env, str(env) + '.backup-' + str(time.time_ns()))

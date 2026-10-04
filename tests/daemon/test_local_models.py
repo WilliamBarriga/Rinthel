@@ -11,7 +11,13 @@ from rinthel_tui.local_models import create_router, managed
 
 
 @pytest.fixture(autouse=True)
-def pi_provider(tmp_path):
+def pi_provider(tmp_path, monkeypatch):
+    binary = tmp_path/'llama-server'
+    binary.write_text('#!/bin/sh\n')
+    binary.chmod(0o755)
+    monkeypatch.setenv('RINTHEL_LLAMA_BIN', str(binary))
+    async def free_port(port): return False
+    monkeypatch.setattr(managed, '_port_in_use', free_port)
     path = tmp_path / 'data/pithagoras/home/.pi/agent/models.json'
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({'providers': {
@@ -131,3 +137,49 @@ def test_changed_inference_settings_reload_same_model(tmp_path, monkeypatch):
     assert dotenv_values(tmp_path/'.env')['RINTHEL_LLAMA_MODEL_PATH'] == str(model)
     assert state[0].llama.context_window == 32768
     assert calls == ['kill', 'spawn']
+
+
+@pytest.mark.parametrize('field', ['RINTHEL_LLAMA_PORT', 'RINTHEL_LLAMA_BIN', 'RINTHEL_LLAMA_ENABLED'])
+def test_profile_cannot_change_service_topology(tmp_path, monkeypatch, field):
+    monkeypatch.setenv('PORTAL_SECRET', 'test-secret')
+    model = tmp_path/'model.gguf'
+    model.write_bytes(b'GGUF')
+    (tmp_path/'model-profiles.local.json').write_text(json.dumps({'local': {
+        'RINTHEL_LLAMA_MODEL_PATH': str(model), field: '9090',
+    }}))
+    async def unexpected(*args, **kwargs): raise AssertionError('Lifecycle must not start')
+    monkeypatch.setattr(managed, 'phase_kill', unexpected)
+    app = FastAPI()
+    app.include_router(create_router(tmp_path, default_config, lambda value: None))
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            response = await client.post('/local-models', headers={'x-rinthel-portal': 'test-secret'}, json={'key': 'local'})
+            assert response.status_code == 400
+    asyncio.run(run())
+    assert not (tmp_path/'.env').exists()
+
+
+def test_occupied_port_cannot_confirm_replacement_model(tmp_path, monkeypatch):
+    monkeypatch.setenv('PORTAL_SECRET', 'test-secret')
+    model = tmp_path/'replacement.gguf'
+    model.write_bytes(b'GGUF')
+    (tmp_path/'model-profiles.local.json').write_text(json.dumps({'local': {'RINTHEL_LLAMA_MODEL_PATH': str(model)}}))
+    old = default_config()
+    state = [old]
+    calls = []
+    async def kill(*args, **kwargs): calls.append('kill')
+    async def occupied(port): return True
+    async def unexpected(*args, **kwargs): raise AssertionError('Must not spawn over an occupied port')
+    monkeypatch.setattr(managed, 'phase_kill', kill)
+    monkeypatch.setattr(managed, '_port_in_use', occupied)
+    monkeypatch.setattr(managed, 'phase_spawn', unexpected)
+    app = FastAPI()
+    app.include_router(create_router(tmp_path, lambda: state[0], lambda value: state.__setitem__(0, value)))
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            response = await client.post('/local-models', headers={'x-rinthel-portal': 'test-secret'}, json={'key': 'local'})
+            assert response.status_code == 500
+    asyncio.run(run())
+    assert calls == ['kill']
+    assert state[0] == old
+    assert not (tmp_path/'.env').exists()

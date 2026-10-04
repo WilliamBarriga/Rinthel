@@ -7,13 +7,18 @@ El catálogo se guarda en `model-profiles.local.json` (rutas de esta máquina). 
 Después de instalar Ubuntu, copia `model-profiles.example.json` a
 `model-profiles.local.json` y sustituye las rutas por tus archivos GGUF.
 El archivo local y las copias de `.env` están ignorados por Git. Cada perfil
-acepta campos de configuración llama/MoE como strings, un nombre opcional
+acepta parámetros de inferencia llama y caché MoE como strings, un nombre opcional
 `RINTHEL_MODEL_NAME` y un mínimo opcional `RINTHEL_MODEL_MIN_BYTES`. El daemon
 registra todos los modelos del catálogo en el proveedor local de Pi y conserva
 los demás proveedores. También valida el encabezado GGUF antes de detener el
 modelo actual. La comprobación de tamaño y encabezado no sustituye una carga
 real ni verifica que la descarga esté completa; establece un mínimo apropiado
 para cada archivo.
+
+Los perfiles no cambian puertos, ejecutables, logs ni activación de servicios.
+El daemon verifica el binario antes de detener el modelo y exige que el puerto
+quede libre antes de iniciar su reemplazo. Si el servidor anterior no se
+detiene, rechaza el cambio sin guardar la configuración nueva.
 
 Para seleccionar offline, detén los servicios con TERMINATE y el daemon con
 `./rinthel-boot.sh --stop`, y ejecuta `.venv/bin/python select-model.py <clave>`.

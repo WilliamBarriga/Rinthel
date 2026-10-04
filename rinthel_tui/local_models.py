@@ -24,7 +24,10 @@ def load_profiles(root: Path) -> dict[str, dict[str, str]]:
     profiles = json.loads(path.read_text()) if path.exists() else {}
     if not isinstance(profiles, dict):
         raise ValueError('El catálogo debe ser un objeto JSON')
-    allowed = {field.env for field in (*LLAMA_FIELDS, *MOE_FIELDS)}
+    # A model profile may tune inference, but cannot move service endpoints
+    # or replace its executable, logs or lifecycle enablement.
+    allowed = {field.env for field in LLAMA_FIELDS if field.attr not in {'port', 'bin', 'log', 'enabled'}}
+    allowed.update(field.env for field in MOE_FIELDS if field.attr in {'cache_slots', 'cache_profile'})
     allowed.update({'RINTHEL_MODEL_MIN_BYTES', 'RINTHEL_MODEL_NAME'})
     for key, values in profiles.items():
         if not isinstance(values, dict) or not values.get('RINTHEL_LLAMA_MODEL_PATH'):
@@ -35,6 +38,16 @@ def load_profiles(root: Path) -> dict[str, dict[str, str]]:
         if int(values.get('RINTHEL_MODEL_MIN_BYTES', '4')) < 4:
             raise ValueError('RINTHEL_MODEL_MIN_BYTES debe ser al menos 4')
     return profiles
+
+
+def validate_model(values: dict[str, str]) -> Path:
+    model = Path(values['RINTHEL_LLAMA_MODEL_PATH']).expanduser()
+    if not model.is_file() or model.stat().st_size < int(values.get('RINTHEL_MODEL_MIN_BYTES', '4')):
+        raise ValueError('El modelo falta o está incompleto')
+    with model.open('rb') as stream:
+        if stream.read(4) != b'GGUF':
+            raise ValueError('El archivo no es un modelo GGUF')
+    return model
 
 
 def register_models(root: Path, profiles: dict[str, dict[str, str]]) -> None:
@@ -75,6 +88,8 @@ def create_router(root: Path, get_config, set_config):
                            for k,v in available.items()], 'busy': lock.locked()}
 
     async def launch(cfg):
+        if await managed._port_in_use(cfg.llama.port):
+            raise RuntimeError('El puerto del modelo sigue ocupado; no se confirmó el cambio')
         await managed.phase_spawn(cfg, Report(), service=LLAMA_SERVICE)
         for _ in range(180):
             if await managed.check_ready(cfg, LLAMA_SERVICE): return
@@ -102,23 +117,24 @@ def create_router(root: Path, get_config, set_config):
                 if not isinstance(key, str) or key not in available:
                     raise ValueError('Modelo desconocido')
                 values = available[key]
-                model = Path(values['RINTHEL_LLAMA_MODEL_PATH']).expanduser()
-                if not model.is_file() or model.stat().st_size < int(values.get('RINTHEL_MODEL_MIN_BYTES', '4')):
-                    raise ValueError('El modelo falta o está incompleto')
-                with model.open('rb') as stream:
-                    if stream.read(4) != b'GGUF':
-                        raise ValueError('El archivo no es un modelo GGUF')
+                validate_model(values)
                 new = with_overrides(old, values)
                 new.validate()
+                if not new.llama.bin.is_file() or not os.access(new.llama.bin, os.X_OK):
+                    raise ValueError('El binario llama-server falta o no es ejecutable')
                 result = catalogue(available, new)
                 provider_path = root / 'data/pithagoras/home/.pi/agent/models.json'
                 provider_before = provider_path.read_bytes()
                 register_models(root, available)
             except (ValueError, ConfigError, OSError, KeyError, TypeError) as exc:
                 return JSONResponse({'error': str(exc)}, status_code=400)
+            launched = False
             try:
                 if old.llama != new.llama or old.moe != new.moe or not await managed.check_ready(old, LLAMA_SERVICE):
                     await managed.phase_kill(old, Report(), service=LLAMA_SERVICE)
+                    if await managed._port_in_use(old.llama.port):
+                        raise RuntimeError('No se pudo detener el modelo anterior; no se guardó el cambio')
+                    launched = True
                     await launch(new)
                 # Persist only a model that has actually become ready.
                 update_env_file(root / '.env', model_env_overrides(values))
@@ -126,6 +142,8 @@ def create_router(root: Path, get_config, set_config):
                 return {**result, 'busy': False}
             except Exception as exc:
                 provider_path.write_bytes(provider_before)
+                if not launched:
+                    return JSONResponse({'error': str(exc)}, status_code=500)
                 try:
                     await managed.phase_kill(new, Report(), service=LLAMA_SERVICE)
                     await launch(old)
