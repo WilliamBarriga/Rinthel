@@ -21,7 +21,7 @@ compilación Rust, el build CUDA y las conversaciones completas quedan
 pendientes de instalar las dependencias: esta revisión no es un benchmark
 Linux ni una validación completa de la aplicación en ejecución.
 
-Tras separar las ramas, la suite completa del checkout Ubuntu pasó 186
+Tras separar las ramas, la suite completa del checkout Ubuntu pasó 189
 pruebas. No se repitieron la ejecución del daemon ni pruebas de hardware.
 
 ## 1. Dependencias de Ubuntu
