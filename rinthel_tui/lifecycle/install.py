@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
-from rinthel_tui.config import RinthelConfig
+from rinthel_tui.config import REPO_ROOT, RinthelConfig
 from rinthel_tui.env_file import update_env_file
 from rinthel_tui.lifecycle.managed_service import _run
 from rinthel_tui.lifecycle.phases import phase_check_docker
@@ -266,7 +266,6 @@ async def phase_install_download_model(cfg: RinthelConfig, report: PhaseReport) 
 
 
 async def phase_install_setup_pithagoras(cfg: RinthelConfig, report: PhaseReport) -> None:
-    from rinthel_tui.config import REPO_ROOT
     if os.name == "posix" and os.environ.get("COMPOSE_FILE") == "docker-compose.ubuntu.yml":
         from rinthel_tui.install.ubuntu import prepare
         prepare(REPO_ROOT)
@@ -356,7 +355,6 @@ def _read_understory_token(pithagoras_env: Path) -> str | None:
 
 async def phase_install_setup_understory(cfg: RinthelConfig, report: PhaseReport) -> None:
     """Prepara el bundle Linux o el despliegue standalone heredado."""
-    from rinthel_tui.config import REPO_ROOT
     if os.name == "posix" and os.environ.get("COMPOSE_FILE") == "docker-compose.ubuntu.yml":
         from rinthel_tui.install.ubuntu import prepare
         prepare(REPO_ROOT)

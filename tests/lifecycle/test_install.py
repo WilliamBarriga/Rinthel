@@ -346,10 +346,9 @@ def test_nvcc_path_finds_toolkit_outside_path(monkeypatch, tmp_path):
 @pytest.mark.skipif(os.name != "posix", reason="Linux profile")
 @pytest.mark.parametrize("phase", [install.phase_install_setup_pithagoras, install.phase_install_setup_understory])
 async def test_linux_profile_prepares_monorepo(monkeypatch, cfg, report, tmp_path, phase):
-    from rinthel_tui import config
     from rinthel_tui.install import ubuntu
     monkeypatch.setenv("COMPOSE_FILE", "docker-compose.ubuntu.yml")
-    monkeypatch.setattr(config, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(install, "REPO_ROOT", tmp_path)
     calls = []
     monkeypatch.setattr(ubuntu, "prepare", calls.append)
     await phase(cfg, report)
