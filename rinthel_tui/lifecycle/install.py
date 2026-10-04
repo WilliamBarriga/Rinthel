@@ -266,8 +266,8 @@ async def phase_install_download_model(cfg: RinthelConfig, report: PhaseReport) 
 
 
 async def phase_install_setup_pithagoras(cfg: RinthelConfig, report: PhaseReport) -> None:
-    if os.name == "posix" and os.environ.get("COMPOSE_FILE") == "docker-compose.ubuntu.yml":
-        from rinthel_tui.install.ubuntu import prepare
+    from rinthel_tui.install.ubuntu import is_selected, prepare
+    if os.name == "posix" and is_selected(os.environ.get("COMPOSE_FILE")):
         prepare(REPO_ROOT)
         report.success("Configuración del monorepositorio Ubuntu preparada")
         return
@@ -355,8 +355,8 @@ def _read_understory_token(pithagoras_env: Path) -> str | None:
 
 async def phase_install_setup_understory(cfg: RinthelConfig, report: PhaseReport) -> None:
     """Prepara el bundle Linux o el despliegue standalone heredado."""
-    if os.name == "posix" and os.environ.get("COMPOSE_FILE") == "docker-compose.ubuntu.yml":
-        from rinthel_tui.install.ubuntu import prepare
+    from rinthel_tui.install.ubuntu import is_selected, prepare
+    if os.name == "posix" and is_selected(os.environ.get("COMPOSE_FILE")):
         prepare(REPO_ROOT)
         report.success("Configuración del monorepositorio Ubuntu preparada")
         return
