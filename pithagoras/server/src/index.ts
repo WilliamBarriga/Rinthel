@@ -1,3 +1,4 @@
+import { localModels, modelSwitching, setModelSwitching } from "./local-models.js";
 import { canvasesRouter } from "./api/canvases.js";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
@@ -91,6 +92,32 @@ app.post("/api/auth/login", (req, res) => {
 });
 
 app.use("/api", requireAuth);
+
+app.get("/api/local-models", async (_req, res) => {
+  try { res.json(await localModels()); }
+  catch (e) { res.status(503).json({error: (e as Error).message}); }
+});
+app.post("/api/local-models", async (req, res) => {
+  if (typeof req.body?.key !== "string") return res.status(400).json({error: "Modelo inválido"});
+  if (modelSwitching || sessions.hasRunning() || listSessions().some(s => s.status === "running")) return res.status(409).json({error: "Espera a que terminen las respuestas antes de cambiar el modelo"});
+  setModelSwitching(true);
+  try {
+    const catalogue = await localModels(req.body.key);
+    const chosen = catalogue.models.find(m => m.key === catalogue.active);
+    if (!chosen) throw new Error("El servidor no confirmó el modelo activo");
+    const localIds = new Set(catalogue.models.map(m => m.id));
+    for (const session of listSessions()) {
+      if (!session.provider || session.provider === "local-llm" || localIds.has(session.model || "")) {
+        await sessions.stop(session.id);
+        updateSession(session.id, {provider: "local-llm", model: chosen.id});
+      }
+    }
+    setSettings({provider: "local-llm", model: chosen.id});
+    res.json(catalogue);
+  } catch (e) { res.status(500).json({error: (e as Error).message}); }
+  finally { setModelSwitching(false); }
+});
+
 
 // --- global settings (defaults for every new session) ---
 

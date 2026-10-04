@@ -37,6 +37,8 @@ for **Understory** (MCP memory layer) and **Pithagoras** (task portal).
   validated Windows profile, measured performance and grounded-use cases.
 - [`docs/windows-hardware-optimization.md`](docs/windows-hardware-optimization.md) —
   inference settings for the validated Windows hardware.
+- [`docs/local-model-picker.md`](docs/local-model-picker.md) —
+  authenticated model switching for the Ubuntu portal.
 
 ## `[0]` Quick install (new machine)
 
