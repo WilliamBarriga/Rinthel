@@ -1,0 +1,14 @@
+# Optional overlay for Ubuntu; paths are relative to the monorepo root.
+services:
+  portal:
+    volumes:
+      - type: bind
+        source: ./extensions/rinthel-host-exec
+        target: /app/rinthel-extensions/rinthel-host-exec
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      RINTHEL_HOST_EXEC_EXTENSION: /app/rinthel-extensions/rinthel-host-exec/index.ts
+      RINTHEL_HOSTEXECD_TOKEN: ${RINTHEL_HOSTEXECD_TOKEN:-}
+      RINTHEL_HOSTEXECD_PORT: ${RINTHEL_HOSTEXECD_PORT:-8766}

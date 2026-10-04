@@ -20,6 +20,13 @@ Pithagoras arranca sin token, con host exec deshabilitado. Después de
 configurarlo, reinicia el portal para que su entorno reciba el secreto.
 Los tokens y los `.env` son locales y nunca se incluyen en Git.
 
+Cuando también está instalado el perfil Ubuntu, este usa el overlay
+`compose/ubuntu-host-exec.override.yaml` para montar la extensión explícita
+y pasar el token al portal. La selección queda en el `.env` raíz mediante
+`COMPOSE_FILE=docker-compose.ubuntu.yml:compose/ubuntu-host-exec.override.yaml`.
+El bootstrap Ubuntu detecta ambos módulos y conserva los secretos; los
+checkouts que solo contienen Ubuntu mantienen su Compose independiente.
+
 Al actualizar desde una versión que arrancaba hostexecd sin token, detén
 primero los daemons lanzados por el script con `./rinthel-boot.sh --stop`.
 Después ejecuta `./rinthel-boot.sh` para preparar el secreto y arrancarlos
