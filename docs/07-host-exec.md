@@ -20,6 +20,13 @@ Pithagoras arranca sin token, con host exec deshabilitado. Después de
 configurarlo, reinicia el portal para que su entorno reciba el secreto.
 Los tokens y los `.env` son locales y nunca se incluyen en Git.
 
+Al actualizar desde una versión que arrancaba hostexecd sin token, detén
+primero los daemons lanzados por el script con `./rinthel-boot.sh --stop`.
+Después ejecuta `./rinthel-boot.sh` para preparar el secreto y arrancarlos
+con el entorno nuevo. Recrea el portal con
+`docker compose up -d --force-recreate portal`: un simple restart de Docker
+no actualiza las variables de entorno del contenedor.
+
 ## Extensión y Compose
 
 El Compose raíz combina cada subtree con su override antes de importarlo.
