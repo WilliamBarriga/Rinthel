@@ -75,6 +75,8 @@ normal no es necesario repetir `INSTALL`: ejecuta `rinthel-boot.ps1` y usa
 Pithagoras queda en `http://127.0.0.1:4100`. En Windows, su contenedor se
 comunica con `llama-server` mediante `host.docker.internal`; el instalador
 registra el proveedor `local-llm` y monta su `models.json` como solo lectura.
+El lifecycle ejecuta Compose desde los stacks preparados por INSTALL bajo
+`Rinthel-data`, separados del proyecto Compose Linux del monorepositorio.
 Las contraseñas y tokens permanecen en los `.env` locales y nunca deben
 añadirse al repositorio.
 
