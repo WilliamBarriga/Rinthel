@@ -17,12 +17,24 @@ distinta por servicio.
 import asyncio
 import os
 import socket
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
+import psutil
+
 from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle.types import PhaseError, PhaseReport
+
+
+def _platform_spawn_argv(argv: Sequence[str], *, platform: str = os.name) -> list[str]:
+    """Adapta entrypoints de desarrollo al modelo de procesos del host."""
+    resolved = list(argv)
+    if platform == "nt" and resolved and Path(resolved[0]).suffix.casefold() == ".py":
+        resolved.insert(0, sys.executable)
+    return resolved
 
 # ── helpers de subprocess/red — sin cambios de comportamiento respecto a
 # los que vivían en phases.py, solo mudados acá ──────────────────────────
@@ -81,6 +93,35 @@ async def _http_ok(url: str, timeout: float = 2.0) -> bool:
             return False
 
     return await asyncio.to_thread(_check)
+
+
+async def _signal_processes_on_port(port: int, *, force: bool = False) -> list[int]:
+    """Termina los procesos que escuchan en ``port`` sin depender de
+    ``fuser``. ``psutil`` funciona tanto en Linux como en Windows."""
+    def _signal() -> list[int]:
+        try:
+            connections = psutil.net_connections(kind="tcp")
+        except (OSError, psutil.Error):
+            return []
+        pids = {
+            conn.pid
+            for conn in connections
+            if conn.pid
+            and conn.status == psutil.CONN_LISTEN
+            and conn.laddr
+            and conn.laddr.port == port
+        }
+        signalled: list[int] = []
+        for pid in sorted(pids):
+            try:
+                process = psutil.Process(pid)
+                process.kill() if force else process.terminate()
+                signalled.append(pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return signalled
+
+    return await asyncio.to_thread(_signal)
 
 
 _MAX_LOG_BYTES = 10 * 1024 * 1024  # 10MB — arriba de esto, rotamos antes de escribir más
@@ -186,13 +227,20 @@ async def phase_spawn(cfg: RinthelConfig, report: PhaseReport, *, service: Local
     log.parent.mkdir(parents=True, exist_ok=True)
     _rotate_log_if_large(log)
     log_file = open(log, "ab")
-    argv = service.build_argv(cfg)
+    argv = _platform_spawn_argv(service.build_argv(cfg))
+    process_options: dict[str, object] = {}
+    if os.name == "nt":
+        process_options["creationflags"] = (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        )
+    else:
+        process_options["start_new_session"] = True
     try:
         proc = await asyncio.create_subprocess_exec(
             *argv,
             stdout=log_file,
             stderr=asyncio.subprocess.STDOUT,
-            start_new_session=True,  # equivalente a nohup + disown
+            **process_options,
         )
     finally:
         log_file.close()
@@ -252,17 +300,19 @@ async def phase_kill(cfg: RinthelConfig, report: PhaseReport, *, service: LocalP
     if not await _port_in_use(port):
         report.warn(f"No había {service.display_name} corriendo en :{port}")
         return
-    await _run(["fuser", "-k", "-TERM", f"{port}/tcp"], report)
+    pids = await _signal_processes_on_port(port)
+    if not pids:
+        report.warn(f"No pude identificar el proceso que escucha en :{port}")
     for _ in range(10):
         if not await _port_in_use(port):
             report.success(f"{service.display_name} parado en :{port}")
             return
         await asyncio.sleep(1)
-    await _run(["fuser", "-k", "-KILL", f"{port}/tcp"], report)
+    await _signal_processes_on_port(port, force=True)
     if await _port_in_use(port):
         report.warn(f"AVISO: :{port} sigue ocupado tras intentar matar el proceso")
     else:
-        report.success(f"{service.display_name} parado en :{port} (SIGKILL)")
+        report.success(f"{service.display_name} parado en :{port} (terminación forzada)")
 
 
 async def phase_wait_port_free(

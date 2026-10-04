@@ -31,8 +31,31 @@ for **Understory** (MCP memory layer) and **Pithagoras** (task portal).
   why each inference flag is set the way it is (VRAM, quant, MoE cache).
 - [`docs/03-troubleshooting.md`](docs/03-troubleshooting.md) — common errors
   and how to fix them.
+- [`docs/04-windows-installation.md`](docs/04-windows-installation.md) —
+  native Windows bootstrap and Docker Desktop integration.
+- [`docs/05-windows-validation.md`](docs/05-windows-validation.md) —
+  validated Windows profile, measured performance and grounded-use cases.
 
 ## `[0]` Quick install (new machine)
+
+### Windows 11 (PowerShell)
+
+Consulta primero [`docs/04-windows-installation.md`](docs/04-windows-installation.md).
+Con Python 3.13+, Rust y Git disponibles:
+
+```powershell
+.\install.ps1
+```
+
+El bootstrap crea `.venv`, instala el daemon, compila el cliente y abre
+Rinthel. CUDA, CMake y Docker Desktop se validan después desde `INSTALL`;
+el script no los instala ni descarga el modelo sin que el usuario elija esa
+opción en la TUI. En la máquina Windows de referencia, el instalador también
+crea un perfil conservador para 32 GB de RAM y 8 GB de VRAM; consulta
+[`docs/05-windows-validation.md`](docs/05-windows-validation.md) antes de
+subir contexto, batch u offload de GPU.
+
+### Ubuntu
 
 One command, with no prior dependency beyond being able to install Python:
 

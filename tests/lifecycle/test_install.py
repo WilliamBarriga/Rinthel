@@ -11,6 +11,8 @@ herramientas).
 
 import asyncio
 import dataclasses
+import json
+import os
 import shutil
 
 from rinthel_tui.lifecycle import install
@@ -168,6 +170,53 @@ async def test_download_model_downloads_when_missing(monkeypatch, cfg, report, t
 # ── SETUP PITHAGORAS ─────────────────────────────────────────────
 
 
+def test_prepare_pithagoras_for_windows_is_idempotent(report, tmp_path):
+    pithagoras_dir = tmp_path / "pithagoras"
+    pithagoras_dir.mkdir()
+    compose_path = pithagoras_dir / "docker-compose.yml"
+    dockerfile_path = pithagoras_dir / "Dockerfile"
+    compose_path.write_text(
+        "services:\n"
+        "  portal:\n"
+        "    network_mode: host\n"
+        "  tailscale:\n"
+        "    environment:\n"
+        "      TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY in .env}\n"
+    )
+    dockerfile_path.write_text("RUN mkdir -p /data/home /data/bin\n")
+
+    install._prepare_pithagoras_for_windows(pithagoras_dir, report, platform="nt")
+    first_compose = compose_path.read_text()
+    first_dockerfile = dockerfile_path.read_text()
+    install._prepare_pithagoras_for_windows(pithagoras_dir, report, platform="nt")
+
+    assert '127.0.0.1:${PORT:-4100}:${PORT:-4100}' in first_compose
+    assert "network_mode: host" not in first_compose
+    assert "TS_AUTHKEY: ${TS_AUTHKEY:-}" in first_compose
+    assert "chown -R node:node /data" in first_dockerfile
+    assert compose_path.read_text() == first_compose
+    assert dockerfile_path.read_text() == first_dockerfile
+
+
+def test_write_local_model_config_is_idempotent(report, tmp_path):
+    agent_dir = tmp_path / "agent"
+    model_path = tmp_path / "model.gguf"
+
+    install._write_local_model_config(
+        agent_dir, model_path, 8080, report, platform="nt"
+    )
+    first = (agent_dir / "models.json").read_text()
+    install._write_local_model_config(
+        agent_dir, model_path, 8080, report, platform="nt"
+    )
+
+    parsed = json.loads(first)
+    provider = parsed["providers"]["local-llm"]
+    assert provider["baseUrl"] == "http://host.docker.internal:8080/v1"
+    assert provider["models"][0]["id"] == str(model_path)
+    assert (agent_dir / "models.json").read_text() == first
+
+
 async def test_setup_pithagoras_clones_and_generates_env(monkeypatch, cfg, report, tmp_path):
     pithagoras_dir = tmp_path / "pithagoras"
     cfg = _with_pithagoras_dir(cfg, pithagoras_dir)
@@ -205,8 +254,13 @@ async def test_setup_pithagoras_skips_env_when_already_exists(cfg, report, tmp_p
 
     await install.phase_install_setup_pithagoras(cfg, report)
 
-    assert (pithagoras_dir / ".env").read_text() == "EXISTING=1\n"
-    assert any("no lo piso" in msg for msg in report.warnings)
+    content = (pithagoras_dir / ".env").read_text()
+    assert "EXISTING=1" in content
+    if os.name == "nt":
+        assert f"LLAMA_BASE_URL=http://host.docker.internal:{cfg.llama.port}" in content
+        assert "PI_PROVIDER=local-llm" in content
+        assert f"PI_MODEL={cfg.llama.model}" in content
+    assert any("conservo sus secretos" in msg for msg in report.warnings)
 
 
 async def test_setup_pithagoras_raises_when_example_missing(cfg, report, tmp_path):

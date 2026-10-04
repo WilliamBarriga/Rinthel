@@ -13,6 +13,7 @@ llama-server, no por cada servicio parametrizado.
 
 import asyncio
 import dataclasses
+import sys
 
 import pytest
 
@@ -21,6 +22,15 @@ from rinthel_tui.lifecycle.types import PhaseError
 
 LOCAL_SERVICES = services.LOCAL_SERVICES
 DOCKER_SERVICES = services.DOCKER_SERVICES
+
+
+def test_platform_spawn_argv_wraps_python_script_on_windows(tmp_path):
+    script = tmp_path / "fake_service.py"
+    argv = managed_service._platform_spawn_argv(
+        [str(script), "--port", "8080"], platform="nt"
+    )
+
+    assert argv == [sys.executable, str(script), "--port", "8080"]
 
 
 def _ids(services_list):
@@ -65,8 +75,8 @@ async def _async_true(*args, **kwargs) -> bool:
     return True
 
 
-async def _fake_run_ok(*args, **kwargs) -> int:
-    return 0
+async def _fake_signal(*args, **kwargs) -> list[int]:
+    return [1234]
 
 
 def _recording_docker_compose(rc_by_first_arg: dict[str, int] | None = None):
@@ -302,7 +312,7 @@ async def test_kill_warns_when_not_running(monkeypatch, cfg, report, service):
 @pytest.mark.parametrize("service", LOCAL_SERVICES, ids=_ids(LOCAL_SERVICES))
 async def test_kill_succeeds_after_term(monkeypatch, cfg, report, service):
     monkeypatch.setattr(managed_service, "_port_in_use", _port_sequence([True, False]))
-    monkeypatch.setattr(managed_service, "_run", _fake_run_ok)
+    monkeypatch.setattr(managed_service, "_signal_processes_on_port", _fake_signal)
     await managed_service.phase_kill(cfg, report, service=service)
     assert any("parado en" in msg for msg in report.successes)
 
@@ -310,9 +320,9 @@ async def test_kill_succeeds_after_term(monkeypatch, cfg, report, service):
 async def test_kill_falls_back_to_sigkill(monkeypatch, cfg, report):
     # 1 chequeo inicial + 10 en el loop del TERM (todas ocupado) + 1 final tras KILL.
     monkeypatch.setattr(managed_service, "_port_in_use", _port_sequence([True] * 11 + [False]))
-    monkeypatch.setattr(managed_service, "_run", _fake_run_ok)
+    monkeypatch.setattr(managed_service, "_signal_processes_on_port", _fake_signal)
     await managed_service.phase_kill(cfg, report, service=services.LLAMA_SERVICE)
-    assert any("SIGKILL" in msg for msg in report.successes)
+    assert any("terminación forzada" in msg for msg in report.successes)
 
 
 # ── enabled_of ───────────────────────────────────────────────────────────

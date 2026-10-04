@@ -66,6 +66,7 @@ def test_update_env_file_starts_empty_without_seed_when_path_missing(tmp_path):
 # ── escritura atómica (punto #4 del reporte de robustez) ─────────────────
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows no conserva bits de modo POSIX")
 def test_update_env_file_preserves_the_original_file_mode(tmp_path):
     target = tmp_path / ".env"
     target.write_text("UNDERSTORY_TOKEN=abc123\n")

@@ -54,8 +54,8 @@ REPO_ROOT = _find_repo_root(Path(__file__).resolve().parent)
 # find_dotenv()/load_dotenv() sin argumentos busca a partir del cwd del
 # proceso, no de este archivo — si el TUI se lanza desde fuera del repo
 # (p. ej. el menú principal, o cualquier launcher con otro cwd), el .env
-# queda mudo y default_config() vuelve a sus defaults (context_window=112000
-# en vez de lo que diga .env), sin ningún aviso. Anclamos la búsqueda a la
+# queda mudo y default_config() vuelve a sus defaults en vez de lo que diga
+# .env, sin ningún aviso. Anclamos la búsqueda a la
 # raíz del repo (padre de este archivo) para que sea independiente del cwd.
 load_dotenv(REPO_ROOT / ".env")
 
@@ -202,14 +202,14 @@ LLAMA_FIELDS: list[Field] = [
     Field("log", "RINTHEL_LLAMA_LOG_PATH", Path, "~/Rinthel-general/logs/llama-server.log", group="general"),
     Field("enabled", "RINTHEL_LLAMA_ENABLED", bool, True, group="general"),
     Field("ngl", "RINTHEL_NGL", str, "all", group="compute"),
-    Field("context_window", "RINTHEL_CONTEXT_WINDOW", int, 112000, positive=True, group="general"),
+    Field("context_window", "RINTHEL_CONTEXT_WINDOW", int, 65536, positive=True, group="general"),
     Field("flash_attention", "RINTHEL_FLASH_ATTENTION", bool, True, group="compute"),
     Field("fit_to_memory", "RINTHEL_FIT_TO_MEMORY", bool, False, group="compute"),
-    Field("n_cpu_moe", "RINTHEL_N_CPU_MOE", int, 60, group="compute"),
+    Field("n_cpu_moe", "RINTHEL_N_CPU_MOE", int, 34, group="compute"),
     Field("threads_batch", "RINTHEL_THREADS_BATCH", int, 7, positive=True, group="compute"),
     Field("threads", "RINTHEL_THREADS", int, 8, positive=True, group="compute"),
-    Field("ubatch_size", "RINTHEL_UBATCH_SIZE", int, 512, group="compute"),
-    Field("batch_size", "RINTHEL_BATCH_SIZE", int, 512, group="compute"),
+    Field("ubatch_size", "RINTHEL_UBATCH_SIZE", int, 2048, group="compute"),
+    Field("batch_size", "RINTHEL_BATCH_SIZE", int, 2048, group="compute"),
     Field("parallel", "RINTHEL_PARALLEL", int, 1, positive=True, group="compute"),
     Field("temperature", "RINTHEL_TEMPERATURE", float, 0.7, group="sampling"),
     Field("top_p", "RINTHEL_TOP_P", float, 0.8, group="sampling"),
@@ -219,11 +219,11 @@ LLAMA_FIELDS: list[Field] = [
     Field("cache_reuse", "RINTHEL_CACHE_REUSE", int, 256, group="cache"),
     Field("cache_ram", "RINTHEL_CACHE_RAM", int, -1, group="cache"),
     Field("load_mode", "RINTHEL_LOAD_MODE", str, "mlock", group="general"),
-    Field("spec_type", "RINTHEL_SPEC_TYPE", str, "draft-mtp", group="speculative"),
+    Field("spec_type", "RINTHEL_SPEC_TYPE", str, "none", group="speculative"),
     Field("spec_draft_n_max", "RINTHEL_SPEC_DRAFT_N_MAX", int, 2, group="speculative"),
-    Field("sched_async_cpu", "RINTHEL_SCHED_ASYNC_CPU", bool, True, group="compute"),
-    Field("cache_type_k", "RINTHEL_CACHE_TYPE_K", str, "f16", group="cache"),
-    Field("cache_type_v", "RINTHEL_CACHE_TYPE_V", str, "f16", group="cache"),
+    Field("sched_async_cpu", "RINTHEL_SCHED_ASYNC_CPU", bool, False, group="compute"),
+    Field("cache_type_k", "RINTHEL_CACHE_TYPE_K", str, "q8_0", group="cache"),
+    Field("cache_type_v", "RINTHEL_CACHE_TYPE_V", str, "q8_0", group="cache"),
 ]
 
 
