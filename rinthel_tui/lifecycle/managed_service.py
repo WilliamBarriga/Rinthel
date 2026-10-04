@@ -361,7 +361,7 @@ async def phase_up(
         if rc != 0:
             report.error(f"{service.display_name}: docker compose build falló (rc {rc})")
             raise PhaseError(f"{service.display_name.lower()} build failed (rc {rc})")
-    rc = await _docker_compose(["up", "-d"], directory, report, extra_env)
+    rc = await _docker_compose(["up", "-d", service.compose_service_name], directory, report, extra_env)
     await _docker_compose(["logs", "--tail", "5", service.compose_service_name], directory, report, extra_env)
     if rc != 0:
         report.error(f"{service.display_name}: docker compose up falló (rc {rc})")

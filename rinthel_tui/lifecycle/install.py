@@ -134,10 +134,12 @@ def _require_tool(name: str, report: PhaseReport, hint: str) -> None:
     report.success(f"{name} encontrado")
 
 
-def _find_nvcc() -> bool:
-    if shutil.which("nvcc") is not None:
-        return True
-    candidates = list(Path("/usr/local").glob("cuda*/bin/nvcc"))
+def _nvcc_path() -> Path | None:
+    on_path = shutil.which("nvcc")
+    if on_path:
+        return Path(on_path).absolute()
+    candidates = [Path("/usr/local/cuda/bin/nvcc")]
+    candidates.extend(sorted(Path("/usr/local").glob("cuda*/bin/nvcc"), reverse=True))
     cuda_path = os.environ.get("CUDA_PATH")
     if cuda_path:
         candidates.append(Path(cuda_path) / "bin" / "nvcc.exe")
@@ -146,7 +148,11 @@ def _find_nvcc() -> bool:
         candidates.extend(
             Path(program_files).glob("NVIDIA GPU Computing Toolkit/CUDA/v*/bin/nvcc.exe")
         )
-    return any(candidate.exists() for candidate in candidates)
+    return next((candidate.absolute() for candidate in candidates if candidate.is_file() and os.access(candidate, os.X_OK)), None)
+
+
+def _find_nvcc() -> bool:
+    return _nvcc_path() is not None
 
 
 def _tool_hint(name: str) -> str:
@@ -207,11 +213,14 @@ async def phase_install_build_llamacpp(cfg: RinthelConfig, report: PhaseReport) 
         report.warn(f"{existing_binary} ya existe — omito build")
         return
 
+    nvcc = _nvcc_path()
+    cuda_args = [f"-DCMAKE_CUDA_COMPILER={nvcc}"] if nvcc else []
     report.warn("Compilando llama.cpp con CUDA — puede tardar 10-30 minutos")
     rc = await _run(
         [
             "cmake", "-B", str(build_dir),
             "-DGGML_CUDA=ON",
+            *cuda_args,
             "-DCMAKE_BUILD_TYPE=Release",
             # native, no el 89 hardcodeado de la máquina original — compila
             # para la arquitectura real de la GPU de cada máquina.
@@ -257,6 +266,12 @@ async def phase_install_download_model(cfg: RinthelConfig, report: PhaseReport) 
 
 
 async def phase_install_setup_pithagoras(cfg: RinthelConfig, report: PhaseReport) -> None:
+    from rinthel_tui.config import REPO_ROOT
+    if os.name == "posix" and os.environ.get("COMPOSE_FILE") == "docker-compose.ubuntu.yml":
+        from rinthel_tui.install.ubuntu import prepare
+        prepare(REPO_ROOT)
+        report.success("Configuración del monorepositorio Ubuntu preparada")
+        return
     # ``.git`` propio (checkout standalone, pre-monorepo) o directorio no
     # vacío (subtree del monorepo desde Fase 1 — sin ``.git`` propio, pero
     # ya tiene contenido) — en los dos casos, no hay nada que clonar.
@@ -340,8 +355,13 @@ def _read_understory_token(pithagoras_env: Path) -> str | None:
 
 
 async def phase_install_setup_understory(cfg: RinthelConfig, report: PhaseReport) -> None:
-    """Sin clone — Understory corre desde la imagen publicada
-    ``ghcr.io/thecodacus/understory:latest``, no desde fuente."""
+    """Prepara el bundle Linux o el despliegue standalone heredado."""
+    from rinthel_tui.config import REPO_ROOT
+    if os.name == "posix" and os.environ.get("COMPOSE_FILE") == "docker-compose.ubuntu.yml":
+        from rinthel_tui.install.ubuntu import prepare
+        prepare(REPO_ROOT)
+        report.success("Configuración del monorepositorio Ubuntu preparada")
+        return
     cfg.understory.dir.mkdir(parents=True, exist_ok=True)
 
     compose_path = cfg.understory.dir / "docker-compose.yml"

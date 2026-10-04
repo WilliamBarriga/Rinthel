@@ -1,0 +1,42 @@
+# Linux only. Both containers reach llama-server via the host loopback.
+# Selected by COMPOSE_FILE in .env; does not alter the Windows stack.
+services:
+  understory:
+    build: ./understory
+    network_mode: host
+    user: "${PUID}:${PGID}"
+    restart: unless-stopped
+    volumes:
+      - ./data/understory:/bundle
+    environment:
+      BUNDLE_ROOT: /bundle
+      PORT: ${RINTHEL_UNDERSTORY_PORT:-3800}
+      AUTH_TOKEN: ${AUTH_TOKEN:?run install.sh}
+      LLM_API_BASE_URL: http://127.0.0.1:${RINTHEL_LLAMA_PORT:-8080}/v1
+      LLM_API_KEY: local
+      LLM_API_FORMAT: openai
+      LLM_MODEL: ${RINTHEL_LLAMA_MODEL_PATH:?run install.sh}
+      GIT_AUTOCOMMIT: "false"
+  portal:
+    build: ./pithagoras
+    container_name: pithagoras
+    network_mode: host
+    user: "${PUID}:${PGID}"
+    group_add:
+      - "${DOCKER_GID:?install Docker and rerun install.sh}"
+    restart: unless-stopped
+    volumes:
+      - ./data/pithagoras:/data
+      - ${WORKSPACES_DIR:?run install.sh}:/workspaces
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      RINTHEL_DAEMON_URL: http://127.0.0.1:${RINTHEL_DAEMON_PORT:-8765}
+      PORTAL_CONTAINER_NAME: pithagoras
+      PORT: ${RINTHEL_PITHAGORAS_PORT:-4100}
+      PORTAL_PASSWORD: ${PORTAL_PASSWORD:?run install.sh}
+      PORTAL_SECRET: ${PORTAL_SECRET:?run install.sh}
+      EXECUTOR: host
+      PI_PROVIDER: local-llm
+      PI_MODEL: ${RINTHEL_LLAMA_MODEL_PATH:?run install.sh}
+      LLAMA_BASE_URL: http://127.0.0.1:${RINTHEL_LLAMA_PORT:-8080}
+      UNDERSTORY_TOKEN: ${UNDERSTORY_TOKEN:?run install.sh}

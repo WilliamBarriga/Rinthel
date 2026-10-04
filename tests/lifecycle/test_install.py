@@ -15,8 +15,16 @@ import json
 import os
 import shutil
 
+import pytest
+
 from rinthel_tui.lifecycle import install
 from rinthel_tui.lifecycle.phases import PhaseError
+
+
+@pytest.fixture(autouse=True)
+def isolated_compose_profile(monkeypatch):
+    # The user's .env must not redirect standalone tests to the real repo.
+    monkeypatch.delenv("COMPOSE_FILE", raising=False)
 
 
 def _recording_run(rc_by_first_arg: dict[str, int] | None = None):
@@ -304,3 +312,45 @@ async def test_setup_understory_generates_env_and_bundle(cfg, report, tmp_path):
     assert (understory_dir / ".env").read_text() == "AUTH_TOKEN=abc123\n"
     assert (understory_dir / "bundle" / "agents" / "index.md").exists()
     assert (understory_dir / "bundle" / "index.md").exists()
+
+
+async def test_build_passes_discovered_cuda_compiler(monkeypatch, cfg, report, tmp_path):
+    cfg = _with_llamacpp_repo_dir(cfg, tmp_path / "llama.cpp")
+    compiler = tmp_path / "cuda" / "bin" / "nvcc"
+    monkeypatch.setattr(install, "_nvcc_path", lambda: compiler)
+    fake, calls = _recording_run()
+    monkeypatch.setattr(install, "_run", fake)
+    await install.phase_install_build_llamacpp(cfg, report)
+    assert f"-DCMAKE_CUDA_COMPILER={compiler}" in calls[0]
+
+
+def test_nvcc_path_prefers_path(monkeypatch, tmp_path):
+    compiler = tmp_path / "custom-cuda" / "nvcc"
+    monkeypatch.setattr(shutil, "which", lambda name: str(compiler))
+    assert install._nvcc_path() == compiler
+
+
+def test_nvcc_path_finds_toolkit_outside_path(monkeypatch, tmp_path):
+    from pathlib import Path
+    compiler = tmp_path / "cuda-test" / "bin" / "nvcc"
+    compiler.parent.mkdir(parents=True)
+    compiler.write_text("#!/bin/sh\n")
+    compiler.chmod(0o755)
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    monkeypatch.setattr(Path, "glob", lambda self, pattern: [compiler])
+    real_is_file = Path.is_file
+    monkeypatch.setattr(Path, "is_file", lambda self: self == compiler and real_is_file(self))
+    assert install._nvcc_path() == compiler
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Linux profile")
+@pytest.mark.parametrize("phase", [install.phase_install_setup_pithagoras, install.phase_install_setup_understory])
+async def test_linux_profile_prepares_monorepo(monkeypatch, cfg, report, tmp_path, phase):
+    from rinthel_tui import config
+    from rinthel_tui.install import ubuntu
+    monkeypatch.setenv("COMPOSE_FILE", "docker-compose.ubuntu.yml")
+    monkeypatch.setattr(config, "REPO_ROOT", tmp_path)
+    calls = []
+    monkeypatch.setattr(ubuntu, "prepare", calls.append)
+    await phase(cfg, report)
+    assert calls == [tmp_path]

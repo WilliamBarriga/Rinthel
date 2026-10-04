@@ -57,35 +57,30 @@ crea un perfil conservador para 32 GB de RAM y 8 GB de VRAM; consulta
 [`docs/05-windows-validation.md`](docs/05-windows-validation.md) antes de
 subir contexto, batch u offload de GPU.
 
-### Ubuntu
+### Ubuntu 26.04
 
-One command, with no prior dependency beyond being able to install Python:
+Consulta [`docs/06-ubuntu-installation.md`](docs/06-ubuntu-installation.md)
+para instalar las dependencias del sistema y CUDA compatible con tu GPU.
+Ubuntu 26.04 incluye Python 3.14; no necesita el PPA deadsnakes.
 
 ```bash
-git clone <this-repo-url> && cd Rinthel-general && ./install.sh
+./install.sh
 ```
 
-`install.sh` detects (or installs, via the `deadsnakes` PPA if needed)
-Python 3.13+, creates the venv, bootstraps Rust (`rustup`, non-interactive)
-if `cargo` is missing, builds the client (`cargo build --release`), and
-starts the TUI. From there, **`INSTALL`** in the menu runs 6 phases:
+El bootstrap crea `.venv`, instala el daemon, prepara `.env` y `data/`,
+compila el cliente Rust y abre la TUI. `./install.sh --skip-launch` instala
+sin abrir la interfaz. Rust se instala con rustup si no existe Cargo.
 
-| Phase | What it does |
-|------|----------|
-| `1/6` PREFLIGHT | Detects GPU/CUDA/cmake/docker |
-| `2/6` LLAMA.CPP | Clones the custom fork (`perf` branch) |
-| `3/6` LLAMA.CPP | CUDA build, `native` architecture (not pinned) |
-| `4/6` MODEL GGUF | Downloads the configured model |
-| `5/6` PITHAGORAS | Clone + configuration |
-| `6/6` UNDERSTORY | Scaffold + configuration |
+El perfil Linux selecciona `docker-compose.ubuntu.yml`: los contenedores
+usan la red del host para alcanzar llama-server por loopback, sin reglas
+iptables ni paquetes Pi de otra máquina. Los secretos existentes se
+conservan. El perfil de inferencia es el punto de partida de Windows;
+todavía requiere un benchmark en Linux.
 
-Rules:
-
-- `NVIDIA driver` + `CUDA toolkit` must already be installed — `INSTALL`
-  detects them but doesn't install them.
-- It's re-runnable: each phase is idempotent, skips what already exists.
-- `INSTALL` configures, it doesn't boot — once it's done, use `BOOT` to
-  bring everything up.
+Después usa **INSTALL** para compilar llama.cpp y descargar el modelo
+(~22 GB), y **BOOT** para iniciar los servicios. CUDA, CMake y Docker deben
+estar instalados antes de ejecutar INSTALL. Node.js no hace falta en el
+host: los servicios web se compilan en Docker.
 
 ## Hardware requirements
 
@@ -138,8 +133,9 @@ From the repo root. Full lifecycle details (phases, diagram, services) in
 ```
 
 `rinthel-boot.sh` resolves `.venv/bin/python` and `rinthel-client/target/release/rinthel`
-relative to itself — **it must always be run from (or with cwd inside) the
-repo root**; it's not meant to be symlinked or copied elsewhere. It
+relative to itself and changes to the repository directory, so it can be
+called by its absolute path from another directory. Do not copy the script
+out of the repository. It
 autostarts the daemon if it isn't already listening (pidfile at
 `.rinthel-daemon.pid`, survives the client closing) and then launches the
 Rust client, which opens straight into the menu (no splash screen):

@@ -219,6 +219,10 @@ __marimo__/
 .streamlit/secrets.toml
 
 # ── Rinthel-general (project-specific) ─────────────────────────
+# Local credentials and machine-specific model profiles
+.env.backup-*
+.env.before-*
+model-profiles.local.json
 logs/
 plans/
 .claude/
