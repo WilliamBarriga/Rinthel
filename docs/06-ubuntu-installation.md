@@ -106,6 +106,12 @@ No reutilices un `.venv` o rutas absolutas de Windows. El instalador conserva
 los valores existentes en `.env`; revisa ese archivo si lo copiaste de otra
 máquina. Los archivos `.env` y `data/` están ignorados por Git.
 
+Si el checkout también contiene host exec, el bootstrap añade su overlay al
+perfil Ubuntu, prepara el token compartido y monta la extensión en el portal.
+Al integrar host exec en una instalación Ubuntu existente, vuelve a ejecutar
+el bootstrap y recrea el portal para cargar ese entorno. El perfil Windows
+mantiene sus stacks separados.
+
 Ambos contenedores usan `network_mode: host`, por lo que alcanzan al modelo
 en `127.0.0.1:8080` sin reglas iptables especiales. Los servidores web
 escuchan en las interfaces del host; limita con tu firewall el acceso desde

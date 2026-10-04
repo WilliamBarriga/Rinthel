@@ -9,6 +9,11 @@ from dotenv import dotenv_values
 from rinthel_tui.env_file import update_env_file
 
 COMPOSE_FILE = "docker-compose.ubuntu.yml"
+HOST_EXEC_COMPOSE_FILE = COMPOSE_FILE + ":compose/ubuntu-host-exec.override.yaml"
+
+
+def is_selected(value: str | None) -> bool:
+    return value in {COMPOSE_FILE, HOST_EXEC_COMPOSE_FILE}
 
 
 def prepare(root: Path) -> None:
@@ -18,12 +23,21 @@ def prepare(root: Path) -> None:
 
     env_path = root / ".env"
     values = dict(dotenv_values(env_path)) if env_path.exists() else {}
-    if values.get("COMPOSE_FILE") not in (None, "", COMPOSE_FILE):
+    if values.get("COMPOSE_FILE") not in (None, "") and not is_selected(values["COMPOSE_FILE"]):
         raise RuntimeError("Ya existe otro COMPOSE_FILE; revisa .env antes de seleccionar el perfil Ubuntu")
+    host_exec = (root / "compose/ubuntu-host-exec.override.yaml").is_file()
+    if host_exec and not (root / "extensions/rinthel-host-exec/index.ts").is_file():
+        raise RuntimeError("El overlay host exec existe pero su extensión está ausente")
+    if values.get("COMPOSE_FILE") == HOST_EXEC_COMPOSE_FILE and not host_exec:
+        raise RuntimeError("La configuración necesita el overlay host exec que falta en este checkout")
+    selected_compose = HOST_EXEC_COMPOSE_FILE if host_exec else COMPOSE_FILE
+    if host_exec:
+        from rinthel_tui.install.host_exec import prepare_host_exec
+        prepare_host_exec(root, root / "pithagoras")
     data = root / "data"
     model = data / "models" / "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
     defaults = {
-        "COMPOSE_FILE": COMPOSE_FILE,
+        "COMPOSE_FILE": selected_compose,
         "RINTHEL_LLAMACPP_REPO_DIR": str(data / "llama.cpp"),
         "RINTHEL_LLAMA_BIN": str(data / "llama.cpp/build-cuda/bin/llama-server"),
         "RINTHEL_LLAMA_MODEL_PATH": str(model),
@@ -47,6 +61,8 @@ def prepare(root: Path) -> None:
     except KeyError:
         pass  # Rerun after Docker installation to discover the actual group.
     missing = {key: value for key, value in defaults.items() if not values.get(key)}
+    if host_exec and values.get("COMPOSE_FILE") == COMPOSE_FILE:
+        missing["COMPOSE_FILE"] = selected_compose
     # Quote literals so spaces, # and $ in paths survive dotenv and Compose.
     update_env_file(env_path, {k: "'" + v.replace("'", "\\'") + "'" for k, v in missing.items()})
     values.update(missing)
