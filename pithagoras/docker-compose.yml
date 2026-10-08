@@ -47,6 +47,11 @@ services:
       # here instead of failing, so pi loses these packages with no error.
       - ${PI_AGENT_DIR}/npm/node_modules:/data/home/.pi/agent/npm/node_modules:ro
       - ${PI_AGENT_DIR}/git/github.com/harms-haus/pi-processes:/data/home/.pi/agent/git/github.com/harms-haus/pi-processes:ro
+      # Host-global skills (`npx skills add mattpocock/skills -g`), live and
+      # read-only. The image only bakes skill-creator, so these are the only
+      # copy of the rest. Defaults to $HOME/.agents/skills; override with
+      # AGENTS_SKILLS_DIR (absolute).
+      - ${AGENTS_SKILLS_DIR:-${HOME}/.agents/skills}:/data/home/.agents/skills:ro
     environment:
       # Must match container_name; managed voice shares this network namespace.
       PORTAL_CONTAINER_NAME: pithagoras
