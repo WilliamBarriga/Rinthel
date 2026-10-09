@@ -21,3 +21,23 @@ architecture or code relationships as a query against that graph first
   pipeline — these rebuild clusters and rename communities (spend LLM
   budget and can overwrite the already-curated `.graphify_labels.json`).
 
+## Understory (MCP Memory) — Tool Usage
+
+All memory operations go through the `understory` MCP server. Use atomic
+queries — one concept at a time, never bulk parallel calls.
+
+| Tool | Key Parameters | Notes |
+|------|---------------|-------|
+| `understory_memory_query` | `question` (string) | Natural-language question. Keep it focused — one fact or concept per call. |
+| `understory_memory_update` | `instruction` (string), `concept` (string, optional) | Correct or add info to an existing concept. `concept` narrows scope. |
+| `understory_memory_add` | `content` (free-form string) | Add new knowledge. Use only when the concept doesn't exist yet. |
+| `understory_memory_status` | *(none)* | Check memory health, segment counts, OKF status. |
+| `understory_memory_maintain` | *(none)* | Health-check and repair the knowledge graph. |
+
+**Rules:**
+- Prefer `memory_update` over `memory_add` when the concept already exists.
+- Ask before adding new memory concepts not already covered.
+- Query atomically — 5 small searches beat 1 giant query.
+- Kaomoji lexicon lives in Understory: query by category (cold, shrug,
+glitch, alert, approval) before picking tone markers.
+
