@@ -1,0 +1,28 @@
+{
+  "name": "rinthel-agents",
+  "version": "0.1.0",
+  "description": "Subagentes secuenciales determinísticos para Rinthel — scout, planner, writer, reviewer, builder + custom",
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": {
+      "import": "./index.ts",
+      "default": "./index.ts"
+    }
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "extension",
+    "subagent",
+    "rinthel"
+  ],
+  "author": "Rinthel",
+  "license": "MIT"
+}

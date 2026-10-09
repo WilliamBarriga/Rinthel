@@ -24,13 +24,46 @@ to regenerate them).
 `llama-server` runs as a local process (not Docker) because it needs
 direct GPU access. The rest are independent `docker compose` stacks.
 
-`llama-server` binds to `127.0.0.1` only. Understory and Pithagoras bind
-to `0.0.0.0` (required by `network_mode: host` in their compose files), so
-without `ufw` they'd be reachable from the whole LAN. `ufw` is what
-actually restricts those ports (`sudo ufw status verbose`); remote access
-(another network, phone) goes through Tailscale instead of exposing the
-port to the internet. If Tailscale connects but the port doesn't respond
-while on the same wifi, see [`03-troubleshooting.md`](03-troubleshooting.md).
+`llama-server`, Pithagoras and Understory (published `3800:3800`) all
+bind to `0.0.0.0`. Without `ufw`, `8080` and `4100` would be reachable
+from the whole LAN. `3800` is **not** covered by `ufw`: Docker-published
+ports are DNAT'ed and go through `FORWARD`, not `INPUT`, so ufw rules
+never see them — only `AUTH_TOKEN` protects it. `ufw` is what restricts
+the host-process ports
+(`sudo ufw status verbose`); remote access (another network, phone) goes
+through Tailscale instead of exposing the port to the internet. If
+Tailscale connects but the port doesn't respond while on the same wifi,
+see [`03-troubleshooting.md`](03-troubleshooting.md).
+
+### Understory → llama-server
+
+Understory calls the LLM for `memory_query` (and dreaming). Its container
+sits on its own bridge and reaches the host like this:
+
+| Piece | Value | Defined in |
+|---|---|---|
+| Bridge / subnet | `br-rgunderstory`, `172.30.99.0/24`, gateway `172.30.99.1` | `docker-compose.yaml` |
+| Host alias | `host.docker.internal` → `172.30.99.1` (`extra_hosts: !override`) | `docker-compose.yaml` |
+| LLM endpoint | `http://host.docker.internal:8080/v1` | `understory/docker-compose.yml` |
+| llama-server bind | `0.0.0.0:8080` | `rinthel_tui/lifecycle/services.py` |
+| Firewall | `sudo ufw allow in on br-rgunderstory to any port 8080 proto tcp` | host (not in repo) |
+
+The ufw rule is the **only** host-side piece. There must be **no NAT**:
+an old `understory-llama-nat.service` DNAT'ed `8080` to `127.0.0.1`
+with a per-interface `route_localnet=1`. Recreating the bridge
+(`compose down && up`) resets that sysctl while the DNAT (matched by
+interface name) survives, so the kernel silently drops every SYN as a
+martian — see [`03-troubleshooting.md`](03-troubleshooting.md).
+
+Renaming the bridge or changing the subnet requires updating the ufw rule
+in the same change. Rinthel-corp uses `br-rcunderstory` /
+`172.31.99.0/24` on the same host; keep the names distinct.
+
+Quick check from the host:
+
+```bash
+docker exec rinthel-general-understory-1 nc -zv -w3 host.docker.internal 8080
+```
 
 Voice (STT+TTS) is a self-contained Pithagoras add-on (`pithagoras-voice`,
 see `docs/guide/voice.md` in that repo), toggled from its own

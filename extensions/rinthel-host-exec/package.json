@@ -1,0 +1,28 @@
+{
+  "name": "rinthel-host-exec",
+  "version": "0.1.0",
+  "description": "Tools para que Rinthel ejecute comandos de shell en el host real (fuera del contenedor Pithagoras), vía el daemon hostexecd",
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": {
+      "import": "./index.ts",
+      "default": "./index.ts"
+    }
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "extension",
+    "host-exec",
+    "rinthel"
+  ],
+  "author": "Rinthel",
+  "license": "MIT"
+}

@@ -15,13 +15,18 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 
 [project.scripts]
 rinthel-daemon = "rinthel_tui.daemon:main"
+# hostexecd: daemon separado (ejecución de comandos en el host real, ver
+# plans/rinthel-host-exec.md) — mismo pyproject.toml que rinthel_tui porque
+# comparte venv/deps (fastapi/uvicorn ya están arriba) y no hay motivo para
+# mantener un segundo paquete Python instalable por separado solo por esto.
+hostexecd = "hostexecd.daemon:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["rinthel_tui*"]
+include = ["rinthel_tui*", "hostexecd*"]
 
 [tool.setuptools.package-data]
 rinthel_tui = ["install/templates/*"]

@@ -63,6 +63,13 @@ services:
       PI_MODEL: ${PI_MODEL:-}
       PI_THINKING_LEVEL: ${PI_THINKING_LEVEL:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # OpenCode Zen: pi resuelve la auth de los providers `opencode`/
+      # `opencode-go` desde esta env var (si no, desde ~/.pi/agent/auth.json,
+      # que está vacío). Sin la línea de abajo la key no cruza al contenedor
+      # — `environment:` es lista blanca, no vierte el entorno del host.
+      # Origen: .env de la raíz (también editable desde [N] CONFIGURAR del
+      # TUI, campo pithagoras.opencode_api_key).
+      OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
       # Serve the portal over TLS when both are given. Needed for the embedded
       # browser: the VNC client refuses to run unless every page above it is
       # secure.
@@ -76,6 +83,13 @@ services:
       # Bearer token for understory's /mcp, read by pi-mcp-adapter via
       # mcp.json's bearerTokenEnv (see /data/home/.pi/agent/mcp.json).
       UNDERSTORY_TOKEN: ${UNDERSTORY_TOKEN:?set UNDERSTORY_TOKEN in .env}
+      # hostexecd (extensions/rinthel-host-exec/): daemon on the host that
+      # runs shell commands as the host user. Host networking means
+      # 127.0.0.1 here is already the host's loopback — no mount needed,
+      # just these two vars reaching the pi process. Shared secret, same
+      # criterion as UNDERSTORY_TOKEN; generate with: openssl rand -hex 32
+      RINTHEL_HOSTEXECD_TOKEN: ${RINTHEL_HOSTEXECD_TOKEN:?set RINTHEL_HOSTEXECD_TOKEN in .env}
+      RINTHEL_HOSTEXECD_PORT: ${RINTHEL_HOSTEXECD_PORT:-8766}
     logging:
       driver: json-file
       options:

@@ -11,6 +11,7 @@
         {"attr": "temperature", "env": "RINTHEL_TEMPERATURE", "kind": "float", "group": "sampling", "value": "0.7"},
         {"attr": "cache_reuse", "env": "RINTHEL_CACHE_REUSE", "kind": "int", "group": "cache", "value": "256"},
         {"attr": "fit_to_memory", "env": "RINTHEL_FIT_TO_MEMORY", "kind": "bool", "group": "compute", "value": "false"},
+        {"attr": "mtp_enabled", "env": "RINTHEL_MTP_ENABLED", "kind": "bool", "group": "speculative", "value": "true"},
         {"attr": "spec_type", "env": "RINTHEL_SPEC_TYPE", "kind": "str", "group": "speculative", "value": "draft-mtp"}
       ]
     },

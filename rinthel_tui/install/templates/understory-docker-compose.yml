@@ -43,13 +43,13 @@ networks:
   default:
     name: understory_net
     driver_opts:
-      com.docker.network.bridge.name: br-understory
+      com.docker.network.bridge.name: br-rgunderstory
     ipam:
       config:
-        - subnet: 172.30.99.0/24   # gateway fijo 172.30.99.1 — las reglas de
-                                    # iptables/route_localnet que le abren paso
-                                    # a llama-server (127.0.0.1:8080) apuntan a
-                                    # esta interfaz por nombre e IP; sin fijarla
-                                    # docker le asigna una red/gateway nuevos en
-                                    # cada "compose down && up" y las reglas
-                                    # quedan huérfanas
+        - subnet: 172.30.99.0/24   # gateway fijo 172.30.99.1 — la regla de
+                                    # ufw que abre llama-server (0.0.0.0:8080)
+                                    # apunta a esta interfaz por nombre; sin
+                                    # fijarla docker le asigna una red/gateway
+                                    # nuevos en cada "compose down && up" y la
+                                    # regla queda huérfana. Sin DNAT a
+                                    # 127.0.0.1: ver docs/03-troubleshooting.md

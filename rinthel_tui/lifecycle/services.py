@@ -4,6 +4,8 @@ Understory/Pithagoras vía docker compose) sin tocar ``managed_service.py``
 ni triplicar fases en ``phases.py`` como antes de este refactor.
 """
 
+from pathlib import Path
+
 from rinthel_tui.config import REPO_ROOT, RinthelConfig
 from rinthel_tui.lifecycle.managed_service import DockerComposeService, LocalProcessService
 
@@ -19,6 +21,10 @@ def _llama_argv(cfg: RinthelConfig) -> list[str]:
         "-c", str(cfg.llama.context_window),
         "-fa", "on" if cfg.llama.flash_attention else "off",
         "-fit", "on" if cfg.llama.fit_to_memory else "off",
+        # 0.0.0.0, no 127.0.0.1 (el default de llama-server): Understory
+        # corre en un container Docker y llega acá vía host.docker.internal
+        # (host-gateway), que no alcanza un bind en loopback puro.
+        "--host", "0.0.0.0",
         "--port", str(cfg.llama.port),
         "--n-cpu-moe", str(cfg.llama.n_cpu_moe),
         "--threads-batch", str(cfg.llama.threads_batch),
@@ -34,11 +40,22 @@ def _llama_argv(cfg: RinthelConfig) -> list[str]:
         "--cache-reuse", str(cfg.llama.cache_reuse),
         "--cache-ram", str(cfg.llama.cache_ram),
         "--load-mode", cfg.llama.load_mode,
-        "--spec-type", cfg.llama.spec_type,
+        # Interruptor único de MTP: apagado, el modo se fuerza a "none" sin
+        # mirar spec_type (así RINTHEL_MTP_ENABLED=false apaga MTP aunque
+        # .env todavía traiga RINTHEL_SPEC_TYPE=draft-mtp); prendido, manda
+        # spec_type (default draft-mtp).
+        "--spec-type", cfg.llama.spec_type if cfg.llama.mtp_enabled else "none",
         "--spec-draft-n-max", str(cfg.llama.spec_draft_n_max),
         "--cache-type-k", cfg.llama.cache_type_k,
         "--cache-type-v", cfg.llama.cache_type_v,
     ]
+    # --mmproj se omite con MTP: llama.cpp no lo soporta junto a spec
+    # decoding (handoff/03 de test-tarkAIrk). El path y su toggle quedan
+    # guardados igual — solo se saltea el flag en este arranque.
+    if cfg.llama.mmproj_enabled and cfg.llama.mmproj and not cfg.llama.mtp_enabled:
+        # str (no Path) en LlamaConfig -- expandimos "~" a mano acá, ya que
+        # el argv va directo a Popen sin pasar por un shell.
+        argv += ["--mmproj", str(Path(cfg.llama.mmproj).expanduser())]
     if cfg.moe.cache_slots > 0:
         argv += [
             "--moe-cache-profile", str(cfg.moe.cache_profile),

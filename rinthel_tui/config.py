@@ -166,6 +166,8 @@ class LlamaConfig:
     enabled: bool
     ngl: str
     context_window: int
+    mmproj: str
+    mmproj_enabled: bool
     flash_attention: bool
     fit_to_memory: bool
     n_cpu_moe: int
@@ -182,6 +184,13 @@ class LlamaConfig:
     cache_reuse: int
     cache_ram: int
     load_mode: str
+    # ``mtp_enabled`` es el interruptor único de MTP (multi-token
+    # prediction / speculative decoding) — un solo parámetro para
+    # prenderlo/apagarlo. Cuando es False el argv arranca con
+    # ``--spec-type none`` sin importar ``spec_type`` (ver
+    # ``lifecycle/services.py::_llama_argv``); cuando es True se usa
+    # ``spec_type`` como modo (default ``draft-mtp``).
+    mtp_enabled: bool
     spec_type: str
     spec_draft_n_max: int
     sched_async_cpu: bool
@@ -203,6 +212,13 @@ LLAMA_FIELDS: list[Field] = [
     Field("enabled", "RINTHEL_LLAMA_ENABLED", bool, True, group="general"),
     Field("ngl", "RINTHEL_NGL", str, "all", group="compute"),
     Field("context_window", "RINTHEL_CONTEXT_WINDOW", int, 112000, positive=True, group="general"),
+    # str (no Path/exists=True) a propósito: "" = sin visión, arg --mmproj
+    # se omite en _llama_argv (services.py) en ese caso.
+    Field("mmproj", "RINTHEL_LLAMA_MMPROJ_PATH", str, "", group="vision"),
+    # Separado de `mmproj` (el path) a propósito: deja apagar/prender visión
+    # sin perder el path guardado — _llama_argv (services.py) exige los dos
+    # (enabled=true Y path no vacío) para mandar --mmproj.
+    Field("mmproj_enabled", "RINTHEL_LLAMA_MMPROJ_ENABLED", bool, True, group="vision"),
     Field("flash_attention", "RINTHEL_FLASH_ATTENTION", bool, True, group="compute"),
     Field("fit_to_memory", "RINTHEL_FIT_TO_MEMORY", bool, False, group="compute"),
     Field("n_cpu_moe", "RINTHEL_N_CPU_MOE", int, 60, group="compute"),
@@ -219,6 +235,12 @@ LLAMA_FIELDS: list[Field] = [
     Field("cache_reuse", "RINTHEL_CACHE_REUSE", int, 256, group="cache"),
     Field("cache_ram", "RINTHEL_CACHE_RAM", int, -1, group="cache"),
     Field("load_mode", "RINTHEL_LOAD_MODE", str, "mlock", group="general"),
+    # Interruptor único de MTP (apagado por default — prenderlo sin el
+    # .env que calibró esta máquina reproduce el OOM de
+    # test-tarkAIrk/logs/08, ver docs/02-hardware-optimization.md).
+    # Primero en el grupo para que aparezca arriba de los dos campos de
+    # "cómo" (spec_type/spec_draft_n_max) en [N] CONFIGURAR.
+    Field("mtp_enabled", "RINTHEL_MTP_ENABLED", bool, False, group="speculative"),
     Field("spec_type", "RINTHEL_SPEC_TYPE", str, "draft-mtp", group="speculative"),
     Field("spec_draft_n_max", "RINTHEL_SPEC_DRAFT_N_MAX", int, 2, group="speculative"),
     Field("sched_async_cpu", "RINTHEL_SCHED_ASYNC_CPU", bool, True, group="compute"),
@@ -266,6 +288,7 @@ class PithagorasConfig:
     dir: Path
     port: int
     enabled: bool
+    opencode_api_key: str
 
 
 PITHAGORAS_FIELDS: list[Field] = [
@@ -274,6 +297,17 @@ PITHAGORAS_FIELDS: list[Field] = [
     Field("dir", "RINTHEL_PITHAGORAS_DIR", Path, str(REPO_ROOT / "pithagoras")),
     Field("port", "RINTHEL_PITHAGORAS_PORT", int, 4100, port=True),
     Field("enabled", "RINTHEL_PITHAGORAS_ENABLED", bool, True),
+    # Única env var de secreto con Field propio: no es RINTHEL_* porque la
+    # lee docker-compose (`environment:` de pithagoras/docker-compose.yml)
+    # y pi dentro del contenedor (providers `opencode`/`opencode-go`), pero
+    # se expone acá para poder editarla desde [N] CONFIGURAR sin abrir el
+    # .env a mano. group="" → aparece al final del panel de Pithagoras sin
+    # header (detail_rows itera solo GROUP_ORDER, que es de llama-server).
+    # Vacío = sin key: getModels() de SdkPiClient filtra los modelos sin
+    # auth resoluble, así que los de OpenCode Zen no aparecen en el picker.
+    # Sin validación (str sin port/positive/exists): una key vacía es un
+    # estado válido, no un error de configuración.
+    Field("opencode_api_key", "OPENCODE_API_KEY", str, ""),
 ]
 
 
@@ -384,7 +418,49 @@ class RinthelConfig:
                 path = getattr(sub, f.attr)
                 if not path.exists():
                     warnings.append(f"{f.env}={path} no existe todavía")
+        warnings.extend(self._mtp_warnings())
         return warnings
+
+    def _mtp_warnings(self) -> list[str]:
+        """Avisos de los combos MTP que la investigación de
+        ``test-tarkAIrk`` dejó medidos como inseguros (VRAM) o directamente
+        ignorados/rotos por ``llama.cpp``. No son errores: se puede querer
+        guardar la config igual (p. ej. encender MTP con batch 2048 a sabiendas
+        de que hay que bajarlo si revienta), así que van como warning — llegan
+        al cliente como ``warnings`` del ``POST /config``, que es donde el TUI
+        los pinta en la barra de estado de ``[N] CONFIGURAR``.
+
+        Fuentes: ``test-tarkAIrk/logs/08`` (OOM de MTP, ~650 MiB de compute
+        buffer extra), ``logs/27`` (MTP + batch 2048 = 48 MiB libres, reproduce
+        el OOM) y ``handoff/03`` (MTP no soporta ``--parallel`` > 1 ni
+        ``--mmproj``)."""
+        llama = self.llama
+        if not llama.mtp_enabled:
+            return []
+        out: list[str] = []
+        if max(llama.batch_size, llama.ubatch_size) > 1024:
+            out.append(
+                f"MTP + batch/ubatch {llama.batch_size}/{llama.ubatch_size}: "
+                "crashea con CUDA OOM en el uso real de esta GPU de 8GB (48 MiB libres, "
+                "test-tarkAIrk/logs/27) — si el server muere en el primer request, bajá "
+                "RINTHEL_BATCH_SIZE/RINTHEL_UBATCH_SIZE a 1024 o 512 desde [N] CONFIGURAR > CÓMPUTO"
+            )
+        if llama.parallel > 1:
+            out.append(
+                f"MTP + RINTHEL_PARALLEL={llama.parallel}: llama.cpp no soporta MTP con "
+                "--parallel > 1 (test-tarkAIrk/handoff/03) — bajá parallel a 1 con MTP prendido"
+            )
+        if llama.mmproj_enabled and llama.mmproj:
+            out.append(
+                "MTP + visión (--mmproj): llama.cpp no soporta MTP con --mmproj — el flag queda "
+                "omitido del argv mientras MTP esté prendido (la config guardada no se toca)"
+            )
+        if llama.spec_type in ("", "none"):
+            out.append(
+                f"mtp_enabled=true pero RINTHEL_SPEC_TYPE={llama.spec_type or '(vacío)'}: "
+                "el argv arranca con --spec-type none, MTP queda apagado pese al interruptor"
+            )
+        return out
 
 
 # ── Lectura/escritura genérica de campos, usado por GET/POST /config (ver

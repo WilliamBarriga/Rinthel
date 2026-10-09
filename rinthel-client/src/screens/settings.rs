@@ -35,6 +35,7 @@ use crate::protocol::{ConfigField, ConfigPayload};
 /// header.
 const GROUP_ORDER: &[(&str, &str)] = &[
     ("general", "GENERAL"),
+    ("vision", "VISIÓN"),
     ("sampling", "SAMPLING"),
     ("cache", "CACHE / KV"),
     ("compute", "CÓMPUTO"),
