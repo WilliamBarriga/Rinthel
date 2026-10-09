@@ -61,7 +61,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # data volume. Pinned so a rebuild does not silently change the toolchain.
 COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /uvx /usr/local/bin/
 
-RUN npm install -g @earendil-works/pi-coding-agent@latest
+RUN npm install -g @earendil-works/pi-coding-agent@^1.1.0
 
 COPY package.json package-lock.json* ./
 COPY server/package.json server/
