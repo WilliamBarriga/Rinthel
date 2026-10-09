@@ -269,7 +269,7 @@ export class SdkPiClient extends EventEmitter implements PiClient {
         // you" from its own base identity — verified: it read a fact out of
         // MEMORY.md correctly while insisting it was Pi, made by Baidu. This
         // says what the files are for.
-        appendSystemPrompt: framing(opts.cwd, opts.role),
+        appendSystemPrompt: [framing(opts.cwd, opts.role)],
       });
       await resourceLoader.reload();
       if (hostExtensions.length && resourceLoader.getExtensions().errors.length) {
