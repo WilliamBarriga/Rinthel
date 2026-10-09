@@ -1,50 +1,11 @@
-# Managed services de Monorepo Rinthel — Fase 2 de plataforma-corp
-# (.scratch/plataforma-corp/implementation/02-managed-services.md).
-#
-# `include:` en vez de fusionar los YAML a mano: understory/ y pithagoras/
-# son subtrees (git subtree, ver README "Repos") que en algún momento se
-# pushean de vuelta a sus forks — dejarlos con su propio docker-compose.yml
-# intacto evita que ese diff arrastre nada de este archivo.
-#
-# `docker compose up -d <service>` sigue siendo por-servicio (understory,
-# portal) aunque los dos compartan este único archivo — ver
-# rinthel_tui/lifecycle/services.py (DOCKER_SERVICES).
+# Managed modules: merge each subtree with its Rinthel override before include.
+# Relative build/data paths remain anchored to the original subtree directory.
 include:
-  - understory/docker-compose.yml
-  - pithagoras/docker-compose.yml
-
-# Red propia para understory, no la default del proyecto: así el
-# gateway/nombre de interfaz quedan fijos entre `compose down && up`, y la
-# regla de ufw que abre 8080 (llama-server, bind 0.0.0.0) a este bridge no
-# queda huérfana. Si se renombra la interfaz o cambia la subnet, hay que
-# actualizar esa regla — ver docs/01-system-overview.md "Understory ->
-# llama-server". Nada de DNAT/route_localnet: se reseteaba al recrear el
-# bridge y dejaba el DNAT a 127.0.0.1 tirando paquetes en silencio. Nombre e
-# interfaz (br-rgunderstory) llevan el sufijo "rg" a propósito — Rinthel-corp
-# es un checkout/entorno completamente distinto y podría implementar el mismo
-# patrón algún día; los nombres de red e interfaz son globales por host, así
-# que deben no colisionar con lo que use ese otro repo.
-networks:
-  understory-net:
-    name: rinthel-general_understory_net
-    driver_opts:
-      com.docker.network.bridge.name: br-rgunderstory
-    ipam:
-      config:
-        - subnet: 172.30.99.0/24
-
-services:
-  # `include:` no fusiona el `networks:` top-level de understory/docker-
-  # compose.yml (probado: docker compose config lo omite), así que el
-  # attach a la red custom se declara acá y no en el subtree.
-  understory:
-    networks:
-      - understory-net
-    # El subtree ya trae "host.docker.internal:host-gateway", pero Docker
-    # resuelve ese alias contra el gateway de la red "bridge" default
-    # (172.17.0.1), no contra el de la red custom de acá arriba. Compose
-    # normalmente concatena extra_hosts entre archivos (quedarían las dos
-    # entradas, con la vieja ganando en /etc/hosts) — "!override" reemplaza
-    # la lista entera en vez de sumarse.
-    extra_hosts: !override
-      - "host.docker.internal:172.30.99.1"
+  - path:
+      - understory/docker-compose.yml
+      - compose/understory.override.yaml
+    project_directory: understory
+  - path:
+      - pithagoras/docker-compose.yml
+      - compose/host-exec.override.yaml
+    project_directory: pithagoras

@@ -47,6 +47,11 @@ services:
       # here instead of failing, so pi loses these packages with no error.
       - ${PI_AGENT_DIR}/npm/node_modules:/data/home/.pi/agent/npm/node_modules:ro
       - ${PI_AGENT_DIR}/git/github.com/harms-haus/pi-processes:/data/home/.pi/agent/git/github.com/harms-haus/pi-processes:ro
+      # Host-global skills (`npx skills add mattpocock/skills -g`), live and
+      # read-only. The image only bakes skill-creator, so these are the only
+      # copy of the rest. Defaults to $HOME/.agents/skills; override with
+      # AGENTS_SKILLS_DIR (absolute).
+      - ${AGENTS_SKILLS_DIR:-${HOME}/.agents/skills}:/data/home/.agents/skills:ro
     environment:
       # Must match container_name; managed voice shares this network namespace.
       PORTAL_CONTAINER_NAME: pithagoras
@@ -87,8 +92,9 @@ services:
       # runs shell commands as the host user. Host networking means
       # 127.0.0.1 here is already the host's loopback — no mount needed,
       # just these two vars reaching the pi process. Shared secret, same
-      # criterion as UNDERSTORY_TOKEN; generate with: openssl rand -hex 32
-      RINTHEL_HOSTEXECD_TOKEN: ${RINTHEL_HOSTEXECD_TOKEN:?set RINTHEL_HOSTEXECD_TOKEN in .env}
+      # Provisioned by Rinthel BOOT/INSTALL. Without a token, host exec is
+      # disabled; it must not prevent an existing portal from starting.
+      RINTHEL_HOSTEXECD_TOKEN: ${RINTHEL_HOSTEXECD_TOKEN:-}
       RINTHEL_HOSTEXECD_PORT: ${RINTHEL_HOSTEXECD_PORT:-8766}
     logging:
       driver: json-file

@@ -1,0 +1,12 @@
+# Paths are relative to pithagoras/, as specified by the root include.
+services:
+  portal:
+    volumes:
+      - type: bind
+        source: ../extensions/rinthel-host-exec
+        target: /app/rinthel-extensions/rinthel-host-exec
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      RINTHEL_HOST_EXEC_EXTENSION: /app/rinthel-extensions/rinthel-host-exec/index.ts

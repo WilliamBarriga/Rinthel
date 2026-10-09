@@ -16,15 +16,18 @@ import os
 import shutil
 
 import pytest
+from dotenv import dotenv_values
 
 from rinthel_tui.lifecycle import install
 from rinthel_tui.lifecycle.phases import PhaseError
 
 
 @pytest.fixture(autouse=True)
-def isolated_compose_profile(monkeypatch):
+def isolated_compose_profile(tmp_path, monkeypatch):
     # The user's .env must not redirect standalone tests to the real repo.
     monkeypatch.delenv("COMPOSE_FILE", raising=False)
+    monkeypatch.delenv("RINTHEL_HOSTEXECD_TOKEN", raising=False)
+    monkeypatch.setattr(install, "REPO_ROOT", tmp_path, raising=False)
 
 
 def _recording_run(rc_by_first_arg: dict[str, int] | None = None):
@@ -269,6 +272,46 @@ async def test_setup_pithagoras_skips_env_when_already_exists(cfg, report, tmp_p
         assert "PI_PROVIDER=local-llm" in content
         assert f"PI_MODEL={cfg.llama.model}" in content
     assert any("conservo sus secretos" in msg for msg in report.warnings)
+
+
+async def test_setup_pithagoras_provisions_one_host_exec_token(cfg, report, tmp_path):
+    portal = tmp_path / "pithagoras"
+    portal.mkdir()
+    (portal / ".env.example").write_text("PORTAL_PASSWORD=changeme\n")
+    cfg = _with_pithagoras_dir(cfg, portal)
+
+    await install.phase_install_setup_pithagoras(cfg, report)
+
+    root_token = dotenv_values(tmp_path / ".env").get("RINTHEL_HOSTEXECD_TOKEN")
+    assert root_token and len(root_token) >= 64
+    assert dotenv_values(portal / ".env")["RINTHEL_HOSTEXECD_TOKEN"] == root_token
+    await install.phase_install_setup_pithagoras(cfg, report)
+    assert dotenv_values(tmp_path / ".env")["RINTHEL_HOSTEXECD_TOKEN"] == root_token
+
+
+async def test_setup_pithagoras_preserves_existing_host_exec_secret(cfg, report, tmp_path):
+    portal = tmp_path / "pithagoras"
+    portal.mkdir()
+    (portal / ".env").write_text("PORTAL_PASSWORD=keep-me\nRINTHEL_HOSTEXECD_TOKEN=existing-token\n")
+    cfg = _with_pithagoras_dir(cfg, portal)
+
+    await install.phase_install_setup_pithagoras(cfg, report)
+
+    assert dotenv_values(tmp_path / ".env")["RINTHEL_HOSTEXECD_TOKEN"] == "existing-token"
+    assert dotenv_values(portal / ".env")["PORTAL_PASSWORD"] == "keep-me"
+
+
+async def test_setup_pithagoras_rejects_conflicting_host_exec_secrets(cfg, report, tmp_path):
+    portal = tmp_path / "pithagoras"
+    portal.mkdir()
+    (tmp_path / ".env").write_text("RINTHEL_HOSTEXECD_TOKEN=root-secret\n")
+    (portal / ".env").write_text("RINTHEL_HOSTEXECD_TOKEN=portal-secret\n")
+    cfg = _with_pithagoras_dir(cfg, portal)
+
+    with pytest.raises(PhaseError):
+        await install.phase_install_setup_pithagoras(cfg, report)
+    assert dotenv_values(tmp_path / ".env")["RINTHEL_HOSTEXECD_TOKEN"] == "root-secret"
+    assert dotenv_values(portal / ".env")["RINTHEL_HOSTEXECD_TOKEN"] == "portal-secret"
 
 
 async def test_setup_pithagoras_raises_when_example_missing(cfg, report, tmp_path):

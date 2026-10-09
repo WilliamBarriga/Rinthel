@@ -123,6 +123,9 @@ if [[ ! -x "$PYTHON" ]]; then
 fi
 build_client
 
+# Provision before either daemon reads .env; reruns preserve existing secrets.
+"$PYTHON" -m rinthel_tui.install.host_exec "$DIR" "$DIR/pithagoras"
+
 PORT="$(port_from_env RINTHEL_DAEMON_PORT 8765)"
 pid="$(running_pid "$PIDFILE")"
 
