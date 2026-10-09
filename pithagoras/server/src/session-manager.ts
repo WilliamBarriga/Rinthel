@@ -1,3 +1,4 @@
+import { modelSwitching } from "./local-models.js";
 import { LiveEvents } from "./live-events.js";
 import { EventEmitter } from "node:events";
 import type { PersonRow, Role } from "./people.js";
@@ -100,6 +101,10 @@ class SessionManager extends EventEmitter {
     }
   }
 
+  hasRunning(): boolean {
+    return this.compacting.size > 0 || [...this.live.values()].some(live => live.client.running);
+  }
+
   isRunning(sessionId: string): boolean {
     return this.live.get(sessionId)?.client.running ?? false;
   }
@@ -130,6 +135,7 @@ class SessionManager extends EventEmitter {
    * indistinguishable from a hung portal.
    */
   async compact(sessionId: string): Promise<void> {
+    if (modelSwitching) throw new Error("Espera: se está cargando el modelo local");
     // One at a time. A second request used to overwrite the tracked promise,
     // and whichever finished first then cleared it and published idle while
     // the other was still going — which is exactly the state prompt() checks
@@ -329,6 +335,7 @@ class SessionManager extends EventEmitter {
    * nothing to show for them otherwise.
    */
   async prompt(sessionId: string, message: string, options?: { voice?: boolean }): Promise<void> {
+    if (modelSwitching) throw new Error("Espera: se está cargando el modelo local");
     this.mark(sessionId, "running");
     // Same reason as in abort(): a session mid-compaction is detached from
     // agent events, and a prompt started there is invisible.

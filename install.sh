@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Bootstrap de un solo comando para una máquina nueva: detecta/instala Python
-# >=3.13 (venv del daemon) y Rust (build del cliente), compila el binario
+# Bootstrap de un solo comando para una máquina nueva: detecta Python
+# >=3.13 (venv del daemon) e instala Rust si falta (build del cliente), compila el binario
 # release y lanza la TUI vía rinthel-boot.sh. No toca GPU/CUDA/Docker — eso
 # vive enteramente en las fases de [0] INSTALL dentro de la propia TUI.
 # Idempotente: correrlo de nuevo con todo ya instalado no rompe nada.
@@ -36,32 +36,33 @@ else
 fi
 
 if [[ -z "${PYTHON:-}" ]]; then
-    echo "[install] No encontré Python >=3.${MIN_MINOR} en PATH — instalando vía PPA deadsnakes..." >&2
-    if ! command -v sudo >/dev/null 2>&1; then
-        echo "[install] error: hace falta sudo para instalar Python. Instalá Python 3.${MIN_MINOR}+ a mano (pyenv, o PYBIN=/ruta/a/python3.13 ./install.sh)." >&2
-        exit 1
-    fi
-    sudo apt-get update
-    sudo apt-get install -y software-properties-common
-    sudo add-apt-repository -y ppa:deadsnakes/ppa
-    sudo apt-get update
-    if sudo apt-get install -y python3.13 python3.13-venv; then
-        PYTHON="$(command -v python3.13)"
-    else
-        echo "[install] error: no pude instalar python3.13 vía deadsnakes." >&2
-        echo "  Alternativas: instalá Python 3.${MIN_MINOR}+ con pyenv, o corré:" >&2
-        echo "    PYBIN=/ruta/a/tu/python3.13 ./install.sh" >&2
-        exit 1
-    fi
+    echo "[install] Requiere Python 3.13+. En Ubuntu 26.04: sudo apt install python3 python3-venv" >&2
+    echo "[install] Para otro intérprete: PYBIN=/ruta/python ./install.sh" >&2
+    exit 1
 fi
+
+# rustup may already exist but not be on PATH in this terminal.
+if [[ -f "$HOME/.cargo/env" ]]; then
+    source "$HOME/.cargo/env"
+fi
+for tool in curl cc; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "[install] Falta $tool. Ejecuta: sudo apt install build-essential curl ca-certificates" >&2
+        exit 1
+    fi
+done
 
 echo "[install] usando $PYTHON ($("$PYTHON" --version 2>&1))"
 
 if [[ ! -x "$DIR/.venv/bin/python" ]]; then
-    "$PYTHON" -m venv "$DIR/.venv"
+    "$PYTHON" -m venv "$DIR/.venv" || {
+        echo "[install] Instala el paquete venv de tu Python (Ubuntu: sudo apt install python3-venv)." >&2
+        exit 1
+    }
 fi
 
-"$DIR/.venv/bin/pip" install -q -e "$DIR"
+"$DIR/.venv/bin/python" -m pip install -q -e "$DIR"
+"$DIR/.venv/bin/python" -m rinthel_tui.install.ubuntu
 
 # ── Rust (cliente) ──────────────────────────────────────────────
 # El binario Rust es el cliente reemplazable, el daemon Python es la
@@ -78,6 +79,9 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 
 echo "[install] usando $(cargo --version)"
-(cd "$DIR/rinthel-client" && cargo build --release)
+(cd "$DIR/rinthel-client" && cargo build --release --locked)
 
+if [[ "${1:-}" == "--skip-launch" ]]; then
+    exit 0
+fi
 exec "$DIR/rinthel-boot.sh" "$@"

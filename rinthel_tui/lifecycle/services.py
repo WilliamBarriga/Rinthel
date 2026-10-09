@@ -4,6 +4,7 @@ Understory/Pithagoras vía docker compose) sin tocar ``managed_service.py``
 ni triplicar fases en ``phases.py`` como antes de este refactor.
 """
 
+import os
 from pathlib import Path
 
 from rinthel_tui.config import REPO_ROOT, RinthelConfig
@@ -93,16 +94,23 @@ LLAMA_SERVICE = LocalProcessService(
 # Fase 2 de plataforma-corp: los 2 comparten un único docker-compose.yaml en
 # la raíz del repo (`include:` de understory/pithagoras — ver
 # docker-compose.yaml), así que los 2 ``dir_of`` apuntan a ``REPO_ROOT``
-# (no a ``cfg.understory.dir``/``cfg.pithagoras.dir``, que ahora describen
+# en Linux (no a ``cfg.understory.dir``/``cfg.pithagoras.dir``, que describen
 # dónde vive el *código fuente* del subtree, usado por install.py — un
-# concepto distinto de "desde dónde corro docker compose").
+# concepto distinto de "desde dónde corro docker compose"). Windows usa
+# los stacks standalone que INSTALL adapta bajo Rinthel-data.
+
+def _compose_directory(standalone_dir: Path) -> Path:
+    # Windows INSTALL prepares standalone stacks under Rinthel-data.
+    # Linux uses the shared monorepo Compose project.
+    return standalone_dir if os.name == "nt" else REPO_ROOT
+
 
 UNDERSTORY_SERVICE = DockerComposeService(
     display_name="Understory",
     menu_label="UNDERSTORY  --  MCP MEMORY LAYER",
     wait_label="UNDERSTORY",
     kill_label="UNDERSTORY  --  MCP MEMORY LAYER",
-    dir_of=lambda cfg: REPO_ROOT,
+    dir_of=lambda cfg: _compose_directory(cfg.understory.dir),
     port_of=lambda cfg: cfg.understory.port,
     enabled_of=lambda cfg: cfg.understory.enabled,
     compose_service_name="understory",
@@ -114,7 +122,7 @@ PITHAGORAS_SERVICE = DockerComposeService(
     menu_label="PITHAGORAS  --  PI TASK PORTAL",
     wait_label="PITHAGORAS",
     kill_label="PITHAGORAS  --  PI TASK PORTAL",
-    dir_of=lambda cfg: REPO_ROOT,
+    dir_of=lambda cfg: _compose_directory(cfg.pithagoras.dir),
     port_of=lambda cfg: cfg.pithagoras.port,
     enabled_of=lambda cfg: cfg.pithagoras.enabled,
     compose_service_name="portal",

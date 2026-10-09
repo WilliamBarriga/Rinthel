@@ -28,39 +28,61 @@ for **Understory** (MCP memory layer) and **Pithagoras** (task portal).
 - [`docs/01-system-overview.md`](docs/01-system-overview.md) — what runs,
   lifecycle phases, code structure.
 - [`docs/02-hardware-optimization.md`](docs/02-hardware-optimization.md) —
-  why each inference flag is set the way it is (VRAM, quant, MoE cache).
+  established Linux inference profile (VRAM, quant, MoE cache).
 - [`docs/03-troubleshooting.md`](docs/03-troubleshooting.md) — common errors
   and how to fix them.
+- [`docs/04-windows-installation.md`](docs/04-windows-installation.md) —
+  native Windows bootstrap and Docker Desktop integration.
+- [`docs/05-windows-validation.md`](docs/05-windows-validation.md) —
+  validated Windows profile, measured performance and grounded-use cases.
+- [`docs/windows-hardware-optimization.md`](docs/windows-hardware-optimization.md) —
+  inference settings for the validated Windows hardware.
+- [`docs/local-model-picker.md`](docs/local-model-picker.md) —
+  authenticated model switching for the Ubuntu portal.
 
 ## `[0]` Quick install (new machine)
 
-One command, with no prior dependency beyond being able to install Python:
+### Windows 11 (PowerShell)
 
-```bash
-git clone <this-repo-url> && cd Rinthel-general && ./install.sh
+Consulta primero [`docs/04-windows-installation.md`](docs/04-windows-installation.md).
+Con Python 3.13+, Rust y Git disponibles:
+
+```powershell
+.\install.ps1
 ```
 
-`install.sh` detects (or installs, via the `deadsnakes` PPA if needed)
-Python 3.13+, creates the venv, bootstraps Rust (`rustup`, non-interactive)
-if `cargo` is missing, builds the client (`cargo build --release`), and
-starts the TUI. From there, **`INSTALL`** in the menu runs 6 phases:
+El bootstrap crea `.venv`, instala el daemon, compila el cliente y abre
+Rinthel. CUDA, CMake y Docker Desktop se validan después desde `INSTALL`;
+el script no los instala ni descarga el modelo sin que el usuario elija esa
+opción en la TUI. En la máquina Windows de referencia, el instalador también
+crea un perfil conservador para 32 GB de RAM y 8 GB de VRAM; consulta
+[`docs/05-windows-validation.md`](docs/05-windows-validation.md) antes de
+subir contexto, batch u offload de GPU.
 
-| Phase | What it does |
-|------|----------|
-| `1/6` PREFLIGHT | Detects GPU/CUDA/cmake/docker |
-| `2/6` LLAMA.CPP | Clones the custom fork (`perf` branch) |
-| `3/6` LLAMA.CPP | CUDA build, `native` architecture (not pinned) |
-| `4/6` MODEL GGUF | Downloads the configured model |
-| `5/6` PITHAGORAS | Clone + configuration |
-| `6/6` UNDERSTORY | Scaffold + configuration |
+### Ubuntu 26.04
 
-Rules:
+Consulta [`docs/06-ubuntu-installation.md`](docs/06-ubuntu-installation.md)
+para instalar las dependencias del sistema y CUDA compatible con tu GPU.
+Ubuntu 26.04 incluye Python 3.14; no necesita el PPA deadsnakes.
 
-- `NVIDIA driver` + `CUDA toolkit` must already be installed — `INSTALL`
-  detects them but doesn't install them.
-- It's re-runnable: each phase is idempotent, skips what already exists.
-- `INSTALL` configures, it doesn't boot — once it's done, use `BOOT` to
-  bring everything up.
+```bash
+./install.sh
+```
+
+El bootstrap crea `.venv`, instala el daemon, prepara `.env` y `data/`,
+compila el cliente Rust y abre la TUI. `./install.sh --skip-launch` instala
+sin abrir la interfaz. Rust se instala con rustup si no existe Cargo.
+
+El perfil Linux selecciona `docker-compose.ubuntu.yml`: los contenedores
+usan la red del host para alcanzar llama-server por loopback, sin reglas
+iptables ni paquetes Pi de otra máquina. Los secretos existentes se
+conservan. El perfil de inferencia es el punto de partida de Windows;
+todavía requiere un benchmark en Linux.
+
+Después usa **INSTALL** para compilar llama.cpp y descargar el modelo
+(~22 GB), y **BOOT** para iniciar los servicios. CUDA, CMake y Docker deben
+estar instalados antes de ejecutar INSTALL. Node.js no hace falta en el
+host: los servicios web se compilan en Docker.
 
 ## Hardware requirements
 
@@ -113,8 +135,9 @@ From the repo root. Full lifecycle details (phases, diagram, services) in
 ```
 
 `rinthel-boot.sh` resolves `.venv/bin/python` and `rinthel-client/target/release/rinthel`
-relative to itself — **it must always be run from (or with cwd inside) the
-repo root**; it's not meant to be symlinked or copied elsewhere. It
+relative to itself and changes to the repository directory, so it can be
+called by its absolute path from another directory. Do not copy the script
+out of the repository. It
 autostarts the daemon if it isn't already listening (pidfile at
 `.rinthel-daemon.pid`, survives the client closing) and then launches the
 Rust client, which opens straight into the menu (no splash screen):

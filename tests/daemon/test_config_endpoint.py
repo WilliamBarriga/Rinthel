@@ -7,6 +7,7 @@ real del repo (`_ENV_PATH`/`_ENV_EXAMPLE_PATH` se monkeypatchean a rutas de
 
 import dataclasses
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -22,14 +23,22 @@ def _isolated_env_paths(tmp_path, monkeypatch):
     # mutado para el resto de la sesión de pytest (es un global de módulo,
     # no algo por-test). MTP arranca apagado en ese snapshot: el .env real de
     # esta máquina lo tiene prendido con batch 2048, y el warning correcto de
-    # `validate()` para esa combinación (ver test-tarkAIrk/logs/27) haría
-    # fallar cada aserción de "warnings: []" de este módulo. Encenderlo de
-    # verdad se testea en los dos tests de MTP de más abajo.
+    # `validate()` para esa combinación haría fallar cada aserción de
+    # "warnings: []" de este módulo. Encenderlo de verdad se testea en los dos
+    # tests de MTP de más abajo.
+    # This suite tests config editing, not whether this machine has a GGUF.
+    binary = tmp_path / "llama-server"
+    model = tmp_path / "model.gguf"
+    binary.touch()
+    model.touch()
     base = daemon.cfg
     monkeypatch.setattr(
         daemon,
         "cfg",
-        dataclasses.replace(base, llama=dataclasses.replace(base.llama, mtp_enabled=False)),
+        dataclasses.replace(
+            base,
+            llama=dataclasses.replace(base.llama, bin=binary, model=model, mtp_enabled=False),
+        ),
     )
 
 

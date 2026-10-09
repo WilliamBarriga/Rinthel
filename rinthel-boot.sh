@@ -3,8 +3,8 @@
 # infraestructura persistente e independiente del cliente — sobrevive a que
 # cierres la TUI, hasta que corras `--stop` o apagues la máquina.
 #
-# Ejecutar SIEMPRE desde (o con cwd dentro de) la raíz del repo: DIR se
-# resuelve relativo a este script. Config vía .env, ver README/.env.example.
+# DIR se resuelve relativo al script y se usa como cwd.
+# Config vía .env, ver README/.env.example.
 #
 # Uso:
 #   ./rinthel-boot.sh          arranca el daemon si hace falta, abre el cliente
@@ -12,6 +12,8 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$DIR"
+if [[ -f "$HOME/.cargo/env" ]]; then source "$HOME/.cargo/env"; fi
 PYTHON="$DIR/.venv/bin/python"
 CARGO_MANIFEST="$DIR/rinthel-client/Cargo.toml"
 BINARY="$DIR/rinthel-client/target/release/rinthel"
@@ -42,7 +44,7 @@ build_client() {
         exit 1
     fi
     echo "[boot] compilando cliente Rust (cargo build --release)..."
-    if ! cargo build --release --manifest-path "$CARGO_MANIFEST"; then
+    if ! cargo build --release --locked --manifest-path "$CARGO_MANIFEST"; then
         if [[ -x "$BINARY" ]]; then
             echo "[boot] la compilación falló — sigo con el binario previo ($BINARY), puede estar desactualizado." >&2
         else
@@ -56,13 +58,8 @@ build_client() {
 # RINTHEL_DAEMON_PORT/8765) para que hostexecd pueda reusarla en vez de
 # duplicar la lógica de parseo del .env.
 port_from_env() {
-    local var_name="$1" default_value="$2" value="$2"
-    if [[ -f "$ENV_FILE" ]]; then
-        local line
-        line="$(grep -E "^${var_name}=" "$ENV_FILE" | tail -n1 || true)"
-        [[ -n "$line" ]] && value="${line#${var_name}=}"
-    fi
-    echo "$value"
+    local var_name="$1" default_value="$2"
+    VAR_NAME="$var_name" DEFAULT_VALUE="$default_value" "$PYTHON" -c 'import os; from dotenv import load_dotenv; load_dotenv(".env"); p=int(os.environ.get(os.environ["VAR_NAME"], os.environ["DEFAULT_VALUE"])); assert 1 <= p <= 65535; print(p)'
 }
 
 port_in_use() {

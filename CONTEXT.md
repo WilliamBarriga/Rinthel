@@ -1,20 +1,40 @@
 # Rinthel
 
-TUI de gestión de lifecycle para Rinthel/Understory/Pithagoras. Migración de Textual (Python, in-process) a Ratatui (Rust) completa — paridad alcanzada, Textual borrado del repo. La capa visual vive en `rinthel-client/` (Rust) detrás de un límite de proceso real; `rinthel_tui/` quedó como daemon headless (FastAPI). Ver `.scratch/ratatui-migration/` para el historial del porteo y [ADR 0001](docs/adr/0001-daemon-protocol-shape.md) para el protocolo.
+Rinthel administra una infraestructura local de IA como un conjunto coordinado de servicios. Su lenguaje distingue las intenciones del usuario de los mecanismos concretos con los que cada servicio se ejecuta.
 
 ## Language
 
 **Managed service**:
-Uno de los tres servicios que el daemon controla como unidad de lifecycle: `llama-server` (proceso local) o Understory/Pithagoras (docker compose). El código las modela como `LocalProcessService`/`DockerComposeService` (`lifecycle/managed_service.py`).
-_Avoid_: proceso, contenedor (son el mecanismo de una managed service, no sinónimos — Understory es una managed service aunque por dentro sea un contenedor Docker).
+Una capacidad de infraestructura que Rinthel controla como una sola unidad de ciclo de vida: Llama, Understory o Pithagoras.
+_Avoid_: Proceso, contenedor; son mecanismos de ejecución, no la capacidad administrada.
+
+**Install**:
+Preparación idempotente de las fuentes, binarios, modelos y configuración que una managed service necesita antes de poder arrancar.
+_Avoid_: Boot, setup manual.
 
 **Boot** / **Terminate**:
-Los dos comandos de lifecycle expuestos por el protocolo daemon↔cliente: boot lleva las tres managed services arriba, terminate las lleva abajo. Boot corta en el primer fallo (las fases siguientes asumen que la anterior funcionó); terminate sigue con las que quedan aunque una falle (no dejar nada corriendo por error).
-_Avoid_: start/stop, up/down — usar boot/terminate de forma consistente en protocolo y UI.
+Intenciones opuestas del ciclo de vida: Boot lleva las managed services habilitadas a estado disponible; Terminate intenta llevarlas a estado detenido.
+_Avoid_: Start/stop, up/down.
+
+**Reload**:
+Reemplazo coordinado del estado en ejecución mediante Terminate seguido de Boot y reconstrucción de los servicios que lo requieran.
+_Avoid_: Restart; Reload expresa el ciclo completo administrado por Rinthel.
 
 **Service outcome**:
-El resultado de una managed service dentro de una respuesta de boot/terminate: si terminó bien y un mensaje humano-legible. Una lista ordenada de service outcomes es la respuesta completa de boot/terminate.
+Resultado de una managed service dentro de una operación de ciclo de vida: indica éxito o fallo y aporta un mensaje comprensible para la persona usuaria.
 
 **Telemetry stream**:
-Uno de los cuatro flujos en vivo que el daemon empuja al cliente por el túnel de monitoreo: estado docker, muestra de GPU, muestra de CPU/RAM, línea de log. Cada mensaje del túnel lleva un tag que identifica a cuál stream pertenece.
-_Avoid_: evento, update genérico — cada stream tiene una identidad propia (no son intercambiables).
+Flujo identificado de observaciones en vivo sobre servicios, recursos o actividad durante una operación.
+_Avoid_: Evento, actualización; cada stream conserva una identidad y significado propios.
+
+**Knowledge workspace**:
+Carpeta controlada por la persona usuaria que Pithagoras expone al agente como fuente documental local.
+_Avoid_: Entrenamiento, índice RAG; el agente consulta archivos, no modifica los pesos del modelo.
+
+**Grounded response**:
+Respuesta limitada a fuentes del knowledge workspace que separa hechos confirmados, históricos, experimentos, propuestas e información ausente.
+_Avoid_: Respuesta creativa, conocimiento general.
+
+**Validated profile**:
+Combinación versionada de modelo y parámetros que conserva estabilidad y rendimiento medidos en una clase concreta de hardware.
+_Avoid_: Valor por defecto, configuración universal.

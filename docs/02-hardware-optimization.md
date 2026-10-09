@@ -1,5 +1,10 @@
 # Hardware & Inference Tuning
 
+This document preserves the established Linux profile. Windows has its own
+[validated hardware profile](windows-hardware-optimization.md) and
+[validation record](05-windows-validation.md). Do not apply one machine's
+profile to another without a benchmark.
+
 Why the `llama-server` flags in `.env.example` are set the way they are.
 They all stem from the same constraint: the model (35B total parameters,
 ~23 GB on disk quantized) doesn't fit entirely in the available VRAM.

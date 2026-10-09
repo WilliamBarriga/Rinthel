@@ -11,10 +11,20 @@ herramientas).
 
 import asyncio
 import dataclasses
+import json
+import os
 import shutil
+
+import pytest
 
 from rinthel_tui.lifecycle import install
 from rinthel_tui.lifecycle.phases import PhaseError
+
+
+@pytest.fixture(autouse=True)
+def isolated_compose_profile(monkeypatch):
+    # The user's .env must not redirect standalone tests to the real repo.
+    monkeypatch.delenv("COMPOSE_FILE", raising=False)
 
 
 def _recording_run(rc_by_first_arg: dict[str, int] | None = None):
@@ -168,6 +178,53 @@ async def test_download_model_downloads_when_missing(monkeypatch, cfg, report, t
 # ── SETUP PITHAGORAS ─────────────────────────────────────────────
 
 
+def test_prepare_pithagoras_for_windows_is_idempotent(report, tmp_path):
+    pithagoras_dir = tmp_path / "pithagoras"
+    pithagoras_dir.mkdir()
+    compose_path = pithagoras_dir / "docker-compose.yml"
+    dockerfile_path = pithagoras_dir / "Dockerfile"
+    compose_path.write_text(
+        "services:\n"
+        "  portal:\n"
+        "    network_mode: host\n"
+        "  tailscale:\n"
+        "    environment:\n"
+        "      TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY in .env}\n"
+    )
+    dockerfile_path.write_text("RUN mkdir -p /data/home /data/bin\n")
+
+    install._prepare_pithagoras_for_windows(pithagoras_dir, report, platform="nt")
+    first_compose = compose_path.read_text()
+    first_dockerfile = dockerfile_path.read_text()
+    install._prepare_pithagoras_for_windows(pithagoras_dir, report, platform="nt")
+
+    assert '127.0.0.1:${PORT:-4100}:${PORT:-4100}' in first_compose
+    assert "network_mode: host" not in first_compose
+    assert "TS_AUTHKEY: ${TS_AUTHKEY:-}" in first_compose
+    assert "chown -R node:node /data" in first_dockerfile
+    assert compose_path.read_text() == first_compose
+    assert dockerfile_path.read_text() == first_dockerfile
+
+
+def test_write_local_model_config_is_idempotent(report, tmp_path):
+    agent_dir = tmp_path / "agent"
+    model_path = tmp_path / "model.gguf"
+
+    install._write_local_model_config(
+        agent_dir, model_path, 8080, report, platform="nt"
+    )
+    first = (agent_dir / "models.json").read_text()
+    install._write_local_model_config(
+        agent_dir, model_path, 8080, report, platform="nt"
+    )
+
+    parsed = json.loads(first)
+    provider = parsed["providers"]["local-llm"]
+    assert provider["baseUrl"] == "http://host.docker.internal:8080/v1"
+    assert provider["models"][0]["id"] == str(model_path)
+    assert (agent_dir / "models.json").read_text() == first
+
+
 async def test_setup_pithagoras_clones_and_generates_env(monkeypatch, cfg, report, tmp_path):
     pithagoras_dir = tmp_path / "pithagoras"
     cfg = _with_pithagoras_dir(cfg, pithagoras_dir)
@@ -205,8 +262,13 @@ async def test_setup_pithagoras_skips_env_when_already_exists(cfg, report, tmp_p
 
     await install.phase_install_setup_pithagoras(cfg, report)
 
-    assert (pithagoras_dir / ".env").read_text() == "EXISTING=1\n"
-    assert any("no lo piso" in msg for msg in report.warnings)
+    content = (pithagoras_dir / ".env").read_text()
+    assert "EXISTING=1" in content
+    if os.name == "nt":
+        assert f"LLAMA_BASE_URL=http://host.docker.internal:{cfg.llama.port}" in content
+        assert "PI_PROVIDER=local-llm" in content
+        assert f"PI_MODEL={cfg.llama.model}" in content
+    assert any("conservo sus secretos" in msg for msg in report.warnings)
 
 
 async def test_setup_pithagoras_raises_when_example_missing(cfg, report, tmp_path):
@@ -250,3 +312,44 @@ async def test_setup_understory_generates_env_and_bundle(cfg, report, tmp_path):
     assert (understory_dir / ".env").read_text() == "AUTH_TOKEN=abc123\n"
     assert (understory_dir / "bundle" / "agents" / "index.md").exists()
     assert (understory_dir / "bundle" / "index.md").exists()
+
+
+async def test_build_passes_discovered_cuda_compiler(monkeypatch, cfg, report, tmp_path):
+    cfg = _with_llamacpp_repo_dir(cfg, tmp_path / "llama.cpp")
+    compiler = tmp_path / "cuda" / "bin" / "nvcc"
+    monkeypatch.setattr(install, "_nvcc_path", lambda: compiler)
+    fake, calls = _recording_run()
+    monkeypatch.setattr(install, "_run", fake)
+    await install.phase_install_build_llamacpp(cfg, report)
+    assert f"-DCMAKE_CUDA_COMPILER={compiler}" in calls[0]
+
+
+def test_nvcc_path_prefers_path(monkeypatch, tmp_path):
+    compiler = tmp_path / "custom-cuda" / "nvcc"
+    monkeypatch.setattr(shutil, "which", lambda name: str(compiler))
+    assert install._nvcc_path() == compiler
+
+
+def test_nvcc_path_finds_toolkit_outside_path(monkeypatch, tmp_path):
+    from pathlib import Path
+    compiler = tmp_path / "cuda-test" / "bin" / "nvcc"
+    compiler.parent.mkdir(parents=True)
+    compiler.write_text("#!/bin/sh\n")
+    compiler.chmod(0o755)
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    monkeypatch.setattr(Path, "glob", lambda self, pattern: [compiler])
+    real_is_file = Path.is_file
+    monkeypatch.setattr(Path, "is_file", lambda self: self == compiler and real_is_file(self))
+    assert install._nvcc_path() == compiler
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Linux profile")
+@pytest.mark.parametrize("phase", [install.phase_install_setup_pithagoras, install.phase_install_setup_understory])
+async def test_linux_profile_prepares_monorepo(monkeypatch, cfg, report, tmp_path, phase):
+    from rinthel_tui.install import ubuntu
+    monkeypatch.setenv("COMPOSE_FILE", "docker-compose.ubuntu.yml")
+    monkeypatch.setattr(install, "REPO_ROOT", tmp_path)
+    calls = []
+    monkeypatch.setattr(ubuntu, "prepare", calls.append)
+    await phase(cfg, report)
+    assert calls == [tmp_path]
