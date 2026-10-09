@@ -55,6 +55,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from rinthel_tui import config_routes, phase_bridge
+from rinthel_tui.local_models import create_router as _local_models_router
 from rinthel_tui.config import default_config
 from rinthel_tui.lifecycle import phases, specs
 from rinthel_tui.lifecycle.managed_service import check_ready
@@ -344,6 +345,24 @@ def main() -> None:
     # más de uno.
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", workers=1)
 
+
+
+def _set_local_model_config(value):
+    global cfg
+    cfg = value
+
+_picker_router = _local_models_router(_REPO_ROOT, lambda: cfg, _set_local_model_config)
+app.include_router(_picker_router)
+
+@app.middleware("http")
+async def _serialize_model_lifecycle(request, call_next):
+    if request.method == "POST" and request.url.path in {"/boot", "/terminate", "/reload", "/install", "/config", "/capture"}:
+        lock = _picker_router.model_lock
+        if lock.locked():
+            return JSONResponse({"error": "Espera a que termine el cambio de modelo"}, status_code=409)
+        async with lock:
+            return await call_next(request)
+    return await call_next(request)
 
 if __name__ == "__main__":
     main()

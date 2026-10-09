@@ -1,3 +1,4 @@
+import { LocalModelPicker } from "./LocalModelPicker";
 import { LuGlobe } from "react-icons/lu";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, type PiConfig, type PiModel, type Session } from "../api";
@@ -150,6 +151,7 @@ export function ComposerBar({
   const [filter, setFilter] = useState("");
   const [recents, setRecents] = useState<string[]>(readRecents);
   const [busy, setBusy] = useState(false);
+  const [hasLocalPicker, setHasLocalPicker] = useState(false);
   /** Where the handle sits mid-drag, before the change is sent. */
   const [dragEffort, setDragEffort] = useState<number | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -272,11 +274,12 @@ export function ComposerBar({
   return (
     <div ref={ref} className="composer-toolbar relative text-xs">
       <div className="composer-settings">
+        <LocalModelPicker running={running} onChanged={load} onAvailable={setHasLocalPicker} />
         <button
           type="button"
           disabled={busy}
           onClick={() => setOpen(open === "model" ? null : "model")}
-          className={`max-w-[220px] truncate rounded-lg px-2 py-1.5 transition disabled:opacity-50 ${
+          className={`${hasLocalPicker ? "hidden" : ""} max-w-[220px] truncate rounded-lg px-2 py-1.5 transition disabled:opacity-50 ${
             open === "model" ? "bg-fg/10 text-fg" : "text-fg-subtle hover:bg-fg/5 hover:text-fg-muted"
           }`}
           title={cfg.state.model.id}

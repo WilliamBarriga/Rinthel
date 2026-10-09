@@ -1,0 +1,10 @@
+{
+  "qwen3.6-35b-a3b": {
+    "RINTHEL_MODEL_NAME": "Qwen 3.6 · 35B",
+    "RINTHEL_LLAMA_MODEL_PATH": "/path/to/Qwen3.6-35B-A3B.gguf"
+  },
+  "nemotron-3-nano-30b-a3b": {
+    "RINTHEL_MODEL_NAME": "Nemotron 3 Nano · 30B",
+    "RINTHEL_LLAMA_MODEL_PATH": "/path/to/Nemotron-3-Nano-30B.gguf"
+  }
+}

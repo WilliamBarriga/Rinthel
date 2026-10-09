@@ -149,7 +149,10 @@ export interface VoiceConfig {
 }
 
 export interface VoiceInstallStatus { available: boolean; state: string; busy: boolean; progress: string; error: string; }
+export interface LocalModels {active: string | null; busy: boolean; models: {key: string; name: string; id: string; available: boolean}[]}
 export const api = {
+  localModels: () => json<LocalModels>("/api/local-models"),
+  switchLocalModel: (key: string) => json<LocalModels>("/api/local-models", {method: "POST", body: JSON.stringify({key})}),
   voiceInstallStatus: () => json<VoiceInstallStatus>('/api/voice/install'),
   voiceAction: (action: 'install' | 'start' | 'stop') => json<{ok:boolean}>(`/api/voice/${action}`, {method:'POST'}),
   connectVoice: () => json<VoiceConfig>('/api/voice/connect', {method:'POST'}),

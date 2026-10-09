@@ -6,6 +6,7 @@ real del repo (`_ENV_PATH`/`_ENV_EXAMPLE_PATH` se monkeypatchean a rutas de
 `tmp_path`)."""
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -20,7 +21,14 @@ def _isolated_env_paths(tmp_path, monkeypatch):
     # sin este snapshot/restore, un test que guarda algo dejaría `daemon.cfg`
     # mutado para el resto de la sesión de pytest (es un global de módulo,
     # no algo por-test).
-    monkeypatch.setattr(daemon, "cfg", daemon.cfg)
+    # This suite tests config editing, not whether this machine has a GGUF.
+    binary = tmp_path / "llama-server"
+    model = tmp_path / "model.gguf"
+    binary.touch()
+    model.touch()
+    monkeypatch.setattr(daemon, "cfg", replace(
+        daemon.cfg, llama=replace(daemon.cfg.llama, bin=binary, model=model)
+    ))
 
 
 def test_get_config_lists_every_sub_config_including_install():

@@ -383,7 +383,7 @@ async def test_up_succeeds(monkeypatch, cfg, report, tmp_path, service):
 
     await managed_service.phase_up(cfg, report, service=service)
 
-    assert calls[0] == ["up", "-d"]
+    assert calls[0] == ["up", "-d", service.compose_service_name]
     assert any("levantado" in msg for msg in report.successes)
 
 
