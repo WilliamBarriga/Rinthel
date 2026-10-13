@@ -282,3 +282,17 @@ def test_kind_names_cover_every_field_kind_in_use():
     from pathlib import Path
 
     assert KIND_NAMES == {bool: "bool", int: "int", float: "float", str: "str", Path: "path"}
+
+
+def test_legacy_fork_env_vars_warn(monkeypatch):
+    monkeypatch.setenv("RINTHEL_MOE_CACHE_SLOTS", "16")
+    monkeypatch.setenv("RINTHEL_SCHED_ASYNC_CPU", "false")
+    warnings = default_config(platform="posix").validate()
+    assert any("RINTHEL_MOE_CACHE_SLOTS" in w and "RINTHEL_MOE_CACHE_MIB" in w for w in warnings)
+    assert any("RINTHEL_SCHED_ASYNC_CPU" in w for w in warnings)
+
+
+def test_default_paths_are_not_machine_specific():
+    cfg = default_config(platform="posix")
+    for path in (cfg.llama.bin, cfg.install.llamacpp_repo_dir):
+        assert not str(path).startswith("/rinthel-disk")

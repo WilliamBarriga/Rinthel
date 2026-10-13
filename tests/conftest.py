@@ -50,3 +50,15 @@ def cfg(tmp_path):
         base,
         llama=dataclasses.replace(base.llama, log=tmp_path / "llama-server.log"),
     )
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_llama_env(monkeypatch):
+    """El ``.env`` real de la máquina (cargado al importar config) no debe
+    filtrarse a los tests: paths de llama.cpp y variables legacy del fork."""
+    for name in (
+        "RINTHEL_LLAMA_BIN", "RINTHEL_LLAMACPP_REPO_DIR", "RINTHEL_MOE_CACHE_SLOTS",
+        "RINTHEL_MOE_CACHE_PROFILE", "RINTHEL_MOE_TRACE_BUILD",
+        "RINTHEL_MOE_TRACE_OUT_DIR", "RINTHEL_SCHED_ASYNC_CPU",
+    ):
+        monkeypatch.delenv(name, raising=False)

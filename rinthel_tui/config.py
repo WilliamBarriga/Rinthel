@@ -157,6 +157,21 @@ def _load(cls: type, fields: list[Field], *, defaults: dict[str, Any] | None = N
     return cls(**kwargs)
 
 
+# Variables del fork thecodacus/llama.cpp que llama.cpp upstream no tiene: un
+# .env viejo las puede seguir trayendo y se ignoran en silencio.
+_LEGACY_ENV: dict[str, str] = {
+    "RINTHEL_MOE_CACHE_SLOTS": "usá RINTHEL_MOE_CACHE_MIB (--moe-cache-mib de upstream)",
+    "RINTHEL_MOE_CACHE_PROFILE": "el perfil de ruteo MoE ya no existe en upstream",
+    "RINTHEL_MOE_TRACE_BUILD": "llama-moe-trace ya no existe en upstream",
+    "RINTHEL_MOE_TRACE_OUT_DIR": "llama-moe-trace ya no existe en upstream",
+    "RINTHEL_SCHED_ASYNC_CPU": "--no-sched-async-cpu ya no existe en upstream",
+}
+
+
+def _legacy_env_warnings() -> list[str]:
+    return [f"{name} ya no se usa: {why}" for name, why in _LEGACY_ENV.items() if name in os.environ]
+
+
 @dataclass(frozen=True)
 class LlamaConfig:
     bin: Path
@@ -205,7 +220,7 @@ class LlamaConfig:
 # ajusta los args no seteados para entrar en memoria del device — no tiene
 # relación con flash attention pese a lo que sugeriría un nombre distinto.
 LLAMA_FIELDS: list[Field] = [
-    Field("bin", "RINTHEL_LLAMA_BIN", Path, "/rinthel-disk/llama.cpp/src/build-cuda/bin/llama-server", exists=True, group="general"),
+    Field("bin", "RINTHEL_LLAMA_BIN", Path, "~/llama.cpp/src/build-cuda/bin/llama-server", exists=True, group="general"),
     Field("model", "RINTHEL_LLAMA_MODEL_PATH", Path, "~/llama.cpp/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", exists=True, group="general"),
     Field("port", "RINTHEL_LLAMA_PORT", int, 8080, port=True, group="general"),
     Field("log", "RINTHEL_LLAMA_LOG_PATH", Path, "~/Rinthel-general/logs/llama-server.log", group="general"),
@@ -328,7 +343,7 @@ class InstallConfig:
 
 
 INSTALL_FIELDS: list[Field] = [
-    Field("llamacpp_repo_dir", "RINTHEL_LLAMACPP_REPO_DIR", Path, "/rinthel-disk/llama.cpp/src"),
+    Field("llamacpp_repo_dir", "RINTHEL_LLAMACPP_REPO_DIR", Path, "~/llama.cpp/src"),
     Field("llamacpp_repo_url", "RINTHEL_LLAMACPP_REPO_URL", str, "https://github.com/ggml-org/llama.cpp.git"),
     Field(
         "model_download_url",
@@ -424,6 +439,7 @@ class RinthelConfig:
                 path = getattr(sub, f.attr)
                 if not path.exists():
                     warnings.append(f"{f.env}={path} no existe todavía")
+        warnings.extend(_legacy_env_warnings())
         warnings.extend(self._mtp_warnings())
         return warnings
 
