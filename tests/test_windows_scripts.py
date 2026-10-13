@@ -14,10 +14,9 @@ def test_windows_installer_writes_validated_profile():
         "RINTHEL_UBATCH_SIZE=2048",
         "RINTHEL_BATCH_SIZE=2048",
         "RINTHEL_SPEC_TYPE=none",
-        "RINTHEL_SCHED_ASYNC_CPU=false",
         "RINTHEL_CACHE_TYPE_K=q8_0",
         "RINTHEL_CACHE_TYPE_V=q8_0",
-        "RINTHEL_MOE_CACHE_SLOTS=0",
+        "RINTHEL_MOE_CACHE_MIB=0",
     }
     assert expected <= set(script.split("'"))
 

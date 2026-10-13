@@ -21,7 +21,7 @@
       "enabled": null,
       "enabled_env": null,
       "fields": [
-        {"attr": "cache_slots", "env": "RINTHEL_MOE_CACHE_SLOTS", "kind": "int", "group": "", "value": "0"}
+        {"attr": "cache_mib", "env": "RINTHEL_MOE_CACHE_MIB", "kind": "int", "group": "", "value": "0"}
       ]
     },
     {

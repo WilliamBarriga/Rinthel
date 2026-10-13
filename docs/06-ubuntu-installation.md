@@ -126,7 +126,7 @@ docker compose config --quiet
 
 En la interfaz:
 
-1. **INSTALL**: valida dependencias, compila el fork CUDA y descarga el GGUF
+1. **INSTALL**: valida dependencias, compila llama.cpp upstream (ggml-org, rama `master`) con CUDA y descarga el GGUF
    (aproximadamente 22 GB). Deja que la descarga termine: la lógica antigua
    puede confundir una descarga interrumpida con un archivo completo.
 2. **BOOT**: carga el modelo y construye/inicia Understory y Pithagoras.

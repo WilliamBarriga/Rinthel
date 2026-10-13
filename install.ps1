@@ -85,10 +85,9 @@ if (-not (Test-Path -LiteralPath $EnvFile)) {
         'RINTHEL_UBATCH_SIZE=2048'
         'RINTHEL_BATCH_SIZE=2048'
         'RINTHEL_SPEC_TYPE=none'
-        'RINTHEL_SCHED_ASYNC_CPU=false'
         'RINTHEL_CACHE_TYPE_K=q8_0'
         'RINTHEL_CACHE_TYPE_V=q8_0'
-        'RINTHEL_MOE_CACHE_SLOTS=0'
+        'RINTHEL_MOE_CACHE_MIB=0'
     ) | Set-Content -LiteralPath $EnvFile -Encoding UTF8
     Write-Host "[install] configuración Windows creada en $EnvFile"
 }

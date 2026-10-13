@@ -81,18 +81,18 @@ support `--parallel` > 1, nor `--mmproj`. The config warns about the
 first one and omits the second flag from the command while MTP is on
 (the stored vision config is left untouched).
 
-## Expert cache (`--moe-cache-profile` + `--moe-cache-slots 16`)
+## Expert cache (`--moe-cache-mib`, `RINTHEL_MOE_CACHE_MIB`)
 
-An MoE routing profile (which experts activate most often, captured ahead
-of time by running the model under real load) used to keep those experts
-preloaded and "hot" in VRAM instead of reloading them per request. On its
-own, 16 slots gives **+121% prefill speed** (prompt tokens/s) over no
-expert cache. `--moe-cache-slots` values above 16 (tried up to 32) don't
-improve throughput further — the routing profile already covers the hot
-set of experts at 16, more slots just spend VRAM on experts that are used
-increasingly rarely. If something starts failing with `CUDA error: out of
-memory` under normal use, this is the first suspect to lower, along with
-raising `--n-cpu-moe`.
+Upstream llama.cpp can keep a GPU-side cache of the MoE experts that live
+on the CPU (`--moe-cache-mib N`, default 0 = off). Rinthel leaves it off:
+the old `--moe-cache-profile`/`--moe-cache-slots` flags (routing profile +
+slot count) only existed in the `thecodacus/llama.cpp` `perf` fork, which
+Rinthel no longer uses, and the earlier "+121% prefill" measurement was
+taken with that fork. The cache costs VRAM that the batch buffers and KV
+cache need, so if you enable it, raise it in steps and watch free VRAM
+under real load. If something starts failing with `CUDA error: out of
+memory`, set it back to 0 and/or raise `--n-cpu-moe`. Re-measure on your
+hardware before relying on it.
 
 ## KV cache quantization (`--cache-type-k q8_0` / `--cache-type-v q8_0`)
 
@@ -131,15 +131,6 @@ Tuned for an 8-physical-core CPU: `--threads` uses all 8 for generation,
 saturate the core that's also carrying the rest of the system (Docker
 stacks, the TUI, etc.) while the model processes the prompt.
 
-## `RINTHEL_SCHED_ASYNC_CPU` — async CPU scheduling (currently ON)
-
-`true` (production value) leaves `llama.cpp`'s async CPU scheduling
-enabled, so no `--no-sched-async-cpu` flag is passed at all. Its isolated
-contribution to speed hasn't been precisely measured (it was ruled out as
-the explanation for a separate VRAM gap between builds, but that doesn't
-confirm or rule out an effect of its own). Don't flip it without
-re-measuring before/after.
-
 ## If you have more than 8 GB of VRAM
 
 Priority order for relaxing this tuning: raise `--batch-size`/
@@ -147,7 +138,7 @@ Priority order for relaxing this tuning: raise `--batch-size`/
 spent), then lower `--n-cpu-moe` (more layers to GPU) — and if MTP
 (`RINTHEL_MTP_ENABLED`) gets switched on, don't count its ~650 MiB as
 available headroom when doing any of the above. Raising
-`--moe-cache-slots` past 16 is not worth it regardless of available VRAM
-— see the expert cache section above. Changing more than one flag at a
+`--moe-cache-mib` above 0 only after the previous steps — see the expert
+cache section above. Changing more than one flag at a
 time makes it impossible to tell which one caused what if something
 starts failing.

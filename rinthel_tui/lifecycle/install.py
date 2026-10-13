@@ -14,6 +14,7 @@ import json
 import os
 import secrets
 import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Coroutine
@@ -31,7 +32,7 @@ PhaseFn = Callable[[RinthelConfig, PhaseReport], Coroutine[Any, Any, None]]
 # overridear vía config (mismo criterio que el puerto de llama-server no
 # siendo la branch de git que se clona): la branch es parte de "qué versión
 # de la fuente de verdad clonamos", no un parámetro de usuario.
-_LLAMACPP_BRANCH = "perf"
+_LLAMACPP_BRANCH = "master"
 _PITHAGORAS_BRANCH = "rinthel-pithagoras"
 
 _UNDERSTORY_BUNDLE_DIRS = ("agents", "extensions", "projects", "reference", "users")
@@ -195,6 +196,16 @@ async def phase_install_preflight(cfg: RinthelConfig, report: PhaseReport) -> No
 async def phase_install_clone_llamacpp(cfg: RinthelConfig, report: PhaseReport) -> None:
     if (cfg.install.llamacpp_repo_dir / ".git").exists():
         report.warn(f"{cfg.install.llamacpp_repo_dir} ya existe — omito clone")
+        origin = subprocess.run(
+            ["git", "-C", str(cfg.install.llamacpp_repo_dir), "remote", "get-url", "origin"],
+            capture_output=True, text=True,
+        ).stdout.strip()
+        if "thecodacus/llama.cpp" in origin:
+            report.warn(
+                "ese checkout es el fork viejo thecodacus/llama.cpp (rama perf): Rinthel ahora "
+                "usa llama.cpp upstream — cloná ggml-org/llama.cpp en otro directorio, "
+                "compilalo y apuntá RINTHEL_LLAMACPP_REPO_DIR y RINTHEL_LLAMA_BIN ahí"
+            )
         return
     cfg.install.llamacpp_repo_dir.parent.mkdir(parents=True, exist_ok=True)
     rc = await _run(
@@ -239,7 +250,7 @@ async def phase_install_build_llamacpp(cfg: RinthelConfig, report: PhaseReport) 
             "cmake", "--build", str(build_dir),
             "--config", "Release",
             "--parallel", str(os.cpu_count() or 4),
-            "--target", "llama-server", "llama-moe-trace",
+            "--target", "llama-server",
         ],
         report,
         cwd=cfg.install.llamacpp_repo_dir,

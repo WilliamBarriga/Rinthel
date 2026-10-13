@@ -85,7 +85,7 @@ BOOT        -- Bring everything up               (POST /boot)
 RELOAD      -- Full shutdown + restart            (POST /reload)
 TERMINATE   -- Full shutdown                      (POST /terminate)
 CONFIGURAR  -- Active services and parameters     (GET/POST /config)
-CAPTURE     -- Capture MoE profile (simulated)     (POST /capture)
+CAPTURE     -- Capture MoE profile (simulated, no-op)     (POST /capture)
 LOGS        -- Watch llama-server live
 INSTALL     -- Initial setup (CUDA/model/Pithagoras/Understory) (POST /install)
 SALIR       -- exit prompt ("¿apagar también el daemon?") → farewell
@@ -135,8 +135,7 @@ rinthel_tui/                 # daemon (FastAPI) — headless, no UI code
     ├── managed_service.py           # LocalProcessService/DockerComposeService
     ├── services.py                   # argv builders per service
     ├── specs.py                       # declarative phase lists
-    ├── runner.py                       # async runner with per-phase progress
-    └── capture_profile.py               # MoE routing profile capture (POST /capture is simulated)
+    └── runner.py                       # async runner with per-phase progress
 
 rinthel-client/               # TUI (Ratatui) — the only UI, talks HTTP+WS to the daemon
 ├── src/

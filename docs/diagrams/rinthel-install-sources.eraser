@@ -1,12 +1,12 @@
 title: Rinthel Install & Build Sources
 direction: right
 
-GitHub llama.cpp [icon: github, label: "GitHub thecodacus/llama.cpp, branch perf"]
+GitHub llama.cpp [icon: github, label: "GitHub ggml-org/llama.cpp, branch master"]
 GitHub Pithagoras [icon: github, label: "GitHub WilliamBarriga/pithagoras, branch rinthel-pithagoras"]
 Hugging Face [icon: hugging-face, label: "Hugging Face unsloth/Qwen3.6-35B-A3B-MTP-GGUF"]
 ghcr [icon: cloud, type: cloud, label: "ghcr.io (container registry)"]
 Rinthel Daemon [icon: python, label: "Rinthel Daemon (INSTALL phase, POST /install)"]
-llama.cpp fork [icon: server, label: "llama.cpp fork binary (thecodacus/llama.cpp, branch perf)"]
+llama.cpp binary [icon: server, label: "llama.cpp binary (ggml-org/llama.cpp, branch master)"]
 understory-image [icon: docker, type: cloud, label: "Understory image"]
 pithagoras-image [icon: docker, type: cloud, label: "Pithagoras portal image"]
 test-tarkAIrk [icon: python, label: "~/test-tarkAIrk (perf R&D lab, offline)"]
@@ -16,6 +16,6 @@ GitHub Pithagoras > Rinthel Daemon: git clone + config (fallback only — pithag
 Hugging Face > Rinthel Daemon: model download {labelDy: -26}
 ghcr > understory-image: image pull {labelDy: -21}
 ghcr > pithagoras-image: image pull
-Rinthel Daemon > llama.cpp fork: cmake --build (CUDA)
+Rinthel Daemon > llama.cpp binary: cmake --build (CUDA)
 test-tarkAIrk > Rinthel Daemon: reads rinthel_tui.config / lifecycle.phases (read-only) {style: dashed, labelDy: -35}
-test-tarkAIrk > llama.cpp fork: spawns throwaway llama-server (benchmarking) {style: dashed}
+test-tarkAIrk > llama.cpp binary: spawns throwaway llama-server (benchmarking) {style: dashed}

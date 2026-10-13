@@ -57,13 +57,8 @@ def _llama_argv(cfg: RinthelConfig) -> list[str]:
         # str (no Path) en LlamaConfig -- expandimos "~" a mano acá, ya que
         # el argv va directo a Popen sin pasar por un shell.
         argv += ["--mmproj", str(Path(cfg.llama.mmproj).expanduser())]
-    if cfg.moe.cache_slots > 0:
-        argv += [
-            "--moe-cache-profile", str(cfg.moe.cache_profile),
-            "--moe-cache-slots", str(cfg.moe.cache_slots),
-        ]
-    if not cfg.llama.sched_async_cpu:
-        argv += ["--no-sched-async-cpu"]
+    if cfg.moe.cache_mib > 0:
+        argv += ["--moe-cache-mib", str(cfg.moe.cache_mib)]
     return argv
 
 

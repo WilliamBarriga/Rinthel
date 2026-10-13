@@ -194,19 +194,18 @@ class LlamaConfig:
     mtp_enabled: bool
     spec_type: str
     spec_draft_n_max: int
-    sched_async_cpu: bool
     cache_type_k: str
     cache_type_v: str
 
 
-# ``env`` queda afuera — se sintetiza a partir de ``moe_cache_profile``
-# (ver ``default_config()``), no sale de una env var propia.
+# ``env`` queda afuera — son variables fijas de ``default_config()``, no
+# salen de una env var propia.
 #
 # `fit_to_memory` arma el flag `-fit` (`services.py::_llama_argv`), que
 # ajusta los args no seteados para entrar en memoria del device — no tiene
 # relación con flash attention pese a lo que sugeriría un nombre distinto.
 LLAMA_FIELDS: list[Field] = [
-    Field("bin", "RINTHEL_LLAMA_BIN", Path, "~/codacus/llama.cpp/build-cuda/bin/llama-server", exists=True, group="general"),
+    Field("bin", "RINTHEL_LLAMA_BIN", Path, "/rinthel-disk/llama.cpp/src/build-cuda/bin/llama-server", exists=True, group="general"),
     Field("model", "RINTHEL_LLAMA_MODEL_PATH", Path, "~/llama.cpp/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", exists=True, group="general"),
     Field("port", "RINTHEL_LLAMA_PORT", int, 8080, port=True, group="general"),
     Field("log", "RINTHEL_LLAMA_LOG_PATH", Path, "~/Rinthel-general/logs/llama-server.log", group="general"),
@@ -244,7 +243,6 @@ LLAMA_FIELDS: list[Field] = [
     Field("mtp_enabled", "RINTHEL_MTP_ENABLED", bool, False, group="speculative"),
     Field("spec_type", "RINTHEL_SPEC_TYPE", str, "draft-mtp", group="speculative"),
     Field("spec_draft_n_max", "RINTHEL_SPEC_DRAFT_N_MAX", int, 2, group="speculative"),
-    Field("sched_async_cpu", "RINTHEL_SCHED_ASYNC_CPU", bool, True, group="compute"),
     Field("cache_type_k", "RINTHEL_CACHE_TYPE_K", str, "f16", group="cache"),
     Field("cache_type_v", "RINTHEL_CACHE_TYPE_V", str, "f16", group="cache"),
 ]
@@ -257,7 +255,6 @@ _WINDOWS_LLAMA_DEFAULTS: dict[str, Any] = {
     "ubatch_size": 2048,
     "batch_size": 2048,
     "spec_type": "none",
-    "sched_async_cpu": False,
     "cache_type_k": "q8_0",
     "cache_type_v": "q8_0",
 }
@@ -265,18 +262,13 @@ _WINDOWS_LLAMA_DEFAULTS: dict[str, Any] = {
 
 @dataclass(frozen=True)
 class MoeConfig:
-    trace_build: Path
-    trace_out_dir: Path
-    cache_profile: Path
-    cache_slots: int
+    cache_mib: int
 
 
-# ``cache_profile`` queda afuera — comparte valor con ``GGML_MOE_CACHE_PROFILE``
-# de ``LlamaConfig.env``, se computa una sola vez en ``default_config()``.
+# ``--moe-cache-mib`` de llama.cpp upstream: MiB de VRAM para cachear los
+# expertos MoE que viven en CPU. 0 = deshabilitado (default de upstream).
 MOE_FIELDS: list[Field] = [
-    Field("trace_build", "RINTHEL_MOE_TRACE_BUILD", Path, "~/codacus/llama.cpp/build-cuda/bin/llama-moe-trace"),
-    Field("trace_out_dir", "RINTHEL_MOE_TRACE_OUT_DIR", Path, "~/codacus/profiles"),
-    Field("cache_slots", "RINTHEL_MOE_CACHE_SLOTS", int, 0),
+    Field("cache_mib", "RINTHEL_MOE_CACHE_MIB", int, 0),
 ]
 
 
@@ -336,8 +328,8 @@ class InstallConfig:
 
 
 INSTALL_FIELDS: list[Field] = [
-    Field("llamacpp_repo_dir", "RINTHEL_LLAMACPP_REPO_DIR", Path, "~/codacus/llama.cpp"),
-    Field("llamacpp_repo_url", "RINTHEL_LLAMACPP_REPO_URL", str, "https://github.com/thecodacus/llama.cpp.git"),
+    Field("llamacpp_repo_dir", "RINTHEL_LLAMACPP_REPO_DIR", Path, "/rinthel-disk/llama.cpp/src"),
+    Field("llamacpp_repo_url", "RINTHEL_LLAMACPP_REPO_URL", str, "https://github.com/ggml-org/llama.cpp.git"),
     Field(
         "model_download_url",
         "RINTHEL_MODEL_DOWNLOAD_URL",
@@ -522,25 +514,15 @@ def with_overrides(cfg: RinthelConfig, overrides: dict[str, str]) -> RinthelConf
 
 def default_config(*, platform: str | None = None) -> RinthelConfig:
     platform = os.name if platform is None else platform
-    # Computado antes de los _load() de LLAMA_FIELDS/MOE_FIELDS -- lo comparten
-    # llama.env["GGML_MOE_CACHE_PROFILE"] y moe.cache_profile, ninguno de los
-    # dos lo carga por su cuenta.
-    moe_cache_profile = _path_env(
-        "RINTHEL_MOE_CACHE_PROFILE", "~/codacus/profiles/qwen3.6-merged.csv"
-    )
-
     llama = _load(
         LlamaConfig,
         LLAMA_FIELDS,
         defaults=_WINDOWS_LLAMA_DEFAULTS if platform == "nt" else None,
         env={
             "GGML_CUDA_REGISTER_HOST": "1",
-            "GGML_SCHED_PREFETCH_EXPERTS": "1",
-            "GGML_MOE_CACHE_PROFILE": str(moe_cache_profile),
-            "GGML_MOE_CACHE_SLOTS": "10",
         },
     )
-    moe = _load(MoeConfig, MOE_FIELDS, cache_profile=moe_cache_profile)
+    moe = _load(MoeConfig, MOE_FIELDS)
     understory = _load(UnderstoryConfig, UNDERSTORY_FIELDS)
     pithagoras = _load(PithagorasConfig, PITHAGORAS_FIELDS)
     install = _load(InstallConfig, INSTALL_FIELDS)

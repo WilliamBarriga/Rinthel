@@ -27,7 +27,7 @@ def load_profiles(root: Path) -> dict[str, dict[str, str]]:
     # A model profile may tune inference, but cannot move service endpoints
     # or replace its executable, logs or lifecycle enablement.
     allowed = {field.env for field in LLAMA_FIELDS if field.attr not in {'port', 'bin', 'log', 'enabled'}}
-    allowed.update(field.env for field in MOE_FIELDS if field.attr in {'cache_slots', 'cache_profile'})
+    allowed.update(field.env for field in MOE_FIELDS if field.attr == 'cache_mib')
     allowed.update({'RINTHEL_MODEL_MIN_BYTES', 'RINTHEL_MODEL_NAME'})
     for key, values in profiles.items():
         if not isinstance(values, dict) or not values.get('RINTHEL_LLAMA_MODEL_PATH'):
