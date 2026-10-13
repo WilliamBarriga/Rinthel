@@ -5,8 +5,8 @@ el binario Rust es el cliente reemplazable.
 Corré con:  .venv/bin/python -m rinthel_tui.daemon   (o el entry point
 ``rinthel-daemon``, ver pyproject.toml)
 
-``/capture`` está SIMULADO a propósito — no corre lifecycle/capture_profile.py
-real (no dispara llama-moe-trace contra la GPU). Todo lo demás (boot,
+``/capture`` está SIMULADO a propósito — ya no hay captura real de perfil MoE
+(llama-moe-trace era exclusivo del fork de codacus). Todo lo demás (boot,
 terminate, reload, install, GPU, CPU/RAM, docker ps, tail de log) es real.
 
 Endpoints:
@@ -311,10 +311,10 @@ async def install() -> JSONResponse:
 @app.post("/capture")
 async def capture() -> JSONResponse:
     # SIMULADO a propósito, igual que boot/terminate lo fueron antes de
-    # tener lifecycle real detrás. No corre lifecycle/capture_profile.py real
-    # (no dispara llama-moe-trace contra la GPU).
+    # tener lifecycle real detrás. Sin captura real: llama-moe-trace no existe
+    # en llama.cpp upstream.
     # `results[].service` reusa el campo de `ServiceOutcome` para nombrar
-    # cada sub-paso de `capture_profile` ("código"/"chat"), no un servicio.
+    # cada sub-paso ("código"/"chat"), no un servicio.
     plan = [
         ("código", 1.5, True, "listo (simulado)"),
         ("chat", 1.5, True, "listo (simulado)"),

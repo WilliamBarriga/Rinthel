@@ -20,7 +20,7 @@
     {
       "id": "github_llama_cpp",
       "type": "backend",
-      "label": "GitHub thecodacus/llama.cpp, branch perf",
+      "label": "GitHub ggml-org/llama.cpp, branch master",
       "brand": "github",
       "size": [
         297,
@@ -115,7 +115,7 @@
     {
       "id": "llama_cpp_fork",
       "type": "backend",
-      "label": "llama.cpp fork binary (thecodacus/llama.cpp, branch perf)",
+      "label": "llama.cpp binary (ggml-org/llama.cpp, branch master)",
       "size": [
         407,
         60

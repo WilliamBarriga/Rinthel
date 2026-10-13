@@ -95,8 +95,9 @@ host: los servicios web se compilan en Docker.
 
 - Python 3.13+ (daemon) + a Rust toolchain (client) — `install.sh`
   bootstraps both (`rustup`, non-interactive, if `cargo` is missing)
-- A `llama.cpp` build with CUDA support (`llama-server`, and optionally
-  `llama-moe-trace` for capturing MoE routing profiles)
+- A `llama.cpp` build with CUDA support (`llama-server`) from
+  upstream [`ggml-org/llama.cpp`](https://github.com/ggml-org/llama.cpp);
+  `[0] INSTALL` clones and builds it
 - The GGUF model — default is **Qwen3.6-35B-A3B-MTP** at `Q4_K_XL`
   quantization (see `.env.example` for other models)
 - Docker + `docker compose` if you're going to run Understory/Pithagoras
@@ -148,7 +149,7 @@ BOOT        -- Bring everything up
 RELOAD      -- Full shutdown + restart
 TERMINATE   -- Full shutdown
 CONFIGURAR  -- Active services and parameters
-CAPTURE     -- Capture MoE profile (routing profile)
+CAPTURE     -- Capture MoE profile (simulated, no-op)
 LOGS        -- Watch llama-server live
 INSTALL     -- Initial setup (CUDA/model/Pithagoras/Understory)
 SALIR       -- Exit (prompts whether to also stop the daemon)
@@ -222,9 +223,9 @@ Three pieces of infrastructure that `[0] INSTALL` sets up are from
 - **Pithagoras** (task portal) — the work is
   [thecodacus](https://github.com/thecodacus/pithagoras)'s; used via my
   fork [`WilliamBarriga/pithagoras`](https://github.com/WilliamBarriga/pithagoras).
-- The custom **`llama.cpp`** fork (`perf` branch, default
-  `RINTHEL_LLAMACPP_REPO_URL=https://github.com/thecodacus/llama.cpp.git`)
-  that gets cloned and built with CUDA support.
+- **`llama.cpp`** upstream (`master`, default
+  `RINTHEL_LLAMACPP_REPO_URL=https://github.com/ggml-org/llama.cpp.git`),
+  cloned and built with CUDA support.
 
 ## License
 

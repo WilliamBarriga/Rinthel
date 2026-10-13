@@ -49,8 +49,8 @@ def test_default_config_respects_port_override(monkeypatch):
 
 
 @pytest.mark.parametrize("platform,expected", [
-    ("nt", (65536, 34, 2048, 2048, "none", False, "q8_0", "q8_0")),
-    ("posix", (112000, 60, 512, 512, "draft-mtp", True, "f16", "f16")),
+    ("nt", (65536, 34, 2048, 2048, "none", "q8_0", "q8_0")),
+    ("posix", (112000, 60, 512, 512, "draft-mtp", "f16", "f16")),
 ])
 def test_default_config_keeps_platform_profiles_separate(monkeypatch, platform, expected):
     for name in (
@@ -59,7 +59,6 @@ def test_default_config_keeps_platform_profiles_separate(monkeypatch, platform, 
         "RINTHEL_UBATCH_SIZE",
         "RINTHEL_BATCH_SIZE",
         "RINTHEL_SPEC_TYPE",
-        "RINTHEL_SCHED_ASYNC_CPU",
         "RINTHEL_CACHE_TYPE_K",
         "RINTHEL_CACHE_TYPE_V",
     ):
@@ -69,7 +68,7 @@ def test_default_config_keeps_platform_profiles_separate(monkeypatch, platform, 
     assert (
         cfg.llama.context_window, cfg.llama.n_cpu_moe,
         cfg.llama.ubatch_size, cfg.llama.batch_size,
-        cfg.llama.spec_type, cfg.llama.sched_async_cpu,
+        cfg.llama.spec_type,
         cfg.llama.cache_type_k, cfg.llama.cache_type_v,
     ) == expected
 
@@ -283,3 +282,17 @@ def test_kind_names_cover_every_field_kind_in_use():
     from pathlib import Path
 
     assert KIND_NAMES == {bool: "bool", int: "int", float: "float", str: "str", Path: "path"}
+
+
+def test_legacy_fork_env_vars_warn(monkeypatch):
+    monkeypatch.setenv("RINTHEL_MOE_CACHE_SLOTS", "16")
+    monkeypatch.setenv("RINTHEL_SCHED_ASYNC_CPU", "false")
+    warnings = default_config(platform="posix").validate()
+    assert any("RINTHEL_MOE_CACHE_SLOTS" in w and "RINTHEL_MOE_CACHE_MIB" in w for w in warnings)
+    assert any("RINTHEL_SCHED_ASYNC_CPU" in w for w in warnings)
+
+
+def test_default_paths_are_not_machine_specific():
+    cfg = default_config(platform="posix")
+    for path in (cfg.llama.bin, cfg.install.llamacpp_repo_dir):
+        assert not str(path).startswith("/rinthel-disk")

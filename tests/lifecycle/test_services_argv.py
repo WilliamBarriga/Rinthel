@@ -44,3 +44,18 @@ def test_mtp_on_omits_mmproj_that_llama_cpp_does_not_support(cfg):
 def test_mmproj_stays_out_of_the_argv_while_its_toggle_is_off(cfg):
     argv = _llama_argv(_with_llama(cfg, mtp_enabled=False, mmproj="/x/model-mmproj.gguf", mmproj_enabled=False))
     assert "--mmproj" not in argv
+
+
+def test_moe_cache_mib_flag_only_when_positive(cfg):
+    off = _llama_argv(dataclasses.replace(cfg, moe=dataclasses.replace(cfg.moe, cache_mib=0)))
+    on = _llama_argv(dataclasses.replace(cfg, moe=dataclasses.replace(cfg.moe, cache_mib=512)))
+    assert "--moe-cache-mib" not in off
+    assert _flag_value(on, "--moe-cache-mib") == "512"
+
+
+def test_argv_has_no_fork_only_flags(cfg):
+    # Flags de thecodacus/llama.cpp (rama perf) que llama.cpp upstream rechaza.
+    cfg = dataclasses.replace(cfg, moe=dataclasses.replace(cfg.moe, cache_mib=512))
+    argv = _llama_argv(cfg)
+    for flag in ("--moe-cache-profile", "--moe-cache-slots", "--no-sched-async-cpu"):
+        assert flag not in argv

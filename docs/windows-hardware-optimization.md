@@ -16,10 +16,9 @@ RINTHEL_N_CPU_MOE=34
 RINTHEL_UBATCH_SIZE=2048
 RINTHEL_BATCH_SIZE=2048
 RINTHEL_SPEC_TYPE=none
-RINTHEL_SCHED_ASYNC_CPU=false
 RINTHEL_CACHE_TYPE_K=q8_0
 RINTHEL_CACHE_TYPE_V=q8_0
-RINTHEL_MOE_CACHE_SLOTS=0
+RINTHEL_MOE_CACHE_MIB=0
 ```
 
 The model is `Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf`: 22.85 GB decimal
@@ -56,12 +55,6 @@ MTP speculative decoding remains disabled because it previously reproduced a
 CUDA out-of-memory failure on the 8 GB card. The MoE expert cache is also
 disabled in the Windows profile: the controlled load test left only 551 MiB
 free VRAM, which is insufficient headroom for another persistent cache.
-
-### CPU scheduling
-
-Asynchronous CPU scheduling is disabled in the validated profile. Its isolated
-performance contribution has not been measured, so changing it requires an
-A/B benchmark rather than an assumption.
 
 ## Measured operating envelope
 
