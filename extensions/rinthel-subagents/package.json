@@ -1,0 +1,9 @@
+{
+  "name": "rinthel-subagents",
+  "version": "2.0.0",
+  "description": "Subagentes seriales para Rinthel en Pithagoras (SDK): single, chain, tasks/variants, agents genericos, skills",
+  "type": "module",
+  "main": "./index.ts",
+  "pi": { "extensions": ["./index.ts"] },
+  "license": "MIT"
+}

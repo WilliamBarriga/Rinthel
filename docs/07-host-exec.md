@@ -42,7 +42,9 @@ importarlos: la combinación debe hacerse mediante una lista `path`, como
 describe la [documentación de Docker](https://docs.docker.com/reference/compose-file/include/).
 
 `compose/host-exec.override.yaml` monta la extensión del repositorio como
-solo lectura y declara su ruta en `RINTHEL_HOST_EXEC_EXTENSION`.
+solo lectura y declara su ruta en `RINTHEL_HOST_EXEC_EXTENSION`. Ambos overlays
+montan también `rinthel-subagents` y declaran `RINTHEL_SUBAGENTS_EXTENSION`;
+si esa ruta falta, el portal solo omite la tool `subagent`.
 Pithagoras la entrega explícitamente al resource loader de Pi; no requiere
 un `settings.json` personal ni una instalación manual. Si existe token y
 la ruta configurada no puede cargarse con el guard, la sesión falla al
@@ -66,10 +68,12 @@ host exec. Si falla la persistencia, la sesión actual sigue bloqueada.
 
 ## Alcance de delegación
 
-El motor experimental `rinthel-agents` se retira de este PR para revisarlo
-por separado. Su implementación se conserva en el commit original
-`94e1a1d84b6e8e0deac43d3875d55f0509cc8c31`; no se pierde trabajo.
-El guard sigue tratando como no confiables los resultados de herramientas
+La delegación a subagentes vive en `extensions/rinthel-subagents/`; reemplaza
+al motor experimental `rinthel-agents`, cuya implementación se conserva en el
+commit `94e1a1d84b6e8e0deac43d3875d55f0509cc8c31`. Cada subagente corre en su
+propia sesión, donde el guard del portal no está cargado. Por eso la extensión
+excluye `rinthel_host_exec`, la escritura a Understory y `ask_user_question`
+de esas sesiones, y el guard sigue tratando como no confiables los resultados
 de subagentes instaladas por otros paquetes.
 
 ## Validación
