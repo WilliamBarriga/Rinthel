@@ -12,6 +12,7 @@ import { routineTools } from "./routine-tools.js";
 import { reportTool, reportToFor } from "./report-tool.js";
 import { guardExtension } from "./guard.js";
 import { hostExecExtensionPaths } from "./host-exec.js";
+import { subagentExtensionPaths } from "./subagents.js";
 import { askPrimaryTool } from "./ask-primary.js";
 import { proxyBaseUrl } from "../llama-progress.js";
 import { piAgentDir } from "../pi-settings.js";
@@ -245,7 +246,7 @@ export class SdkPiClient extends EventEmitter implements PiClient {
       resourceLoader = new pi.DefaultResourceLoader({
         cwd: opts.cwd,
         agentDir: piAgentDir(),
-        additionalExtensionPaths: hostExtensions,
+        additionalExtensionPaths: [...hostExtensions, ...subagentExtensionPaths()],
         // Available everywhere without being installed, and not editable in
         // place: they belong to the image, so an edit would be lost on the next
         // deploy without saying so.
@@ -272,7 +273,13 @@ export class SdkPiClient extends EventEmitter implements PiClient {
         appendSystemPrompt: [framing(opts.cwd, opts.role)],
       });
       await resourceLoader.reload();
-      if (hostExtensions.length && resourceLoader.getExtensions().errors.length) {
+      if (
+        hostExtensions.length &&
+        // A broken subagents mount must not take host exec's protections down with it.
+        resourceLoader
+          .getExtensions()
+          .errors.some((e: { path: string }) => !subagentExtensionPaths().includes(e.path))
+      ) {
         throw new Error("No se pudo cargar la extensión host exec con sus protecciones");
       }
     } catch (e) {

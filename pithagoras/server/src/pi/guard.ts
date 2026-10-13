@@ -64,7 +64,7 @@ const PATH_DIRS = /(^|[^\w/])(\/data\/bin|\/usr\/local\/bin|\/usr\/bin|\/usr\/lo
 const HOST_EXEC_TOOLS = new Set(["rinthel_host_exec"]);
 
 /**
- * extensions/rinthel-agents/ runs each subagent in its own AgentSession, which
+ * extensions/rinthel-subagents/ runs each subagent in its own AgentSession, which
  * this guard is not loaded into: whatever a subagent read never taints anyone.
  * Its answer carries those words back into this session, so the answer itself
  * counts as untrusted — even when the subagent only read code. A false
