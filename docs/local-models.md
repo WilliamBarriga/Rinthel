@@ -1,8 +1,10 @@
 # Local models
 
-A Local model is a GGUF the Instance can serve for a Capability (`llm` today;
-`stt` and `tts` with voice). One `llama-server` runs the active `llm` model,
-shared by every Session. The terms are in [`rinthel/GLOSSARY.md`](../rinthel/GLOSSARY.md).
+A Local model is a model file the Instance can serve for a Capability: `llm`,
+and with voice (opt-in, Linux only) `stt` and `tts`. One `llama-server` runs
+the active `llm` model, shared by every Session; `whisper-server` runs the
+active `stt` model and `audiocpp-server` the active `tts` model. The terms are
+in [`rinthel/GLOSSARY.md`](../rinthel/GLOSSARY.md).
 
 ## The catalog
 
@@ -34,10 +36,11 @@ including `mmproj` and `overrides`), and never rewrites it.
 | `id` | Unique; what `instance.toml`, the CLI and the routing name. |
 | `name` | Shown to the admin. |
 | `capability` | `llm`, `stt` or `tts`. |
-| `gguf` | The model file (`~` allowed). |
+| `gguf` | The model file (`~` allowed): a GGUF, or the whisper.cpp `ggml` file for `stt`. |
 | `mmproj` | Vision projector, or `null`. Omitted from the command while `mtp` is on. |
 | `mtp` | Turns speculative decoding on (`--spec-type` from `RINTHEL_SPEC_TYPE`). |
-| `context_window` | `-c` of `llama-server`; Deck reads it from the routing. |
+| `context_window` | `-c` of `llama-server`; Deck reads it from the routing. Optional for `stt`/`tts`. |
+| `voice` | `tts` only, optional: the reference WAV of the fixed voice the model speaks with. |
 | `reasoning_format` | One of `qwen-chat-template`, `chat-template`, `qwen`, `deepseek`. |
 | `overrides` | Only `temperature`, `top_p`, `top_k`, `min_p`, `repeat_penalty`, `spec_type`, `spec_draft_n_max`. |
 
@@ -48,9 +51,10 @@ still wins. The old `RINTHEL_LLAMA_MODEL_PATH`, `RINTHEL_CONTEXT_WINDOW`,
 `RINTHEL_LLAMA_MMPROJ_*` and `RINTHEL_MTP_ENABLED` are ignored with a warning.
 
 The daemon validates on every read: the GGUF exists and starts with the
-`GGUF` magic, the `mmproj` exists, the fields have the right shape and the id
-is not repeated. An invalid entry stays listed as not activable; the catalog
-never fails because of one entry.
+`GGUF` magic (an `stt` file only has to exist), the `mmproj` and the `voice`
+exist, the fields have the right shape and the id is not repeated. An invalid
+entry stays listed as not activable; the catalog never fails because of one
+entry.
 
 ## The active model
 
@@ -68,17 +72,50 @@ with that warning; the other services still start.
 ## Switching
 
 - **Offline**, with the services stopped:
-  `rinthel/.venv/bin/python -m rinthel_tui.models list` and
-  `rinthel/.venv/bin/python -m rinthel_tui.models use <id>`. It refuses while
-  `llama-server` still listens; the next BOOT starts the new model.
+  `rinthel/.venv/bin/python -m rinthel_tui.models list`,
+  `rinthel/.venv/bin/python -m rinthel_tui.models use <id>` and
+  `rinthel/.venv/bin/python -m rinthel_tui.models off stt|tts`. They refuse
+  while the Capability's service still listens; the next BOOT starts the new
+  model (or leaves the voice service out).
 - **From the daemon**: `POST /models/activate {"id": "<id>"}` kills
   `llama-server`, spawns it with the new model and waits until it answers. If
   it does not come up, the previous model is restarted and stays active
   (`rolled_back`). It runs under the global lifecycle lock (409
   `lifecycle_busy` against BOOT, TERMINATE, RELOAD and INSTALL) and answers 409
   `turns_in_flight` while `llama-server` reports a slot generating.
-  `GET /models` lists the catalog with what can be activated. Both are
-  admin-only: they take an admin's Panel token (not the service secret).
+  `GET /models` lists the catalog with what can be activated. A voice model
+  switches the same way (its own service, same lock and rollback, no
+  `turns_in_flight`), and `POST /models/off {"capability": "stt"|"tts"}`
+  stops the voice service and drops its key; if the port does not free, the
+  key stays. All three are admin-only: they take an admin's Panel token (not
+  the service secret).
+
+## Voice
+
+Voice is opt-in and Linux only: on Windows INSTALL skips it, `stt`/`tts`
+cannot be activated, and the routing and the Monitor leave them out.
+
+- **Services.** `whisper-server` (whisper.cpp, CPU, port `8178`) serves the
+  active `stt` model; `audiocpp-server` (audio.cpp, CUDA, port `7860`) the
+  active `tts` model with the entry's `voice` as default preset (the daemon
+  writes its `data/audiocpp-server.json` on every start). Both listen on
+  loopback. Without an active key the Capability is off and its service
+  does not start; BOOT, TERMINATE and RELOAD include it while the key is set.
+  Ports, binaries and threads are `RINTHEL_WHISPER_*` and `RINTHEL_AUDIOCPP_*`.
+- **GPU.** No leases: the TTS model stays loaded while `tts` is active. If it
+  does not fit next to the LLM, turn `tts` off.
+- **INSTALL with voice.** `rinthel/.venv/bin/python -m rinthel_tui.install --voice`
+  asks the running daemon for INSTALL plus a voice unit: whisper.cpp and
+  audio.cpp at fixed commits, `ggml-base.bin` and the Spanish Pocket-TTS
+  GGUF (checked by sha256) in `RINTHEL_MODELS_DIR`, the entries
+  `whisper-base` and `pocket-tts-es` added to the catalog if missing, made
+  active where the Capability has none, and both services restarted. It is
+  repeatable: what exists is not rebuilt, and an entry or a choice of the admin
+  is never overwritten. The same is `POST /install {"voice": true}`.
+
+The routing then also carries `stt` and `tts` (same shape; the URL is the
+voice service at `deck.host_address`), and the Monitor shows each active
+voice Capability with the state of its service.
 
 ## Routing for Deck
 

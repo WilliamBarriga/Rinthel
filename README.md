@@ -41,7 +41,9 @@ Then, in the TUI: **INSTALL** (llama.cpp build, default Local model ~22 GB,
 secrets and container user in the root `.env`, `rinthel.db` and the first
 admin, whose password is shown once) and **BOOT**. Deck answers on
 `http://127.0.0.1:4100`. `rinthel/rinthel-boot.sh` reopens the TUI;
-`--stop` stops the daemon.
+`--stop` stops the daemon. Local voice (Linux only) is opt-in:
+`rinthel/.venv/bin/python -m rinthel_tui.install --voice` with the daemon
+running ([docs/local-models.md](docs/local-models.md#voice)).
 
 ## Hardware requirements
 

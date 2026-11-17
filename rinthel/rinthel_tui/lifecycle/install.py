@@ -18,17 +18,18 @@ from pathlib import Path
 from typing import Any
 
 from rinthel_tui import database
-from rinthel_tui.config import RinthelConfig
+from rinthel_tui.config import RinthelConfig, with_voice_from_instance
 from rinthel_tui.atomic_write import atomic_write
 from rinthel_tui.env_file import update_env_file
 from rinthel_tui.identity.adapters.sqlite import SqliteIdentity
 from rinthel_tui.identity.admin import FIRST_ADMIN, ensure_first_admin
 from rinthel_tui.install.host_exec import prepare_host_exec
 from rinthel_tui.instance import RotatableSecret
-from rinthel_tui.lifecycle import install_tasks
+from rinthel_tui.lifecycle import install_tasks, services
 from rinthel_tui.lifecycle.domain.errors import PhaseError
 from rinthel_tui.lifecycle.domain.host import Host
 from rinthel_tui.lifecycle.domain.outcome import PhaseReport, require_ok
+from rinthel_tui.lifecycle.domain.phases import managed_service
 from rinthel_tui.lifecycle.domain.phases.docker import phase_check_docker
 from rinthel_tui.lifecycle.install_tasks import (
     IdentitySetup,
@@ -37,10 +38,14 @@ from rinthel_tui.lifecycle.install_tasks import (
     LlamaCppInstall,
     ModelCatalogInstall,
     ModelDownload,
+    PinnedBuild,
     UnderstoryInstall,
+    VoiceCatalogInstall,
+    VoiceStart,
 )
-from rinthel_tui.models.adapters.json_catalog import write_catalog
+from rinthel_tui.models.adapters.json_catalog import add_to_catalog, write_catalog
 from rinthel_tui.models.adapters.toml_active import TomlActiveModels
+from rinthel_tui.models.domain.errors import CatalogUnavailable
 
 PhaseFn = Callable[..., Coroutine[Any, Any, None]]
 
@@ -374,6 +379,114 @@ async def phase_install_identity(host: Host, report: PhaseReport, *, task: Ident
     )
 
 
+# ── Voice (``--voice``, Linux only): whisper.cpp in CPU, audio.cpp in CUDA ──
+
+
+async def _checkout_pinned(host: Host, report: PhaseReport, task: PinnedBuild) -> None:
+    """``task.repo`` at ``task.sha``: cloned if missing, fetched and moved to
+    the pin if it is already there (INSTALL with voice is repeatable)."""
+    repo = str(task.repo)
+    if (task.repo / ".git").exists():
+        await _run_or_fail(host, report, ["git", "-C", repo, "fetch", "--tags", "origin"], task.what, label="git fetch")
+    else:
+        await _git_clone(host, report, task.repo_url, task.repo, task.what)
+    await _run_or_fail(host, report, ["git", "-C", repo, "checkout", task.sha], task.what, label="git checkout")
+    await _run_or_fail(
+        host, report, ["git", "-C", repo, "submodule", "update", "--init", "--recursive"], task.what,
+        label="git submodule",
+    )
+
+
+async def phase_install_whisper(host: Host, report: PhaseReport, *, task: PinnedBuild) -> None:
+    """whisper.cpp at its pin, only ``whisper-server``, for CPU."""
+    if task.bin.exists():
+        report.warn(f"{task.bin} ya existe — omito build")
+        return
+    await _checkout_pinned(host, report, task)
+    build = task.bin.parents[1]
+    cmake = host.host_info.which("cmake") or "cmake"
+    await _run_or_fail(
+        host, report,
+        [cmake, "-S", str(task.repo), "-B", str(build),
+         "-DCMAKE_BUILD_TYPE=Release", "-DGGML_CUDA=OFF", "-DWHISPER_BUILD_SERVER=ON"],
+        task.what, label="cmake configure",
+    )
+    await _run_or_fail(
+        host, report,
+        [cmake, "--build", str(build), "--target", "whisper-server", "-j", str(host.host_info.cpu_count())],
+        task.what, label="cmake build",
+    )
+    report.success(f"whisper-server compilado en {task.bin}")
+
+
+async def phase_install_audiocpp(host: Host, report: PhaseReport, *, task: PinnedBuild) -> None:
+    """audio.cpp at its pin, the CUDA build of ``audiocpp_server`` with only
+    Pocket-TTS (``--model-set custom``): no model manager, that is its UI's."""
+    if task.bin.exists():
+        report.warn(f"{task.bin} ya existe — omito build")
+        return
+    nvcc = _require_nvcc(host, report)
+    await _checkout_pinned(host, report, task)
+    report.warn("Compilando audio.cpp con CUDA — puede tardar varios minutos")
+    await _run_or_fail(
+        host, report,
+        [
+            "bash", "scripts/build_linux.sh",
+            "--cuda", "on", "--vulkan", "off", "--hip", "off",
+            "--build-dir", str(task.bin.parents[1]), "--build-type", "Release",
+            "--model-set", "custom", "--models", "pocket_tts",
+            "--target", "audiocpp_server", "--jobs", str(host.host_info.cpu_count()),
+        ],
+        task.what, label="build de audio.cpp", cwd=task.repo,
+        # With the toolkit outside PATH (``/usr/local/cuda/bin``) CMake does
+        # not find the CUDA compiler on its own.
+        env={"CUDACXX": nvcc},
+    )
+    report.success(f"audiocpp_server compilado en {task.bin}")
+
+
+async def phase_install_voice_catalog(host: Host, report: PhaseReport, *, task: VoiceCatalogInstall) -> None:
+    """Adds the default voice entries that are missing and makes each one
+    active where its Capability has none. An entry or a choice of the admin
+    is never touched."""
+    path = task.instance.models_catalog_path
+    try:
+        added = add_to_catalog(path, task.models)
+    except CatalogUnavailable as exc:
+        report.error(f"catálogo de Local models ilegible: {exc} — corregilo a mano")
+        raise PhaseError("models catalog unreadable") from exc
+    if added:
+        report.success(f"{', '.join(added)} agregados a {path}")
+    else:
+        report.warn("las entradas de voz ya estaban en el catálogo — omito")
+    active = TomlActiveModels(task.instance.instance_toml_path)
+    for model in task.models:
+        current = active.get(model.capability)
+        if current is None:
+            active.set(model.capability, model.id)
+            report.success(f"Local model activo de {model.capability}: {model.id}")
+        else:
+            report.warn(f"{model.capability} ya tiene Local model activo ({current}) — omito")
+
+
+async def phase_install_voice_start(host: Host, report: PhaseReport, *, task: VoiceStart) -> None:
+    """Restarts each voice service with its active Local model (kill, spawn,
+    ready; each step required), so an Instance that is already running ends
+    with ``stt``/``tts`` up. A Capability without a usable active model is
+    left off with a warning."""
+    cfg = with_voice_from_instance(task.cfg)
+    for warning in cfg.voice_warnings:
+        report.warn(warning)
+    for service in (services.WHISPER_SERVICE, services.AUDIOCPP_SERVICE):
+        if not service.enabled_of(cfg):
+            report.warn(f"{service.display_name}: sin Local model activo usable — no arranca")
+            continue
+        spec = service.spec(cfg)
+        await managed_service.phase_kill(host, report, service=spec, required=True)
+        await managed_service.phase_spawn(host, report, service=spec)
+        await managed_service.phase_wait_ready(host, report, service=spec, required=True)
+
+
 # ── unidades instalables — un servicio con enabled=False no aparece en
 # [0] INSTALL (ver specs.install_plan), aunque sigue siendo relevante para
 # BOOT/TERMINATE/RELOAD vía enabled_of ─────────────────────────────────────
@@ -445,3 +558,17 @@ UNDERSTORY_INSTALL = InstallUnit(
 INSTALL_UNITS: list[InstallUnit] = [
     LLAMA_INSTALL, SECRETS_INSTALL, IDENTITY_INSTALL, DECK_INSTALL, UNDERSTORY_INSTALL,
 ]
+
+# Opt-in (INSTALL ``--voice``), so outside ``INSTALL_UNITS``: ``specs.install_plan``
+# appends it last, on Linux only.
+VOICE_INSTALL = InstallUnit(
+    label="VOZ",
+    steps=(
+        InstallStep("WHISPER.CPP — clone + build CPU", phase_install_whisper, install_tasks.whisper_build),
+        InstallStep("WHISPER — modelo ggml-base", phase_install_download, install_tasks.whisper_model),
+        InstallStep("AUDIO.CPP — clone + build CUDA", phase_install_audiocpp, install_tasks.audiocpp_build),
+        InstallStep("POCKET-TTS — GGUF español", phase_install_download, install_tasks.pocket_tts),
+        InstallStep("VOZ — catálogo y Local models activos", phase_install_voice_catalog, install_tasks.voice_catalog),
+        InstallStep("VOZ — arrancar stt/tts", phase_install_voice_start, install_tasks.voice_start),
+    ),
+)

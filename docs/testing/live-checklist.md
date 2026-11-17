@@ -111,7 +111,7 @@ These items are no longer walked by hand:
 | Shutdown without `Traceback` | `tests/live/test_daemon_health.py` and the `daemon.log` check of every test daemon (`tests/live/conftest.py`) |
 | Local model switch: kill, spawn, rollback | `tests/live/test_model_switch.py` (real llama-server) and `tests/daemon/test_models_endpoints.py` (doubles) |
 | Recovering the admin without reinstalling (`reset-admin`) | `tests/identity` |
-| `hostexecd` contract | `tests/hostexecd` (there is no live for it; the manual item below covers the real host) |
+| `hostexecd` contract | `tests/hostexecd`, `tests/lifecycle/test_hostexecd_service.py` and Deck's `tests/guard-host-exec.test.mts` (there is no live for it; the manual item below covers the real host) |
 
 ## 2. Manual list
 
@@ -134,6 +134,19 @@ noted as **skipped**, not as done.
   docker.socket docker` (and `start` afterwards) and a human reading the
   error.* The Boot stops with a readable error and starts nothing.
 
+### Voice (Linux, opt-in)
+
+- [ ] **INSTALL with voice on an existing Instance.** *Manual (2): it builds
+  whisper.cpp and audio.cpp, downloads real models and loads one on the GPU.*
+  With the stack booted, `rinthel/.venv/bin/python -m rinthel_tui.install --voice`
+  ends with every unit `ok`; the Monitor shows `stt` and `tts` ready, and
+  `GET /model-provider/routing` carries both. Run it again: nothing is rebuilt
+  or downloaded and both stay running.
+- [ ] **Voice off and back.** *Manual (2): it stops a real service.* Turning
+  `tts` off (`POST /models/off` from Deck, or `models off tts` with the
+  services stopped) frees port `7860`; the next Boot leaves `audiocpp-server`
+  out; activating `pocket-tts-es` again brings it back.
+
 ### TUI
 
 - [ ] **`phase_*` progress** of Boot, Terminate and Reload. *Manual (1): order
@@ -144,6 +157,7 @@ noted as **skipped**, not as done.
 - [ ] **The Local model line of the Monitor.** *Manual (1): it is read on
   screen.* While an admin switches the Local model from Deck, the Monitor shows
   the `llm` line of `models_status` going down and up with the new model.
+  With voice active, the `stt` and `tts` lines show their model and state.
 
 ### Deck (web)
 
@@ -211,9 +225,11 @@ interface with the real daemon, model and host, and how it looks.
 ### hostexecd
 
 - [ ] **Host-exec on the real host.** *Manual (2 and 3): it runs a command on
-  the real host and the operator authorises the Session.* From an authorised
-  Session, run a harmless command; it runs on the host and shows in the
-  hostexecd audit log. From an unauthorised one it is refused.
+  the real host from a real admin.* After BOOT, the Monitor shows `hostexecd`
+  online. From a clean admin Session, ask for a harmless command (`uname -a`);
+  it runs on the host and shows in `data/hostexecd/audit.jsonl`. A member's
+  Session has no host exec tools, and an admin Session that read a web page
+  through `curl` is refused. After TERMINATE nothing listens on `:8766`.
 
 ## Run template
 

@@ -53,21 +53,52 @@ class JsonCatalog:
 def write_catalog(path: Path, models: list[LocalModel]) -> None:
     """A new catalog with ``models``: what INSTALL leaves for the admin to
     edit by hand. The daemon never rewrites an existing catalog."""
-    entries = [
-        {
-            "id": m.id,
-            "name": m.name,
-            "capability": m.capability,
-            "gguf": str(m.gguf),
-            "mmproj": str(m.mmproj) if m.mmproj else None,
-            "mtp": m.mtp,
-            "context_window": m.context_window,
-            "reasoning_format": m.reasoning_format,
-            "overrides": dict(m.overrides),
-        }
-        for m in models
-    ]
-    atomic_write(path, json.dumps({"models": entries}, indent=2, ensure_ascii=False) + "\n")
+    _dump(path, [_raw(m) for m in models])
+
+
+def add_to_catalog(path: Path, models: tuple[LocalModel, ...] | list[LocalModel]) -> list[str]:
+    """Appends the ``models`` whose id is not in the catalog yet (INSTALL with
+    voice over an existing Instance) and returns their ids. Every entry and
+    key the admin wrote is kept (the file is re-serialized); a catalog that
+    cannot be read is ``CatalogUnavailable``, never overwritten."""
+    if not path.exists():
+        write_catalog(path, list(models))
+        return [m.id for m in models]
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CatalogUnavailable(f"{path}: {exc}") from exc
+    raw = data.get("models") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        raise CatalogUnavailable(f"{path}: se espera un objeto con la lista \"models\"")
+    present = {item.get("id") for item in raw if isinstance(item, dict)}
+    added = [m for m in models if m.id not in present]
+    if added:
+        _dump(path, [*raw, *(_raw(m) for m in added)], rest=data)
+    return [m.id for m in added]
+
+
+def _raw(m: LocalModel) -> dict[str, Any]:
+    if m.capability != "llm":
+        # A voice entry: only what its service reads.
+        return {"id": m.id, "name": m.name, "capability": m.capability, "gguf": str(m.gguf),
+                **({"voice": str(m.voice)} if m.voice else {})}
+    return {
+        "id": m.id,
+        "name": m.name,
+        "capability": m.capability,
+        "gguf": str(m.gguf),
+        "mmproj": str(m.mmproj) if m.mmproj else None,
+        "mtp": m.mtp,
+        "context_window": m.context_window,
+        "reasoning_format": m.reasoning_format,
+        "overrides": dict(m.overrides),
+    }
+
+
+def _dump(path: Path, entries: list[Any], *, rest: dict[str, Any] | None = None) -> None:
+    data = {**(rest or {}), "models": entries}
+    atomic_write(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
 def _entry(item: Any, position: int) -> CatalogEntry:
@@ -94,9 +125,15 @@ def _model(model_id: str, item: dict[str, Any]) -> LocalModel:
     gguf = item.get("gguf")
     if not isinstance(gguf, str) or not gguf:
         raise ValueError("falta \"gguf\"")
-    window = item.get("context_window")
-    if not isinstance(window, int) or isinstance(window, bool) or window <= 0:
+    # A voice model has no context window: only ``llm`` requires one.
+    window = item.get("context_window", None if capability == "llm" else 0)
+    if not isinstance(window, int) or isinstance(window, bool) or window < 0 or (capability == "llm" and window == 0):
         raise ValueError("context_window debe ser un entero > 0")
+    voice = item.get("voice")
+    if voice is not None and capability != "tts":
+        raise ValueError("voice es solo de una entrada tts")
+    if voice is not None and (not isinstance(voice, str) or not voice):
+        raise ValueError("voice debe ser la ruta de un WAV o null")
     mmproj = item.get("mmproj")
     if mmproj is not None and (not isinstance(mmproj, str) or not mmproj):
         raise ValueError("mmproj debe ser una ruta o null")
@@ -124,10 +161,14 @@ def _model(model_id: str, item: dict[str, Any]) -> LocalModel:
         mtp=mtp,
         reasoning_format=reasoning,
         overrides=dict(overrides),
+        voice=Path(voice).expanduser() if voice else None,
     )
 
 
 def _file_problem(model: LocalModel) -> str | None:
+    if model.capability == "stt":
+        # whisper.cpp reads its own ``ggml`` format, not GGUF.
+        return None if model.gguf.is_file() else f"modelo no encontrado: {model.gguf}"
     if not model.gguf.is_file():
         return f"GGUF no encontrado: {model.gguf}"
     try:
@@ -139,4 +180,6 @@ def _file_problem(model: LocalModel) -> str | None:
         return f"cabecera GGUF inválida: {model.gguf}"
     if model.mmproj is not None and not model.mmproj.is_file():
         return f"mmproj no encontrado: {model.mmproj}"
+    if model.voice is not None and not model.voice.is_file():
+        return f"voz no encontrada: {model.voice}"
     return None

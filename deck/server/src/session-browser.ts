@@ -1,4 +1,5 @@
 import type { SessionIdentity } from "./session-identity.js";
+import { ownerIsAdminNow } from "./tool-profile.js";
 
 /** What the Guard's browser gate reads on each call, plus where the Instance browser is listening. */
 export interface SessionBrowserState {
@@ -36,8 +37,7 @@ export function sessionBrowserNow(opts: SessionBrowserOptions): () => Promise<Se
     if (opts.owner === null) return { ...SHUT };
     try {
       if (!(await opts.on())) return { ...SHUT };
-      const owner = await opts.identity.current(opts.owner);
-      if (!owner || owner.userId !== opts.owner || owner.role !== "admin") return { ...SHUT };
+      if (!(await ownerIsAdminNow(opts.owner, opts.identity))) return { ...SHUT };
       return { allowed: true, allowlist: await opts.allowlist(), cdpEndpoint: opts.cdpEndpoint };
     } catch {
       return { ...SHUT };

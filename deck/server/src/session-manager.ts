@@ -9,7 +9,8 @@ import type { Canvases } from "./canvases.js";
 import type { SessionIdentity } from "./session-identity.js";
 import { workspaceOf, type SessionRoots } from "./session-roots.js";
 import { LiveEvents } from "./live-events.js";
-import { instanceBrowserFor, isClosed, sameProfile, toolProfileFor, type ToolProfile } from "./tool-profile.js";
+import { instanceBrowserFor, isClosed, ownerIsAdminNow, sameProfile, toolProfileFor, type ToolProfile } from "./tool-profile.js";
+import type { HostExecAccess } from "./pi/host-exec/host-exec-tools.js";
 import type { BrowserDriver } from "./browser-driver.js";
 import { sessionBrowserNow } from "./session-browser.js";
 
@@ -36,6 +37,8 @@ export interface SessionManagerDeps {
   canvases?: Canvases;
   /** Where the Instance SOUL is: a member's Session loads it as its SOUL. */
   instanceSoulFile?: string;
+  /** hostexecd, when the daemon handed Deck a token: an admin's Sessions get the host exec tools. */
+  hostExec?: HostExecAccess;
   /** Starts a Session's pi; the SDK in production, a double in the tests. */
   launch: (opts: SdkLaunch) => Promise<PiClient>;
   /** The Instance browser an admin's Session may drive; without it no Session has browser tools. */
@@ -199,6 +202,10 @@ export class SessionManager extends EventEmitter {
         taintMarks: this.store.sessionTaint,
         canvases: this.deps.canvases,
         instanceSoulFile: isClosed(profile) ? this.deps.instanceSoulFile : undefined,
+        // Admin only: loaded for the general profile, and the role asked again on every call.
+        hostExec: this.deps.hostExec && !isClosed(profile)
+          ? { ...this.deps.hostExec, adminNow: () => ownerIsAdminNow(owner, this.deps.identity) }
+          : undefined,
         thinkingLevel: session.thinking_level || undefined,
         browser: this.browserFor(sessionId, owner, profile),
       });

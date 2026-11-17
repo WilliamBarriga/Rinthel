@@ -40,3 +40,12 @@ test('the Instance browser: a fixed CDP endpoint, docker unless BROWSER_EXTERNAL
   assert.equal(external.browser.cdpUrl, 'http://127.0.0.1:9333');
   assert.deepEqual(external.browser.mcpCommand, ['/opt/mcp/bin/playwright-mcp', '--headless']);
 });
+
+test('hostexecd comes from what the daemon hands Deck, and only with a token', () => {
+  assert.equal(deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's' }).hostExec, undefined);
+  assert.equal(deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's', RINTHEL_HOSTEXECD_URL: 'http://127.0.0.1:8766', RINTHEL_HOSTEXECD_TOKEN: ' ' }).hostExec, undefined);
+  assert.deepEqual(
+    deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's', RINTHEL_HOSTEXECD_URL: 'http://127.0.0.1:8766', RINTHEL_HOSTEXECD_TOKEN: 'tok' }).hostExec,
+    { url: 'http://127.0.0.1:8766', token: 'tok' },
+  );
+});

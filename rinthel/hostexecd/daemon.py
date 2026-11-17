@@ -1,31 +1,25 @@
-"""Daemon FastAPI de hostexecd — ejecuta comandos de shell en el host real
-desde una tool de pi (``host_exec``) que corre dentro de un contenedor de
-la Instance. Ver ``docs/07-host-exec.md``.
+"""The FastAPI app of ``hostexecd``: runs shell commands on the host for the
+``rinthel_host_exec`` tools of an admin's Session in Deck. See
+``docs/07-host-exec.md``.
 
-Corré con:  .venv/bin/python -m hostexecd.daemon
+The daemon starts it as a managed service (``HOSTEXECD_SERVICE``) with
+``python -m hostexecd.daemon`` and hands it, by environment, its port
+(``RINTHEL_HOSTEXECD_PORT``), its token (``RINTHEL_HOSTEXECD_TOKEN``) and the
+Instance root (``RINTHEL_INSTANCE_ROOT``). It reads no ``.env`` of its own.
 
-Deliberadamente separado de ``rinthel_tui.daemon`` (que administra el
-lifecycle del propio stack de Rinthel: llama-server/Understory/Deck):
-este daemon no sabe nada de esos servicios, solo corre lo que se le pida
-como el usuario que lo lanzó (``tarkark``, sin sudo, sin escalar
-privilegios) y audita cada ejecución en ``logs/hostexecd.log``. Blast
-radius aislado a propósito — ver decisión de diseño 4 del plan.
-
-Bloqueante, sin streaming ni gestión de procesos de fondo: mismo patrón
-REST-bloqueante que ``docs/adr/0001-daemon-protocol-shape.md`` documenta
-para ``rinthel_tui.daemon`` (``POST`` que espera el resultado completo y lo
-devuelve, en vez de progreso incremental).
+It knows nothing of the Instance's other services: it runs what it is asked,
+as the user that started it, and audits each run. Blocking, without streaming
+or background process management, like the daemon's own REST shape.
 
 Endpoints:
 
-- ``POST /exec``: corre un comando (``executor.run_command`` —
-  ``subprocess.run(shell=True)``, sin privilegios elevados), con timeout, y
-  devuelve ``exit_code``/``stdout``/``stderr``/``duration_ms``/
-  ``timed_out``. Requiere el header ``X-Rinthel-Token`` (ver ``auth.py``) —
-  sin match, ``401``. Cada llamada se audita (``audit.py``) antes de
-  devolver la respuesta.
-- ``GET /history``: últimas ``limit`` entradas del audit log (default 20),
-  también requiere el token.
+- ``POST /exec``: runs a command with a timeout and answers ``exit_code``,
+  ``stdout``, ``stderr``, ``duration_ms`` and ``timed_out``. Requires the
+  ``X-Rinthel-Token`` header (``401`` otherwise). Audited before answering.
+- ``GET /history``: the last ``limit`` audit entries (20 by default), with the
+  token too.
+- ``GET /health``: the readiness check of the daemon and the Monitor, without
+  a token; it says nothing but that the process answers.
 """
 
 from __future__ import annotations
@@ -34,21 +28,13 @@ import os
 import time
 from pathlib import Path
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from hostexecd import audit, auth, executor
-from rinthel_tui.instance import Instance
 
-# hostexecd/daemon.py -> repo root (mismo criterio que rinthel_tui/daemon.py).
-# Sin esto, RINTHEL_HOSTEXECD_TOKEN nunca llega al proceso: `rinthel-boot.sh`
-# solo pasa el puerto explícito al lanzar `nohup ... hostexecd.daemon`, no el
-# resto de `.env` — sin este load_dotenv, auth.expected_token() da siempre
-# None y toda request devuelve 401, sin importar qué token mande el cliente.
-load_dotenv(Instance.discover(Path(__file__).resolve().parent).env_path)
-
-app = FastAPI()
+# No schema or docs pages: nothing here is for browsing.
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 MAX_HISTORY = 200
 
@@ -56,6 +42,11 @@ MAX_HISTORY = 200
 def _require_token(token: str | None) -> None:
     if not auth.check_token(token):
         raise HTTPException(status_code=401, detail="invalid or missing token")
+
+
+@app.get("/health")
+def health() -> JSONResponse:
+    return JSONResponse({"ok": True})
 
 
 @app.post("/exec")
@@ -70,12 +61,12 @@ def exec_command(
     cwd = payload.get("cwd")
     if cwd is not None and not isinstance(cwd, str):
         raise HTTPException(status_code=400, detail="'cwd' must be a string or null")
-    # Chequeado acá y no dejado a subprocess: su FileNotFoundError salía como
-    # un 500 sin auditar, y el modelo no se enteraba de qué había pedido mal.
+    # Checked here rather than left to subprocess, whose FileNotFoundError
+    # would be an unaudited 500 that tells the model nothing.
     if cwd is not None and not Path(cwd).is_dir():
         raise HTTPException(status_code=400, detail=f"'cwd' is not a directory on the host: {cwd}")
     timeout = payload.get("timeout")
-    # bool es subclase de int en Python: sin excluirlo, `true` pasaba como 1s.
+    # bool is an int in Python: without excluding it, `true` would pass as 1s.
     if timeout is not None and (
         isinstance(timeout, bool)
         or not isinstance(timeout, (int, float))
@@ -114,7 +105,7 @@ def history(
     limit: int = 20, x_rinthel_token: str | None = Header(default=None, alias=auth.TOKEN_HEADER)
 ) -> JSONResponse:
     _require_token(x_rinthel_token)
-    # limit=0 devolvía el log entero (`lines[-0:]` es la lista completa).
+    # limit=0 would return the whole audit (`lines[-0:]` is every line).
     if not 1 <= limit <= MAX_HISTORY:
         raise HTTPException(status_code=400, detail=f"'limit' must be from 1 to {MAX_HISTORY}")
     return JSONResponse({"entries": audit.read_recent(limit)})
@@ -123,21 +114,12 @@ def history(
 def main() -> None:
     import uvicorn
 
-    # Puerto propio de este daemon (distinto de rinthel_tui.daemon) —
-    # overrideable por `.env`; `rinthel-boot.sh` lo lee de ahí para
-    # chequear si ya está arriba antes de autostartearlo. Default 8766:
-    # siguiente libre tras 8765 (rinthel_tui)/3800 (Understory)/4100
-    # (Deck).
+    # 8766: next free port after the daemon (8765); the daemon passes its own.
     port = int(os.getenv("RINTHEL_HOSTEXECD_PORT", "8766"))
-    print(f"[hostexecd] {time.strftime('%H:%M:%S')} arrancando en http://127.0.0.1:{port}")
+    print(f"[hostexecd] {time.strftime('%H:%M:%S')} starting on http://127.0.0.1:{port}")
     if auth.expected_token() is None:
-        print(
-            "[hostexecd] AVISO: RINTHEL_HOSTEXECD_TOKEN no está seteado — "
-            "todas las requests van a devolver 401 hasta que se configure."
-        )
-    # workers=1, mismo criterio que rinthel_tui/daemon.py::main(): un solo
-    # proceso real por pidfile, sin necesidad de coordinar estado entre
-    # workers (acá no hay nada mutable en memoria para empezar).
+        print("[hostexecd] WARNING: RINTHEL_HOSTEXECD_TOKEN is not set; every request will be a 401.")
+    # One worker: there is no state to share, and one process per port.
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", workers=1)
 
 

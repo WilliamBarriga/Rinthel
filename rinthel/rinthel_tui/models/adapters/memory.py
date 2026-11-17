@@ -28,6 +28,9 @@ class InMemoryActiveModels(FailNext):
     def set(self, capability: Capability, model_id: str) -> None:
         self._active[capability] = model_id
 
+    def clear(self, capability: Capability) -> None:
+        self._active.pop(capability, None)
+
 
 class InMemoryTurns(FailNext):
     """``busy`` is what the test says is being generated."""

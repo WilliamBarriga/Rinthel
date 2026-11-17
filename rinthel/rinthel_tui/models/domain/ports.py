@@ -24,13 +24,25 @@ class ActiveModels(Protocol):
 
     def set(self, capability: Capability, model_id: str) -> None: ...
 
+    def clear(self, capability: Capability) -> None:
+        """No active model for ``capability``: it is off."""
+        ...
+
 
 class ModelService(Protocol):
     """The managed service that serves a Capability (``llama-server`` for
-    ``llm``): stop whatever runs, start it with ``model`` and wait until it
-    answers. Never raises for an operational failure: it says so in ``ok``."""
+    ``llm``, ``whisper-server`` for ``stt``, ``audiocpp-server`` for ``tts``):
+    stop whatever runs, start it with ``model`` and wait until it answers, or
+    just stop it. Never raises for an operational failure: it says so in
+    ``ok``."""
+
+    def unavailable(self) -> str | None:
+        """Why the service cannot run on this Instance (voice off Linux), or ``None``."""
+        ...
 
     async def restart(self, model: LocalModel) -> ServiceRun: ...
+
+    async def stop(self) -> ServiceRun: ...
 
 
 class Turns(Protocol):

@@ -93,6 +93,7 @@ sessions = new SessionManager({
   roots,
   canvases,
   instanceSoulFile: instanceSoul.path,
+  hostExec: config.hostExec,
   launch: (opts) => SdkPiClient.create(opts),
   browser: { driver: browserDriver, cdpEndpoint: browserConfig.cdpUrl, allowlist: () => browserStore.allowlist() },
 });

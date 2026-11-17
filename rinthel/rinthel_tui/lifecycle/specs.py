@@ -103,12 +103,24 @@ def _install_spec(cfg: RinthelConfig, step: install.InstallStep) -> PhaseSpec:
     return PhaseSpec(f"◈ {step.label}", step.fn, {"task": step.task(cfg)})
 
 
-def install_plan(cfg: RinthelConfig) -> Plan:
+def install_plan(cfg: RinthelConfig, *, voice: bool = False) -> Plan:
+    """``voice`` (INSTALL ``--voice``, opt-in) adds the voice unit last. Voice
+    is Linux only: on Windows the unit is a notice and nothing else."""
     preflight = PhaseSpec("◈ PREFLIGHT — GPU/CUDA/cmake/docker", install.phase_install_preflight)
     units = [Unit("preflight", (preflight,))]
     for unit in install.INSTALL_UNITS:
         if unit.enabled_of(cfg):
             units.append(Unit(unit.label.lower(), tuple(_install_spec(cfg, step) for step in unit.steps)))
+    if voice:
+        unit = install.VOICE_INSTALL
+        if cfg.platform == "linux":
+            units.append(Unit(unit.label.lower(), tuple(_install_spec(cfg, step) for step in unit.steps)))
+        else:
+            notice = PhaseSpec(
+                f"◈ {unit.label}  --  SOLO LINUX", managed_service.phase_notice,
+                {"message": "la voz es solo de Linux: INSTALL la omite en esta Platform"},
+            )
+            units.append(Unit(unit.label.lower(), (notice,)))
     return Plan(on_failure="stop", batches=(Batch(marker=None, units=tuple(units)),))
 
 
@@ -147,19 +159,30 @@ def _local_unit(cfg: RinthelConfig, svc: LocalProcessService) -> Unit:
     return Unit(svc.display_name.lower(), (_spawn_spec(cfg, svc), _wait_spec(cfg, svc)))
 
 
-def llama_restart_plan(cfg: RinthelConfig) -> Plan:
-    """El cambio de Local model: parar lo que escuche en el puerto de llama,
-    lanzar con el modelo de ``cfg`` y esperar a que responda. Cada paso es
-    obligatorio: un puerto que no se libera o un modelo que no responde es un
-    fallo, y quien cambia decide el rollback."""
-    llama = services.LLAMA_SERVICE
-    spec = llama.spec(cfg)
-    phases = (
-        PhaseSpec(f"◈ {llama.kill_label}", managed_service.phase_kill, {"service": spec, "required": True}),
-        _spawn_spec(cfg, llama),
-        PhaseSpec(f"◈ ESPERANDO {llama.wait_label}", managed_service.phase_wait_ready, {"service": spec, "required": True}),
+def restart_phases(cfg: RinthelConfig, service: LocalProcessService) -> tuple[PhaseSpec, ...]:
+    """Parar lo que escuche en el puerto de ``service``, lanzarlo con el
+    modelo de ``cfg`` y esperar a que responda. Cada paso es obligatorio: un
+    puerto que no se libera o un modelo que no responde es un fallo."""
+    spec = service.spec(cfg)
+    return (
+        PhaseSpec(f"◈ {service.kill_label}", managed_service.phase_kill, {"service": spec, "required": True}),
+        _spawn_spec(cfg, service),
+        PhaseSpec(f"◈ ESPERANDO {service.wait_label}", managed_service.phase_wait_ready, {"service": spec, "required": True}),
     )
-    return Plan(on_failure="stop", batches=(Batch(marker=None, units=(Unit(llama.display_name.lower(), phases),)),))
+
+
+def restart_plan(cfg: RinthelConfig, service: LocalProcessService) -> Plan:
+    """El cambio de Local model de la Capability que sirve ``service``
+    (``services.MODEL_SERVICES``): quien cambia decide el rollback."""
+    unit = Unit(service.display_name.lower(), restart_phases(cfg, service))
+    return Plan(on_failure="stop", batches=(Batch(marker=None, units=(unit,)),))
+
+
+def stop_plan(cfg: RinthelConfig, service: LocalProcessService) -> Plan:
+    """Apagar una Capability (``models off``): parar ``service`` por su
+    puerto; un puerto que no se libera es un fallo."""
+    kill = PhaseSpec(f"◈ {service.kill_label}", managed_service.phase_kill, {"service": service.spec(cfg), "required": True})
+    return Plan(on_failure="stop", batches=(Batch(marker=None, units=(Unit(service.display_name.lower(), (kill,)),)),))
 
 
 def _docker_unit(cfg: RinthelConfig, svc: DockerComposeService, *, rebuild: bool = False) -> Unit:

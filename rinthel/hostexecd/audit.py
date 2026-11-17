@@ -1,13 +1,8 @@
-"""Log de auditoría append-only para hostexecd — cada ejecución de /exec se
-apenda acá antes de devolver la respuesta. Nunca a Understory (ver
-plans/rinthel-host-exec.md, decisión de diseño 7: Understory es una base de
-conocimiento curada — conceptos markdown tipo OKF —, no un sumidero de
-telemetría transaccional; y además hay una regla ya existente de nunca usar
-las tools de escritura de Understory, ni con autorización).
-
-Formato: una línea JSON por entrada (JSONL) en logs/hostexecd.log — fácil
-de ``tail -f`` a mano y de parsear para ``GET /history``.
-"""
+"""Append-only audit of ``hostexecd``: every ``/exec`` is recorded here before
+its answer goes back. One JSON object per line (JSONL), under the Instance's
+data (``data/hostexecd/audit.jsonl``), never tracked: easy to ``tail -f`` by
+hand and to read back for ``GET /history``. The process's own output goes to
+``logs/hostexecd.log``, apart, so tracebacks never mix with the audit."""
 
 from __future__ import annotations
 
@@ -20,8 +15,8 @@ from rinthel_tui.instance import Instance
 
 
 def log_path() -> Path:
-    """The audit log, under ``logs/`` at the Instance root (``RINTHEL_INSTANCE_ROOT`` wins)."""
-    return Instance.discover().logs_dir / "hostexecd.log"
+    """The audit file of the Instance (``RINTHEL_INSTANCE_ROOT`` wins)."""
+    return Instance.discover().data_dir / "hostexecd" / "audit.jsonl"
 
 
 def record(
@@ -34,10 +29,9 @@ def record(
     stderr_len: int,
     timed_out: bool,
 ) -> None:
-    """Apenda una entrada. Best-effort: si escribir el log falla (disco
-    lleno, permisos), no debe tirar abajo la respuesta de ``/exec`` — el
-    comando ya corrió y su resultado real ya está armado; perder una línea
-    de auditoría no es motivo para devolver un 500 sobre eso."""
+    """Append one entry. Best effort: the command already ran and its result is
+    built, so a full disk or a permission error loses one audit line rather
+    than turning the answer into a 500."""
     entry = {
         "ts": time.time(),
         "command": command,
@@ -58,11 +52,8 @@ def record(
 
 
 def read_recent(limit: int = 20) -> list[dict[str, Any]]:
-    """Últimas ``limit`` entradas, más reciente primero. Lee el archivo
-    entero y se queda con la cola — el log de un daemon de un solo usuario
-    no crece lo bastante rápido como para justificar un índice o un tail
-    binario (comparar con ``tail`` en ``monitoring/adapters/log_file.py``, que
-    sí lo necesita para el log de llama-server, mucho más verboso)."""
+    """The last ``limit`` entries, most recent first. The whole file is read:
+    the audit of a single host grows too slowly to need an index."""
     path = log_path()
     if not path.exists():
         return []
