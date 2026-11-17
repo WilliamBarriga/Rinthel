@@ -57,7 +57,16 @@ def _llama_argv(cfg: RinthelConfig) -> list[str]:
         argv += ["--mmproj", str(model.mmproj)]
     if cfg.moe.cache_mib > 0:
         argv += ["--moe-cache-mib", str(cfg.moe.cache_mib)]
+    # Not tuning: where Deck saves and restores each Session's slot. It
+    # changes no inference value, so it goes after the Validated profile.
+    argv += ["--slot-save-path", str(_slots_dir(cfg))]
     return argv
+
+
+def _slots_dir(cfg: RinthelConfig):
+    """Deck's own directory of saved slots (``data/deck/llama-slots``):
+    Deck lists and deletes them to keep them under its byte budget."""
+    return cfg.instance.deck_data_dir / "llama-slots"
 
 
 # ── LocalProcessService ───────────────────────────────────────────────
@@ -75,6 +84,7 @@ LLAMA_SERVICE = LocalProcessService(
     build_argv=_llama_argv,
     port_of=lambda cfg: cfg.llama.port,
     log_of=lambda cfg: cfg.llama.log,
+    dirs_of=lambda cfg: [_slots_dir(cfg)],
     enabled_of=lambda cfg: cfg.llama.enabled,
     ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.llama.port}/v1/models",
     default_ready_timeout=90,

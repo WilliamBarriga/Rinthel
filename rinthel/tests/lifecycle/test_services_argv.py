@@ -76,6 +76,14 @@ def test_argv_has_no_fork_only_flags(cfg):
         assert flag not in argv
 
 
+def test_llama_saves_slots_where_deck_keeps_them(cfg):
+    # Deck restores and saves each Session's slot (``/slots/0?action=``) and
+    # trims the directory by bytes: it lives in Deck's volume.
+    slots = cfg.instance.deck_data_dir / "llama-slots"
+    assert _flag_value(_llama_argv(cfg), "--slot-save-path") == str(slots)
+    assert slots in services.LLAMA_SERVICE.spec(cfg).dirs
+
+
 def test_compose_services_run_from_the_instance_root(cfg):
     for service in services.DOCKER_SERVICES:
         assert service.spec(cfg).stack.directory == cfg.instance.root

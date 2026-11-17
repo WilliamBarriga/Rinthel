@@ -69,6 +69,8 @@ def test_the_linux_argv_is_the_validated_one(tmp_path, monkeypatch):
         "--cache-reuse", "256", "--cache-ram", "-1", "--load-mode", "mlock",
         "--spec-type", "none", "--spec-draft-n-max", "2",
         "--cache-type-k", "f16", "--cache-type-v", "f16",
+        # Not part of the profile: where Deck keeps the Sessions' slots.
+        "--slot-save-path", str(tmp_path / "data" / "deck" / "llama-slots"),
     ]
 
 
@@ -84,6 +86,7 @@ def test_the_windows_argv_is_the_validated_one(tmp_path, monkeypatch):
         "--cache-reuse", "256", "--cache-ram", "-1", "--load-mode", "mlock",
         "--spec-type", "none", "--spec-draft-n-max", "2",
         "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
+        "--slot-save-path", str(tmp_path / "data" / "deck" / "llama-slots"),
     ]
 
 
