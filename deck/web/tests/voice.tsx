@@ -18,6 +18,7 @@ import { fakeCanvasesApi } from "../src/ports/fakes/canvases";
 import { fakeAppearanceApi } from "../src/ports/fakes/appearance";
 import { fakeInstanceSoulApi } from "../src/ports/fakes/instance-soul";
 import { fetchVoiceSpeech } from "../src/ports/adapters/fetch-voice-speech";
+import { fakeBrowserApi } from "../src/ports/fakes/browser";
 import "../src/index.css";
 import "../src/base.css";
 import "../src/appearance/appearance.css";
@@ -42,6 +43,8 @@ const counters = { sent: 0, voice: false, aborted: 0, changed: () => {} };
 const ports: Ports = {
   authApi: fakeAuthApi(), usersAdminApi: fakeUsersAdminApi(), modelsApi: fakeModelsApi(), canvasesApi: fakeCanvasesApi({ sessions: [ID] }),
   appearanceApi: fakeAppearanceApi(), instanceSoulApi: fakeInstanceSoulApi(), voiceSpeech: fetchVoiceSpeech(),
+  // The Instance browser in course, for the panel beside the stage.
+  browserApi: fakeBrowserApi({ container: "running", hasPassword: true }),
   sessionsApi: {
     ...sessionsApi,
     // The Agent answers at once and keeps working, so speaking again interrupts it (barge-in).
