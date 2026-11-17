@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Protocol
 
-from rinthel_tui.monitoring.domain.types import CpuRamSample, DockerContainer, GpuSample
+from rinthel_tui.monitoring.domain.types import CpuRamSample, DockerContainer, GpuSample, ModelsStatus
 
 
 class GpuSensor(Protocol):
@@ -41,10 +41,8 @@ class ServiceLog(Protocol):
         ...
 
 
-class ServiceReadiness(Protocol):
-    async def ready(self) -> bool:
-        """Si el servicio responde ahora en su URL de readiness: un solo
-        intento, sin esperar. En llama-server esa URL queda detrás de un único
-        gate que solo se levanta con el modelo cargado, así que ``True`` ya
-        implica servidor arriba y modelo cargado."""
+class ModelsSensor(Protocol):
+    async def read(self) -> ModelsStatus:
+        """The Local model and service state of each Capability, and the
+        state of each other managed service the Instance runs, now."""
         ...

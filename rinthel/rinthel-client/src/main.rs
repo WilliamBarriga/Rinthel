@@ -15,15 +15,9 @@ async fn main() -> io::Result<()> {
     if let Some(port) = parse_port_arg() {
         app::set_daemon_port(port);
     }
-    let daemon = app::daemon_base();
-    let theme: Theme = app::http()
-        .get(format!("{daemon}/theme"))
-        .send()
+    let theme: Theme = app::fetch_theme()
         .await
-        .expect("GET /theme — ¿está corriendo el daemon? (.venv/bin/python -m rinthel_tui.daemon)")
-        .json()
-        .await
-        .expect("theme JSON inválido");
+        .expect("GET /theme — ¿está corriendo el daemon (.venv/bin/python -m rinthel_tui.daemon) y RINTHEL_SERVICE_SECRET exportado?");
 
     App::new(&theme).run().await
 }

@@ -2,7 +2,7 @@
 ``{"type", "data"}`` por mensaje, la telemetría que produce el Monitor
 (``app.state.monitor``, dominio de ``monitoring/``; un flujo por
 cliente: ``docker_status``, ``gpu_sample``, ``cpu_ram_sample``,
-``log_line``, ``llama_status``) y el progreso de una corrida en curso
+``log_line``, ``models_status``) y el progreso de una corrida en curso
 (``phase_status``, ``phase_log``, ``phase_batch``). Todo esto es best-effort:
 ``Broadcaster.broadcast`` descarta el cliente que no recibe, y perder un
 mensaje de progreso no afecta el ``ServiceOutcome`` final que viaja por la

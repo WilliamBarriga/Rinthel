@@ -6,8 +6,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use rinthel::protocol::{
-    CommandResult, ConfigPayload, ConfigSaveResult, CpuRamSample, DockerStatus, Envelope, GpuSample, LlamaStatus,
-    LogLine, Theme,
+    CommandResult, ConfigPayload, ConfigSaveResult, CpuRamSample, DockerStatus, Envelope, GpuSample, LogLine,
+    ModelsStatus, PhaseBatch, PhaseLog, PhaseStatus, RotateResult, ServiceState, Theme,
 };
 
 fn fixture(name: &str) -> String {
@@ -58,10 +58,36 @@ fn log_line_shape() {
 }
 
 #[test]
-fn llama_status_shape() {
-    let env: Envelope = serde_json::from_str(&fixture("llama_status.json")).unwrap();
-    assert_eq!(env.kind, "llama_status");
-    let _: LlamaStatus = serde_json::from_value(env.data).expect("llama_status.json no matchea LlamaStatus");
+fn models_status_shape() {
+    let env: Envelope = serde_json::from_str(&fixture("models_status.json")).unwrap();
+    assert_eq!(env.kind, "models_status");
+    let status: ModelsStatus =
+        serde_json::from_value(env.data).expect("models_status.json no matchea ModelsStatus");
+    assert_eq!(status.capabilities[0].capability, "llm");
+    assert_eq!(status.capabilities[0].state, ServiceState::Ready);
+    assert!(status.capabilities[0].error.is_none());
+    assert!(!status.services.is_empty());
+}
+
+#[test]
+fn phase_status_shape() {
+    let env: Envelope = serde_json::from_str(&fixture("phase_status.json")).unwrap();
+    assert_eq!(env.kind, "phase_status");
+    let _: PhaseStatus = serde_json::from_value(env.data).expect("phase_status.json no matchea PhaseStatus");
+}
+
+#[test]
+fn phase_log_shape() {
+    let env: Envelope = serde_json::from_str(&fixture("phase_log.json")).unwrap();
+    assert_eq!(env.kind, "phase_log");
+    let _: PhaseLog = serde_json::from_value(env.data).expect("phase_log.json no matchea PhaseLog");
+}
+
+#[test]
+fn phase_batch_shape() {
+    let env: Envelope = serde_json::from_str(&fixture("phase_batch.json")).unwrap();
+    assert_eq!(env.kind, "phase_batch");
+    let _: PhaseBatch = serde_json::from_value(env.data).expect("phase_batch.json no matchea PhaseBatch");
 }
 
 #[test]
@@ -83,14 +109,15 @@ fn config_payload_shape() {
     let payload: ConfigPayload = serde_json::from_str(&fixture("config_payload.json"))
         .expect("config_payload.json no matchea ConfigPayload");
     assert!(!payload.services.is_empty());
-    // moe: sin enabled/enabled_env (no es un LocalProcessService/DockerComposeService).
-    let moe = payload.services.iter().find(|s| s.attr == "moe").expect("fixture sin moe");
-    assert!(moe.enabled.is_none());
-    assert!(moe.enabled_env.is_none());
     // llama: campos de al menos 2 grupos distintos (ver screens::settings::detail_rows).
     let llama = payload.services.iter().find(|s| s.attr == "llama").expect("fixture sin llama");
     let groups: std::collections::HashSet<_> = llama.fields.iter().map(|f| f.group.as_str()).collect();
     assert!(groups.len() > 1);
+    // Los campos del Validated profile traen su valor; el resto, ninguno.
+    assert!(llama.fields.iter().any(|f| f.profile.is_some()));
+    assert!(llama.fields.iter().any(|f| f.profile.is_none()));
+    // Los del Local model no se configuran acá.
+    assert!(llama.fields.iter().all(|f| !f.attr.starts_with("spec_")));
 }
 
 #[test]
@@ -99,4 +126,18 @@ fn config_save_result_shape() {
         .expect("config_save_result.json no matchea ConfigSaveResult");
     assert!(!result.ok);
     assert!(!result.errors.is_empty());
+}
+
+#[test]
+fn rotate_result_shape() {
+    let result: RotateResult =
+        serde_json::from_str(&fixture("rotate_result.json")).expect("rotate_result.json no matchea RotateResult");
+    assert!(result.service_secret.is_some_and(|s| !s.is_empty()));
+}
+
+#[test]
+fn rotate_result_without_service_secret() {
+    // Rotar RINTHEL_PANEL_SECRET: el daemon omite `service_secret`.
+    let result: RotateResult = serde_json::from_str(r#"{"results": []}"#).unwrap();
+    assert_eq!(result.service_secret, None);
 }

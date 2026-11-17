@@ -5,6 +5,7 @@ son el ``data`` del sobre: ``rinthel-client/src/protocol.rs`` los espeja y
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -34,3 +35,38 @@ class DockerContainer:
     state: str
     ports: str
     status: str
+
+
+# ``ready``: answers now; ``down``: should run but does not answer; ``off``:
+# nothing to run (service disabled, or no usable Local model).
+ServiceState = Literal["ready", "down", "off"]
+
+
+@dataclass(frozen=True)
+class CapabilityStatus:
+    """One Capability: its active Local model id (``None`` when none is
+    active), the state of the managed service that serves it and, when the
+    active id cannot run, why (unknown id, GGUF not found)."""
+
+    capability: str
+    model: str | None
+    state: ServiceState
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class ServiceStatus:
+    """A managed service that does not serve a Capability (Understory, Deck)."""
+
+    name: str
+    state: ServiceState
+
+
+@dataclass(frozen=True)
+class ModelsStatus:
+    """What the Instance runs on its Platform: a service it does not run
+    (disabled, voice without an active model, Linux-only on Windows) is
+    simply not listed."""
+
+    capabilities: list[CapabilityStatus]
+    services: list[ServiceStatus]

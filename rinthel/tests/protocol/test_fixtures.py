@@ -12,7 +12,13 @@ import json
 from pathlib import Path
 
 from rinthel_tui.monitoring.domain.envelope import MessageType
-from rinthel_tui.monitoring.domain.types import CpuRamSample, DockerContainer, GpuSample
+from rinthel_tui.monitoring.domain.types import (
+    CapabilityStatus,
+    CpuRamSample,
+    DockerContainer,
+    GpuSample,
+    ServiceStatus,
+)
 
 FIXTURES = Path(__file__).parent.parent / "protocol_fixtures"
 
@@ -48,11 +54,15 @@ def test_log_line_shape():
     assert isinstance(envelope["data"]["line"], str)
 
 
-def test_llama_status_shape():
-    envelope = _load("llama_status.json")
-    assert envelope["type"] == "llama_status"
-    assert envelope["data"].keys() == {"ready"}
-    assert isinstance(envelope["data"]["ready"], bool)
+def test_models_status_shape():
+    envelope = _load("models_status.json")
+    assert envelope["type"] == "models_status"
+    data = envelope["data"]
+    assert data.keys() == {"capabilities", "services"}
+    for line in data["capabilities"]:
+        CapabilityStatus(**line)
+    for row in data["services"]:
+        ServiceStatus(**row)
 
 
 def test_phase_status_shape():

@@ -77,8 +77,8 @@ model {
 
     modulo monitoring "monitoring" "Telemetry streams: host resources, managed services and the active model status" {
       source { path "rinthel/rinthel_tui/monitoring" }
-      puerto mon-puertos "ports" "One port per source: GPU, host, containers, llama-server log, readiness"
-      adaptador mon-host "psutil_host / nvidia_smi / docker_compose / log_file / http_readiness"
+      puerto mon-puertos "ports" "One port per source: GPU, host, containers, llama-server log, Local models and managed services"
+      adaptador mon-host "psutil_host / nvidia_smi / docker_compose / log_file / managed_services"
       adaptador mon-memoria "memory" "Doubles with a contract suite"
     }
 

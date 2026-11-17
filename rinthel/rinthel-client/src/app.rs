@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::io;
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode};
@@ -18,11 +18,11 @@ use tokio::sync::mpsc;
 use crate::effects::{self, ActiveEffect};
 use crate::protocol::{
     self, CommandResult, ConfigPayload, ConfigSaveResult, CpuRamSample, DockerContainer, Envelope, GpuSample,
-    PhaseLog, PhaseStatus, Theme,
+    ModelsStatus, PhaseLog, PhaseStatus, RotateResult, Theme,
 };
 use crate::screens::exit_prompt::ExitPromptTimer;
 use crate::screens::farewell::FarewellTimer;
-use crate::screens::settings::{ConfigFocus, ConfigSaveStatus, SettingsState};
+use crate::screens::settings::{ConfigFocus, ConfigSaveStatus, SecretKey, SettingsState};
 use crate::screens::{self, MenuAction, ScreenId};
 
 /// Frases que rota `RotatingTagline` en el menú — mezcla status técnico con
@@ -60,32 +60,67 @@ pub fn daemon_base() -> String {
     format!("http://127.0.0.1:{}", daemon_port())
 }
 
-/// El secreto de servicio que exige el daemon en cada ruta de la TUI
-/// (`X-Rinthel-Service-Secret`): `rinthel-boot.sh`/`.ps1` lo exporta como
-/// `RINTHEL_SERVICE_SECRET` antes de lanzar este binario. Vacío si falta: el
-/// daemon contesta 401 y el error se ve en la barra de estado.
-fn service_secret() -> &'static str {
-    static SECRET: OnceLock<String> = OnceLock::new();
-    SECRET.get_or_init(|| std::env::var("RINTHEL_SERVICE_SECRET").unwrap_or_default())
-}
+/// Nombre del header que valida la access policy `service` del daemon
+/// (ADR 0003): el control-plane de infra (boot/terminate/reload/install/
+/// config/secrets/ws-monitor) lo exige en cada ruta.
+const SERVICE_SECRET_HEADER: &str = "X-Rinthel-Service-Secret";
 
-/// Cliente HTTP con el secreto de servicio en cada request — todo pedido al
-/// daemon sale por acá.
-pub fn http() -> reqwest::Client {
-    let mut headers = reqwest::header::HeaderMap::new();
-    if let Ok(value) = reqwest::header::HeaderValue::from_str(service_secret()) {
-        headers.insert("x-rinthel-service-secret", value);
+/// El secreto de servicio vigente. Arranca con el del entorno del proceso
+/// (`rinthel-boot.sh` lo exporta desde `RINTHEL_SERVICE_SECRET` en `.env`,
+/// mismo patrón que `RINTHEL_DAEMON_PORT` -> `--port`, ver `parse_port_arg`
+/// en `main.rs`) y cambia solo cuando `POST /secrets/rotate` trae uno nuevo
+/// — la TUI no relee el `.env`. Vacío (pre-install) es válido acá: el
+/// daemon es quien devuelve 401.
+pub(crate) struct ServiceSecret(RwLock<String>);
+
+impl ServiceSecret {
+    fn new(secret: String) -> Self {
+        Self(RwLock::new(secret))
     }
-    reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
-        .expect("cliente HTTP del daemon")
+
+    fn get(&self) -> String {
+        self.0.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Toma el secreto nuevo si la respuesta lo trae, aunque recrear algún
+    /// servicio haya fallado: el daemon ya lo rotó y ya no acepta el viejo.
+    pub(crate) fn adopt(&self, result: &RotateResult) {
+        if let Some(secret) = &result.service_secret {
+            *self.0.write().unwrap_or_else(|e| e.into_inner()) = secret.clone();
+        }
+    }
 }
 
-/// Un handshake WebSocket no lleva headers custom: el secreto viaja en
-/// `?token=` (el daemon lo compara igual que el header).
+pub(crate) static SERVICE_SECRET: LazyLock<ServiceSecret> =
+    LazyLock::new(|| ServiceSecret::new(std::env::var("RINTHEL_SERVICE_SECRET").unwrap_or_default()));
+
+fn service_secret() -> String {
+    SERVICE_SECRET.get()
+}
+
+/// `GET /theme` — `service_or_admin` del lado daemon (ADR 0003), así que
+/// lleva el mismo secreto que el resto del control-plane.
+pub async fn fetch_theme() -> reqwest::Result<Theme> {
+    fetch_theme_from(&daemon_base()).await
+}
+
+async fn fetch_theme_from(base: &str) -> reqwest::Result<Theme> {
+    reqwest::Client::new()
+        .get(format!("{base}/theme"))
+        .header(SERVICE_SECRET_HEADER, service_secret())
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await
+}
+
 fn ws_url() -> String {
-    format!("ws://127.0.0.1:{}/ws/monitor?token={}", daemon_port(), service_secret())
+    format!(
+        "ws://127.0.0.1:{}/ws/monitor?token={}",
+        daemon_port(),
+        service_secret()
+    )
 }
 const HIST_LEN: usize = 60;
 /// Columnas por pulsación de `Left`/`Right` sobre el log_tail.
@@ -93,6 +128,7 @@ const LOG_SCROLL_STEP: i32 = 8;
 
 /// Eventos que las tareas de fondo empujan hacia el loop principal —
 /// mismo patrón que un `Message` en Elm/TEA, adaptado a Rust con un canal.
+#[derive(Debug)]
 pub enum AppEvent {
     Docker(Vec<DockerContainer>),
     Gpu(GpuSample),
@@ -108,8 +144,8 @@ pub enum AppEvent {
     /// dispara Datamosh ("boot") o Vignette ("rebuild"). `"shutdown"` nunca
     /// llega (nadie la emite, ver `protocol::PhaseBatch`).
     PhaseBatch(String),
-    /// `llama_status`: estado parado, no un evento de corrida.
-    LlamaStatus(bool),
+    /// `models_status`: estado parado, no un evento de corrida.
+    ModelsStatus(ModelsStatus),
     /// `GET /config` resuelto — disparado al entrar a `ScreenId::Settings`.
     ConfigLoaded(ConfigPayload),
     ConfigLoadFailed(String),
@@ -204,9 +240,9 @@ pub struct App {
     pub menu_selected: usize,
     pub colors: Colors,
     pub containers: Vec<DockerContainer>,
-    /// `llama_status` en vivo — llama-server no es un contenedor Docker, así
-    /// que no sale de `containers`.
-    pub llama_ready: bool,
+    /// `models_status` en vivo: una línea por Capability y una fila por
+    /// managed service, tal como los reporta el daemon.
+    pub models_status: ModelsStatus,
     pub gpu: GpuSample,
     pub cpu_ram: CpuRamSample,
     pub cpu_hist: VecDeque<u64>,
@@ -230,6 +266,7 @@ pub struct App {
     pub phase_rows: Vec<(String, String)>,
     /// Log en vivo de la corrida — (kind, message), igual que `phase_log`.
     pub phase_log: VecDeque<(String, String)>,
+    pub phase_progress: screens::phase_runner::Progress,
     /// `ScreenId::ExitPrompt` — `Some` mientras se espera la elección de
     /// apagar o no el daemon, consultado cada vuelta del loop igual que
     /// `farewell_timer`.
@@ -263,7 +300,7 @@ impl App {
             menu_selected: screens::first_selectable(),
             colors: Colors::from(theme),
             containers: Vec::new(),
-            llama_ready: false,
+            models_status: ModelsStatus::default(),
             gpu: GpuSample::default(),
             cpu_ram: CpuRamSample::default(),
             cpu_hist: VecDeque::with_capacity(HIST_LEN),
@@ -277,6 +314,7 @@ impl App {
             phase_title: "",
             phase_rows: Vec::new(),
             phase_log: VecDeque::new(),
+            phase_progress: screens::phase_runner::Progress::default(),
             exit_prompt_timer: None,
             farewell_timer: None,
             farewell_next: FarewellNext::Quit,
@@ -313,6 +351,10 @@ impl App {
     }
 
     fn apply(&mut self, ev: AppEvent) {
+        self.apply_at(ev, Instant::now());
+    }
+
+    fn apply_at(&mut self, ev: AppEvent, now: Instant) {
         match ev {
             AppEvent::Docker(c) => self.containers = c,
             AppEvent::Gpu(g) => {
@@ -333,8 +375,9 @@ impl App {
                 self.log_lines.push_back(line);
             }
             AppEvent::CommandDone(name, result) => {
+                self.phase_progress.finish(now);
                 self.last_command_error = None;
-                if name == "boot" || name == "terminate" || name == "reload" || name == "install" {
+                if name == "boot" || name == "terminate" || name == "reload" || name == "install" || name == "rotate" {
                     // `finish_phase_sequence` decide cuándo se libera
                     // `command_in_flight` — recién al cerrar el efecto de
                     // cierre en un éxito (ver `EffectFollowUp::FinishClosing`),
@@ -346,22 +389,36 @@ impl App {
                 self.last_command_result = Some((name, result));
             }
             AppEvent::CommandFailed(name, err) => {
+                self.phase_progress.finish(now);
                 self.command_in_flight = None;
+                // Sin esto un rechazo del POST (401/409) deja el log de
+                // PhaseRunner vacío; el menú lo muestra igual en su línea
+                // de estado.
+                if self.screen == ScreenId::PhaseRunner {
+                    self.phase_progress.fail();
+                    self.phase_log.push_back(("error".to_string(), format!("{name} falló: {err}")));
+                }
                 self.last_command_error = Some(format!("{name} falló: {err}"));
             }
             AppEvent::PhaseStatus(label, status) => {
+                self.phase_progress.step(label.clone(), &status, now);
                 match self.phase_rows.iter_mut().find(|(l, _)| *l == label) {
                     Some(row) => row.1 = status,
                     None => self.phase_rows.push((label, status)),
                 }
             }
             AppEvent::PhaseLog(kind, message) => {
+                self.phase_progress.observe(now);
+                if kind == "error" {
+                    self.phase_progress.fail();
+                }
                 if self.phase_log.len() == 200 {
                     self.phase_log.pop_front();
                 }
                 self.phase_log.push_back((kind, message));
             }
             AppEvent::PhaseBatch(batch) => {
+                self.phase_progress.batch(batch.clone(), now);
                 let effect = match batch.as_str() {
                     "boot" => Some(ActiveEffect::Datamosh(effects::DatamoshEffect::new(2.0, 2))),
                     "rebuild" => Some(ActiveEffect::Vignette(effects::VignetteEffect::new(2.0, 2))),
@@ -376,7 +433,7 @@ impl App {
                     self.begin_effect(effect, EffectFollowUp::None);
                 }
             }
-            AppEvent::LlamaStatus(ready) => self.llama_ready = ready,
+            AppEvent::ModelsStatus(status) => self.models_status = status,
             AppEvent::ConfigLoaded(payload) => {
                 self.settings.payload = Some(payload);
                 self.settings.selected_service = 0;
@@ -418,6 +475,11 @@ impl App {
                 ));
                 self.command_in_flight = None;
             }
+            // Sin banner ni efecto: una rotación no cambia qué está arriba.
+            None if name == "rotate" => {
+                self.phase_log.push_back(("success".to_string(), "Secreto rotado.".to_string()));
+                self.command_in_flight = None;
+            }
             None => {
                 let (done_msg, banner, effect): (&str, &str, ActiveEffect) = match name {
                     "reload" => (
@@ -427,7 +489,7 @@ impl App {
                     ),
                     "boot" => (
                         "Secuencia completa.",
-                        "TODO EN LINEA — Understory + Pithagoras activos",
+                        "TODO EN LINEA — SERVICIOS ACTIVOS",
                         ActiveEffect::ChromaticAberration(effects::ChromaticAberrationEffect::new("SYSTEM ONLINE", 1.0)),
                     ),
                     "install" => (
@@ -579,9 +641,23 @@ impl App {
         self.phase_title = title;
         self.phase_rows.clear();
         self.phase_log.clear();
+        self.phase_progress.start(Instant::now(), name == "reload");
         self.screen = ScreenId::PhaseRunner;
         self.command_in_flight = Some(name);
         tokio::spawn(run_command(name, path, tx.clone()));
+    }
+
+    /// Rotar un secreto corre como una secuencia más en
+    /// `ScreenId::PhaseRunner`: el checklist muestra en vivo lo que se
+    /// recrea por la rotación, si algo.
+    pub(crate) fn start_rotation(&mut self, key: SecretKey, tx: &mpsc::UnboundedSender<AppEvent>) {
+        self.phase_title = " ◈ ROTAR SECRETO ";
+        self.phase_rows.clear();
+        self.phase_log.clear();
+        self.phase_progress.start(Instant::now(), false);
+        self.screen = ScreenId::PhaseRunner;
+        self.command_in_flight = Some("rotate");
+        tokio::spawn(rotate_secret(key, tx.clone()));
     }
 
     /// Loop principal: terminal alternate-screen, tick de eventos + polling
@@ -677,6 +753,7 @@ impl App {
                                     self.resolve_exit_prompt(false);
                                 }
                                 (_, KeyCode::Char('q')) => self.should_quit = true,
+                                (ScreenId::PhaseRunner, code) if self.phase_progress.handle_key(code) => {}
                                 (ScreenId::Menu, KeyCode::Up) => {
                                     self.menu_selected = screens::prev_selectable(self.menu_selected);
                                 }
@@ -702,8 +779,8 @@ impl App {
                                 (ScreenId::Logs | ScreenId::Monitor, KeyCode::End) => {
                                     self.scroll_log_x(i32::MAX);
                                 }
-                                // PhaseRunner bloquea "volver" hasta terminar —
-                                // acá eso es "no hay POST en vuelo".
+                                // PhaseRunner bloquea "volver" hasta terminar
+                                // — acá eso es "no hay POST en vuelo".
                                 (ScreenId::PhaseRunner, KeyCode::Esc) if screens::phase_runner::done(&self) => {
                                     self.screen = ScreenId::Menu;
                                 }
@@ -740,6 +817,32 @@ fn draw(f: &mut Frame, app: &App) {
     }
 }
 
+/// Un sobre de `/ws/monitor` a su `AppEvent`, por su tag. Un tag que el
+/// cliente no conoce, o un `data` que no matchea, se descarta.
+fn decode(env: Envelope) -> Option<AppEvent> {
+    match env.kind.as_str() {
+        "docker_status" => serde_json::from_value::<protocol::DockerStatus>(env.data)
+            .ok()
+            .map(|d| AppEvent::Docker(d.containers)),
+        "gpu_sample" => serde_json::from_value::<GpuSample>(env.data).ok().map(AppEvent::Gpu),
+        "cpu_ram_sample" => serde_json::from_value::<CpuRamSample>(env.data).ok().map(AppEvent::CpuRam),
+        "log_line" => serde_json::from_value::<protocol::LogLine>(env.data)
+            .ok()
+            .map(|l| AppEvent::Log(l.line)),
+        "phase_status" => serde_json::from_value::<PhaseStatus>(env.data)
+            .ok()
+            .map(|p| AppEvent::PhaseStatus(p.label, p.status)),
+        "phase_log" => serde_json::from_value::<PhaseLog>(env.data)
+            .ok()
+            .map(|p| AppEvent::PhaseLog(p.kind, p.message)),
+        "models_status" => serde_json::from_value::<ModelsStatus>(env.data).ok().map(AppEvent::ModelsStatus),
+        "phase_batch" => serde_json::from_value::<protocol::PhaseBatch>(env.data)
+            .ok()
+            .map(|b| AppEvent::PhaseBatch(b.batch)),
+        _ => None,
+    }
+}
+
 async fn ws_task(tx: mpsc::UnboundedSender<AppEvent>) {
     loop {
         let conn = tokio_tungstenite::connect_async(ws_url()).await;
@@ -751,29 +854,7 @@ async fn ws_task(tx: mpsc::UnboundedSender<AppEvent>) {
         while let Some(Ok(msg)) = read.next().await {
             let tokio_tungstenite::tungstenite::Message::Text(text) = msg else { continue };
             let Ok(env) = serde_json::from_str::<Envelope>(&text) else { continue };
-            let ev = match env.kind.as_str() {
-                "docker_status" => serde_json::from_value::<protocol::DockerStatus>(env.data)
-                    .ok()
-                    .map(|d| AppEvent::Docker(d.containers)),
-                "gpu_sample" => serde_json::from_value::<GpuSample>(env.data).ok().map(AppEvent::Gpu),
-                "cpu_ram_sample" => serde_json::from_value::<CpuRamSample>(env.data).ok().map(AppEvent::CpuRam),
-                "log_line" => serde_json::from_value::<protocol::LogLine>(env.data)
-                    .ok()
-                    .map(|l| AppEvent::Log(l.line)),
-                "phase_status" => serde_json::from_value::<PhaseStatus>(env.data)
-                    .ok()
-                    .map(|p| AppEvent::PhaseStatus(p.label, p.status)),
-                "phase_log" => serde_json::from_value::<PhaseLog>(env.data)
-                    .ok()
-                    .map(|p| AppEvent::PhaseLog(p.kind, p.message)),
-                "llama_status" => serde_json::from_value::<protocol::LlamaStatus>(env.data)
-                    .ok()
-                    .map(|s| AppEvent::LlamaStatus(s.ready)),
-                "phase_batch" => serde_json::from_value::<protocol::PhaseBatch>(env.data)
-                    .ok()
-                    .map(|b| AppEvent::PhaseBatch(b.batch)),
-                _ => None,
-            };
+            let ev = decode(env);
             if let Some(ev) = ev {
                 if tx.send(ev).is_err() {
                     return;
@@ -786,15 +867,41 @@ async fn ws_task(tx: mpsc::UnboundedSender<AppEvent>) {
     }
 }
 
+#[derive(serde::Deserialize)]
+struct ErrorDetail {
+    detail: String,
+}
+
+/// Convierte una respuesta HTTP no-2xx en un mensaje legible en vez de
+/// dejar que `.json::<T>()` la trate como error de deserialización
+/// genérico. La access policy `service` del daemon devuelve 401 con body
+/// `{"detail": "..."}` cuando `RINTHEL_SERVICE_SECRET` no matchea — antes
+/// eso fallaba a deserializar como `CommandResult`/`ConfigPayload`/
+/// `ConfigSaveResult` y el mensaje que llegaba a la UI era un error de
+/// parseo de serde_json, sin indicar la causa real.
+async fn parse_daemon_response<T: serde::de::DeserializeOwned>(resp: reqwest::Response) -> Result<T, String> {
+    let status = resp.status();
+    if status.is_success() {
+        return resp.json::<T>().await.map_err(|e| e.to_string());
+    }
+    let body = resp.text().await.unwrap_or_default();
+    let reason = serde_json::from_str::<ErrorDetail>(&body).map(|e| e.detail).unwrap_or(body);
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        Err(format!("secreto de servicio inválido — revisá .env ({reason})"))
+    } else {
+        Err(format!("{status}: {reason}"))
+    }
+}
+
 async fn run_command(name: &'static str, path: &str, tx: mpsc::UnboundedSender<AppEvent>) {
     let url = format!("{}{path}", daemon_base());
-    match http().post(&url).send().await {
-        Ok(resp) => match resp.json::<CommandResult>().await {
+    match reqwest::Client::new().post(&url).header(SERVICE_SECRET_HEADER, service_secret()).send().await {
+        Ok(resp) => match parse_daemon_response::<CommandResult>(resp).await {
             Ok(result) => {
                 let _ = tx.send(AppEvent::CommandDone(name, result));
             }
             Err(e) => {
-                let _ = tx.send(AppEvent::CommandFailed(name, e.to_string()));
+                let _ = tx.send(AppEvent::CommandFailed(name, e));
             }
         },
         Err(e) => {
@@ -803,12 +910,40 @@ async fn run_command(name: &'static str, path: &str, tx: mpsc::UnboundedSender<A
     }
 }
 
-/// `GET /config` — disparado al entrar a `ScreenId::Settings`.
+/// `POST /secrets/rotate` — el secreto nuevo (si vino) se adopta antes de
+/// mirar si algo falló al recrearse: el daemon ya no acepta el viejo.
+async fn rotate_secret(key: SecretKey, tx: mpsc::UnboundedSender<AppEvent>) {
+    let ev = match reqwest::Client::new()
+        .post(format!("{}/secrets/rotate", daemon_base()))
+        .header(SERVICE_SECRET_HEADER, service_secret())
+        .json(&serde_json::json!({ "key": key.env() }))
+        .send()
+        .await
+    {
+        Ok(resp) => match parse_daemon_response::<RotateResult>(resp).await {
+            Ok(result) => {
+                SERVICE_SECRET.adopt(&result);
+                AppEvent::CommandDone("rotate", CommandResult { results: result.results })
+            }
+            Err(e) => AppEvent::CommandFailed("rotate", e),
+        },
+        Err(e) => AppEvent::CommandFailed("rotate", e.to_string()),
+    };
+    let _ = tx.send(ev);
+}
+
+/// `GET /config` — disparado al entrar a `ScreenId::Settings`, mismo
+/// trigger-on-entry que el resto de las pantallas que piden datos.
 async fn fetch_config(tx: mpsc::UnboundedSender<AppEvent>) {
-    let ev = match http().get(format!("{}/config", daemon_base())).send().await {
-        Ok(resp) => match resp.json::<ConfigPayload>().await {
+    let ev = match reqwest::Client::new()
+        .get(format!("{}/config", daemon_base()))
+        .header(SERVICE_SECRET_HEADER, service_secret())
+        .send()
+        .await
+    {
+        Ok(resp) => match parse_daemon_response::<ConfigPayload>(resp).await {
             Ok(payload) => AppEvent::ConfigLoaded(payload),
-            Err(e) => AppEvent::ConfigLoadFailed(e.to_string()),
+            Err(e) => AppEvent::ConfigLoadFailed(e),
         },
         Err(e) => AppEvent::ConfigLoadFailed(e.to_string()),
     };
@@ -821,13 +956,384 @@ async fn fetch_config(tx: mpsc::UnboundedSender<AppEvent>) {
 /// terminan ambas en `ConfigSaveFailed`, mostradas igual (líneas de error).
 pub(crate) async fn save_config(overrides: HashMap<String, String>, tx: mpsc::UnboundedSender<AppEvent>) {
     let body = serde_json::json!({ "overrides": overrides });
-    let ev = match http().post(format!("{}/config", daemon_base())).json(&body).send().await {
-        Ok(resp) => match resp.json::<ConfigSaveResult>().await {
+    let ev = match reqwest::Client::new()
+        .post(format!("{}/config", daemon_base()))
+        .header(SERVICE_SECRET_HEADER, service_secret())
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(resp) => match parse_daemon_response::<ConfigSaveResult>(resp).await {
             Ok(result) if result.ok => AppEvent::ConfigSaved { written: result.written, warnings: result.warnings },
             Ok(result) => AppEvent::ConfigSaveFailed(result.errors),
-            Err(e) => AppEvent::ConfigSaveFailed(vec![e.to_string()]),
+            Err(e) => AppEvent::ConfigSaveFailed(vec![e]),
         },
         Err(e) => AppEvent::ConfigSaveFailed(vec![e.to_string()]),
     };
     let _ = tx.send(ev);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::{ServiceOutcome, ServiceState};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    #[test]
+    fn reload_shows_current_activity_after_many_events() {
+        let theme = serde_json::from_str(include_str!("../../tests/protocol_fixtures/theme.json")).unwrap();
+        let mut app = App::new(&theme);
+        app.screen = ScreenId::PhaseRunner;
+        app.phase_title = "RELOAD";
+        app.command_in_flight = Some("reload");
+        app.apply(AppEvent::PhaseBatch("rebuild".into()));
+        app.apply(AppEvent::PhaseStatus("Construir Deck".into(), "running".into()));
+        for i in 0..50 {
+            app.apply(AppEvent::PhaseLog("info".into(), format!("build layer {i}")));
+        }
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(100, 15)).unwrap();
+        terminal.draw(|f| screens::phase_runner::draw(f, &app)).unwrap();
+        let text: String = terminal.backend().buffer().content.iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("Fase: rebuild"), "{text}");
+        assert!(text.contains("Paso: Construir Deck"), "{text}");
+        assert!(text.contains("Transcurrido:"), "{text}");
+        assert!(text.contains("Última actividad:"), "{text}");
+        assert!(text.contains("build layer 49"), "{text}");
+        assert!(text.contains("Tab: detalle"), "{text}");
+    }
+
+    #[test]
+    fn reload_detail_can_expand_and_show_multiline_tail() {
+        let theme = serde_json::from_str(include_str!("../../tests/protocol_fixtures/theme.json")).unwrap();
+        let mut app = App::new(&theme);
+        app.phase_title = "RELOAD";
+        app.apply(AppEvent::PhaseLog("info".into(), (0..30).map(|i| format!("layer {i}\n")).collect()));
+        assert!(app.phase_progress.handle_key(KeyCode::Tab));
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(100, 12)).unwrap();
+        terminal.draw(|f| screens::phase_runner::draw(f, &app)).unwrap();
+        let text: String = terminal.backend().buffer().content.iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("layer 29"), "{text}");
+        assert!(text.contains("layer 28"), "{text}");
+        assert!(!text.contains("layer 0 "), "{text}");
+        app.phase_progress.handle_key(KeyCode::Tab);
+        terminal.draw(|f| screens::phase_runner::draw(f, &app)).unwrap();
+        let text: String = terminal.backend().buffer().content.iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("layer 29"), "{text}");
+        assert!(!text.contains("layer 28"), "{text}");
+    }
+
+    #[test]
+    fn failed_phase_expands_and_wraps_long_error_in_full() {
+        let theme = serde_json::from_str(include_str!("../../tests/protocol_fixtures/theme.json")).unwrap();
+        let mut app = App::new(&theme);
+        app.phase_title = "RELOAD";
+        app.phase_progress.start(Instant::now(), true);
+        let words: Vec<String> = (0..30).map(|i| format!("w{i:03}")).collect();
+        app.apply(AppEvent::PhaseLog("error".into(), format!("migracion fallo: {}", words.join(" "))));
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(60, 15)).unwrap();
+        terminal.draw(|f| screens::phase_runner::draw(f, &app)).unwrap();
+        let text: String = terminal.backend().buffer().content.iter().map(|c| c.symbol()).collect();
+        for w in [&words[0], &words[14], &words[29]] {
+            assert!(text.contains(w.as_str()), "{w} missing: {text}");
+        }
+        // Left/Right/Home still handled (no-ops while wrapped).
+        assert!(app.phase_progress.handle_key(KeyCode::Right));
+        assert!(app.phase_progress.handle_key(KeyCode::Home));
+    }
+
+    #[test]
+    fn healthy_collapsed_phase_stays_one_line_while_error_does_not_leak() {
+        let theme = serde_json::from_str(include_str!("../../tests/protocol_fixtures/theme.json")).unwrap();
+        let mut app = App::new(&theme);
+        app.phase_title = "RELOAD";
+        app.phase_progress.start(Instant::now(), true);
+        app.apply(AppEvent::PhaseLog("info".into(), "uno".into()));
+        app.apply(AppEvent::PhaseLog("info".into(), "dos".into()));
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(60, 15)).unwrap();
+        terminal.draw(|f| screens::phase_runner::draw(f, &app)).unwrap();
+        let text: String = terminal.backend().buffer().content.iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("dos") && !text.contains("uno"), "{text}");
+    }
+
+    #[test]
+    fn reload_timer_advances_without_events_and_stops_on_failure() {
+        let theme = serde_json::from_str(include_str!("../../tests/protocol_fixtures/theme.json")).unwrap();
+        let mut app = App::new(&theme);
+        let start = Instant::now();
+        app.phase_progress.start(start, true);
+        let mut initial = Terminal::new(ratatui::backend::TestBackend::new(100, 15)).unwrap();
+        initial.draw(|f| screens::phase_runner::draw_at(f, &app, start)).unwrap();
+        let text: String = initial.backend().buffer().content.iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("Fase: shutdown"), "{text}");
+        app.apply_at(AppEvent::PhaseBatch("boot".into()), start);
+        app.apply_at(AppEvent::PhaseStatus("Esperar Understory".into(), "running".into()), start);
+        app.apply_at(AppEvent::PhaseLog("info".into(), "Esperando conexión".into()), start + Duration::from_secs(10));
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(100, 15)).unwrap();
+        terminal.draw(|f| screens::phase_runner::draw_at(f, &app, start + Duration::from_secs(90))).unwrap();
+        let text: String = terminal.backend().buffer().content.iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("Transcurrido: 90 s · Última actividad: hace 80 s"), "{text}");
+        assert!(text.contains("Paso: Esperar Understory (running)"), "{text}");
+        app.apply_at(AppEvent::CommandFailed("reload", "desconectado".into()), start + Duration::from_secs(95));
+        terminal.draw(|f| screens::phase_runner::draw_at(f, &app, start + Duration::from_secs(120))).unwrap();
+        let text: String = terminal.backend().buffer().content.iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("Transcurrido: 95 s · Última actividad: hace 110 s"), "{text}");
+        app.phase_progress.start(start + Duration::from_secs(120), true);
+        terminal.draw(|f| screens::phase_runner::draw_at(f, &app, start + Duration::from_secs(122))).unwrap();
+        let text: String = terminal.backend().buffer().content.iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("Transcurrido: 2 s · Última actividad: sin eventos"), "{text}");
+        assert!(text.contains("Paso: esperando progreso"), "{text}");
+    }
+
+    #[test]
+    fn reload_success_freezes_duration_and_keeps_completion_visible() {
+        let theme = serde_json::from_str(include_str!("../../tests/protocol_fixtures/theme.json")).unwrap();
+        let mut app = App::new(&theme);
+        let start = Instant::now();
+        app.phase_progress.start(start, true);
+        app.apply_at(AppEvent::PhaseBatch("rebuild".into()), start);
+        app.apply_at(AppEvent::PhaseStatus("Construir Deck".into(), "done".into()), start + Duration::from_secs(25));
+        app.apply_at(AppEvent::CommandDone("reload", CommandResult { results: vec![] }), start + Duration::from_secs(30));
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(100, 15)).unwrap();
+        terminal.draw(|f| screens::phase_runner::draw_at(f, &app, start + Duration::from_secs(60))).unwrap();
+        let text: String = terminal.backend().buffer().content.iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("Transcurrido: 30 s · Última actividad: hace 35 s"), "{text}");
+        assert!(text.contains("Construir Deck (done)"), "{text}");
+        assert!(text.contains("Reboot completo."), "{text}");
+    }
+
+    /// Sirve una única respuesta HTTP/1.1 cruda en `127.0.0.1:0` y devuelve
+    /// su base URL — un servidor real en loopback, no un `reqwest::Response`
+    /// armado a mano, para que el test ejercite el parseo real de `reqwest`,
+    /// no una suposición sobre su forma.
+    async fn serve_once(status_line: &'static str, body: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = socket.read(&mut buf).await; // descarta el request, no hace falta parsearlo
+            let response = format!(
+                "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = socket.write_all(response.as_bytes()).await;
+            let _ = socket.shutdown().await;
+        });
+        format!("http://{addr}")
+    }
+
+    fn rotated(ok: bool, service_secret: Option<&str>) -> RotateResult {
+        RotateResult {
+            results: vec![ServiceOutcome { service: "deck".into(), ok, message: String::new() }],
+            service_secret: service_secret.map(String::from),
+        }
+    }
+
+    fn envelope(json: &str) -> Envelope {
+        serde_json::from_str(json).unwrap()
+    }
+
+    fn models_fixture() -> Envelope {
+        envelope(include_str!("../../tests/protocol_fixtures/models_status.json"))
+    }
+
+    /// La screen de monitor de `app`, una línea de texto por fila.
+    fn monitor_screen(app: &App, width: u16) -> String {
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 40)).unwrap();
+        terminal.draw(|f| screens::monitor::draw(f, app)).unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .chunks(width as usize)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>() + "\n")
+            .collect()
+    }
+
+    #[test]
+    fn decode_turns_models_status_into_its_event() {
+        let Some(AppEvent::ModelsStatus(status)) = decode(models_fixture()) else {
+            panic!("no decodificó models_status")
+        };
+
+        assert_eq!(status.capabilities[0].model.as_deref(), Some("test-model"));
+        assert_eq!(status.capabilities[0].state, ServiceState::Ready);
+        assert_eq!(status.services[0].name, "Understory");
+    }
+
+    #[test]
+    fn decode_ignores_the_retired_llama_status() {
+        assert!(decode(envelope(r#"{"type": "llama_status", "data": {"ready": true}}"#)).is_none());
+    }
+
+    #[test]
+    fn the_monitor_screen_paints_one_line_per_capability() {
+        let mut app = app();
+        app.apply(decode(envelope(
+            r#"{"type": "models_status", "data": {"capabilities": [
+                {"capability": "llm", "model": "qwen", "state": "ready", "error": null},
+                {"capability": "stt", "model": null, "state": "off", "error": null},
+                {"capability": "tts", "model": "voz", "state": "off", "error": "Local model activo desconocido: voz"}
+            ], "services": []}}"#,
+        ))
+        .unwrap());
+
+        let screen = monitor_screen(&app, 120);
+
+        for expected in ["llm · qwen · listo", "stt · — · apagado", "tts · voz · apagado", "desconocido: voz"] {
+            assert!(screen.contains(expected), "falta {expected:?} en:\n{screen}");
+        }
+        assert!(!screen.contains("llama-server "), "el badge de llama-server se retiró:\n{screen}");
+    }
+
+    #[test]
+    fn the_services_panel_shows_only_what_the_daemon_reports_in_name_order() {
+        let mut app = app();
+        app.apply(decode(envelope(
+            r#"{"type": "models_status", "data": {"capabilities": [], "services": [
+                {"name": "Understory", "state": "down"},
+                {"name": "Deck", "state": "ready"}
+            ]}}"#,
+        ))
+        .unwrap());
+
+        let screen = monitor_screen(&app, 120);
+
+        let deck = screen.find("Deck ONLINE").unwrap_or_else(|| panic!("falta Deck ONLINE en:\n{screen}"));
+        let understory =
+            screen.find("Understory OFFLINE").unwrap_or_else(|| panic!("falta Understory OFFLINE en:\n{screen}"));
+        assert!(deck < understory, "{screen}");
+        assert!(!screen.contains("hostexecd"), "{screen}");
+    }
+
+    #[test]
+    fn the_services_panel_is_empty_until_the_daemon_reports() {
+        let screen = monitor_screen(&app(), 120);
+
+        assert!(!screen.contains("ONLINE") && !screen.contains("OFFLINE"), "{screen}");
+    }
+
+    #[test]
+    fn service_secret_adopts_the_rotated_one_even_if_a_recreation_failed() {
+        let secret = ServiceSecret::new("viejo".into());
+
+        secret.adopt(&rotated(false, Some("nuevo")));
+
+        assert_eq!(secret.get(), "nuevo");
+    }
+
+    #[test]
+    fn service_secret_is_kept_when_the_response_brings_none() {
+        let secret = ServiceSecret::new("viejo".into());
+
+        secret.adopt(&rotated(true, None));
+
+        assert_eq!(secret.get(), "viejo");
+    }
+
+    #[tokio::test]
+    async fn parse_daemon_response_ok_on_2xx() {
+        let base = serve_once("HTTP/1.1 200 OK", r#"{"results":[]}"#).await;
+        let resp = reqwest::Client::new().get(&base).send().await.unwrap();
+
+        let result = parse_daemon_response::<CommandResult>(resp).await.unwrap();
+
+        assert!(result.results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn parse_daemon_response_reports_invalid_secret_on_401() {
+        // Mismo body que devuelve la access policy `service` del daemon real
+        // (ADR 0003) cuando `RINTHEL_SERVICE_SECRET` no matchea.
+        let base = serve_once(
+            "HTTP/1.1 401 Unauthorized",
+            r#"{"detail":"invalid or missing service secret"}"#,
+        )
+        .await;
+        let resp = reqwest::Client::new().get(&base).send().await.unwrap();
+
+        let err = parse_daemon_response::<CommandResult>(resp).await.unwrap_err();
+
+        // Regresión: un cuerpo de error del daemon debe llegar con su causa,
+        // no como error de deserialización genérico de `serde_json`.
+        assert!(err.contains("secreto de servicio inválido"), "{err}");
+        assert!(err.contains("invalid or missing service secret"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn parse_daemon_response_reports_status_and_reason_on_other_errors() {
+        let base = serve_once("HTTP/1.1 500 Internal Server Error", r#"{"detail":"boom"}"#).await;
+        let resp = reqwest::Client::new().get(&base).send().await.unwrap();
+
+        let err = parse_daemon_response::<CommandResult>(resp).await.unwrap_err();
+
+        assert_eq!(err, "500 Internal Server Error: boom");
+    }
+
+    /// Como `serve_once`, y además devuelve el pedido crudo que recibió.
+    async fn serve_capturing(
+        status_line: &'static str,
+        body: &'static str,
+    ) -> (String, tokio::sync::oneshot::Receiver<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (sent, received) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 8192];
+            let n = socket.read(&mut buf).await.unwrap_or(0);
+            let _ = sent.send(String::from_utf8_lossy(&buf[..n]).to_lowercase());
+            let response = format!(
+                "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = socket.write_all(response.as_bytes()).await;
+            let _ = socket.shutdown().await;
+        });
+        (format!("http://{addr}"), received)
+    }
+
+    fn app() -> App {
+        App::new(&serde_json::from_str(include_str!("../../tests/protocol_fixtures/theme.json")).unwrap())
+    }
+
+    #[test]
+    fn the_menu_has_the_lifecycle_entries_and_no_providers() {
+        let labels: Vec<&str> = screens::MENU_ENTRIES.iter().filter_map(|i| i.as_entry()).map(|e| e.label).collect();
+
+        let mut sorted = labels.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, ["BOOT", "CONFIGURAR", "INSTALL", "LOGS", "MONITOR", "RELOAD", "SALIR", "TERMINATE"]);
+    }
+
+    #[tokio::test]
+    async fn the_theme_is_read_with_the_service_secret() {
+        let (base, received) =
+            serve_capturing("HTTP/1.1 200 OK", include_str!("../../tests/protocol_fixtures/theme.json")).await;
+
+        fetch_theme_from(&base).await.unwrap();
+
+        let raw = received.await.unwrap();
+        assert!(raw.starts_with("get /theme "), "{raw}");
+        assert!(raw.contains("x-rinthel-service-secret:"), "{raw}");
+    }
+
+    #[tokio::test]
+    async fn run_command_reports_command_failed_on_network_error() {
+        // `parse_daemon_response` nunca corre en este caso — el error pasa
+        // por la rama `Err(e) => ... e.to_string()` de `run_command` misma,
+        // antes de llegar a parsear ninguna respuesta (no hay respuesta).
+        // Puerto privilegiado de loopback: nadie escucha ahí. Único test de este módulo que toca `daemon_port()`
+        // (`OnceLock`, se puede setear una sola vez por proceso).
+        set_daemon_port(1);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        run_command("boot", "/boot", tx).await;
+
+        match rx.recv().await {
+            Some(AppEvent::CommandFailed(name, _)) => assert_eq!(name, "boot"),
+            other => panic!("expected CommandFailed, got {other:?}"),
+        }
+    }
 }

@@ -13,7 +13,7 @@ class MessageType(StrEnum):
     GPU_SAMPLE = "gpu_sample"
     CPU_RAM_SAMPLE = "cpu_ram_sample"
     LOG_LINE = "log_line"
-    LLAMA_STATUS = "llama_status"
+    MODELS_STATUS = "models_status"
     # Progreso de un Lifecycle plan.
     PHASE_STATUS = "phase_status"
     PHASE_LOG = "phase_log"

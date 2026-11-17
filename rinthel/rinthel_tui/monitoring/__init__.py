@@ -1,5 +1,6 @@
 """Telemetría: los Telemetry streams de ``/ws/monitor`` (GPU/VRAM, CPU/RAM,
-contenedores, el log de llama-server y si llama-server está listo).
+contenedores, el log de llama-server y el estado de los Local models y de los
+managed services).
 
 Forma de ADR 0004: ``domain/`` es el Monitor, el sobre ``{type, data}``, los
 tipos de cada muestra y un puerto por fuente, sin importar infraestructura;

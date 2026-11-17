@@ -10,6 +10,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from rinthel_tui.api import create_app
 from rinthel_tui.config import Secrets
+from rinthel_tui.monitoring.domain.types import CapabilityStatus, ModelsStatus, ServiceStatus
 
 
 @pytest.mark.parametrize("query", ["", "?token=", "?token=wrong"])
@@ -36,13 +37,17 @@ def test_valid_token_receives_messages_in_the_type_data_envelope(client, service
     assert isinstance(message["data"], dict)
 
 
-@pytest.mark.parametrize("ready", [True, False])
-def test_the_monitor_streams_whether_llama_server_is_ready(client, telemetry, service_headers, ready):
-    telemetry.llama.is_ready = ready
+def test_the_monitor_streams_the_models_status(client, telemetry, service_headers):
+    telemetry.models.status = ModelsStatus(
+        capabilities=[CapabilityStatus("llm", "qwen", "ready")], services=[ServiceStatus("Understory", "down")]
+    )
     token = service_headers["x-rinthel-service-secret"]
 
     with client.websocket_connect(f"/ws/monitor?token={token}") as ws:
-        while (message := ws.receive_json())["type"] != "llama_status":
+        while (message := ws.receive_json())["type"] != "models_status":
             pass
 
-    assert message == {"type": "llama_status", "data": {"ready": ready}}
+    assert message == {"type": "models_status", "data": {
+        "capabilities": [{"capability": "llm", "model": "qwen", "state": "ready", "error": None}],
+        "services": [{"name": "Understory", "state": "down"}],
+    }}

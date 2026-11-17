@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 
 from rinthel_tui.clock import Clock
 from rinthel_tui.monitoring.domain.envelope import MessageType, envelope
-from rinthel_tui.monitoring.domain.ports import ContainerStatus, GpuSensor, HostSensor, ServiceLog, ServiceReadiness
+from rinthel_tui.monitoring.domain.ports import ContainerStatus, GpuSensor, HostSensor, ModelsSensor, ServiceLog
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class TelemetrySources:
     host: HostSensor
     containers: ContainerStatus
     log: ServiceLog
-    llama: ServiceReadiness
+    models: ModelsSensor
 
 
 def every(interval: float, sample: Callable[[], Awaitable[dict]], *, clock: Clock) -> Source:
@@ -91,8 +91,8 @@ class Monitor:
 def streams(sources: TelemetrySources, *, clock: Clock) -> list[Stream]:
     """La lista de Telemetry streams: qué fuente alimenta cada ``type`` y
     cada cuánto se muestrea. ``clock`` marca el ritmo de las muestras
-    periódicas. ``llama_status`` es un estado parado, no un evento: si
-    llama-server responde ahora."""
+    periódicas. ``models_status`` es un estado parado, no un evento: qué
+    Local model sirve cada Capability y qué servicios responden ahora."""
 
     async def gpu_sample() -> dict:
         return asdict(await sources.gpu.read())
@@ -107,13 +107,13 @@ def streams(sources: TelemetrySources, *, clock: Clock) -> list[Stream]:
         async for line in sources.log.follow():
             yield {"line": line}
 
-    async def llama_status() -> dict:
-        return {"ready": await sources.llama.ready()}
+    async def models_status() -> dict:
+        return asdict(await sources.models.read())
 
     return [
         Stream(MessageType.DOCKER_STATUS, every(3.0, docker_status, clock=clock)),
         Stream(MessageType.GPU_SAMPLE, every(1.5, gpu_sample, clock=clock)),
         Stream(MessageType.CPU_RAM_SAMPLE, every(1.5, cpu_ram_sample, clock=clock)),
         Stream(MessageType.LOG_LINE, log_line),
-        Stream(MessageType.LLAMA_STATUS, every(2.0, llama_status, clock=clock)),
+        Stream(MessageType.MODELS_STATUS, every(2.0, models_status, clock=clock)),
     ]

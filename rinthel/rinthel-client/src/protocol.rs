@@ -87,14 +87,41 @@ pub struct LogLine {
     pub line: String,
 }
 
-/// Sobre `llama_status` (ver docs/adr/0001): estado parado, transmitido en
-/// loop mientras haya un cliente conectado — no un
-/// evento puntual de una corrida como `phase_status`/`phase_log`. `ready`
-/// ya significa "servidor arriba + modelo cargado" (un solo GET contra el
-/// mismo `ready_url_of` que usa boot/reload), no hace falta más granularidad.
-#[derive(Debug, Deserialize, Clone, Default)]
-pub struct LlamaStatus {
-    pub ready: bool,
+/// Sobre `models_status`: estado parado, una muestra cada 2 s. Una línea
+/// por Capability que la Instance sirve y una fila por cada otro managed
+/// service que corre en su Platform — lo que el daemon no reporta no se
+/// pinta.
+#[derive(Debug, Deserialize, Clone, Default, PartialEq)]
+pub struct ModelsStatus {
+    pub capabilities: Vec<CapabilityStatus>,
+    pub services: Vec<ServiceStatus>,
+}
+
+/// Una Capability (`llm`/`stt`/`tts`): el Local model activo (`None` si no
+/// hay), el estado de su servicio y, si el activo no puede correr, por qué.
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+pub struct CapabilityStatus {
+    pub capability: String,
+    pub model: Option<String>,
+    pub state: ServiceState,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+pub struct ServiceStatus {
+    pub name: String,
+    pub state: ServiceState,
+}
+
+/// `ready`: responde; `down`: tendría que correr y no responde; `off`: no
+/// hay nada que correr (apagado, o sin Local model usable).
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceState {
+    Ready,
+    Down,
+    Off,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -109,8 +136,19 @@ pub struct CommandResult {
     pub results: Vec<ServiceOutcome>,
 }
 
+/// Respuesta de `POST /secrets/rotate`: lo que se recreó por la rotación
+/// (vacío mientras ningún servicio gestionado lea el secreto) y, solo si se
+/// rotó `RINTHEL_SERVICE_SECRET`, el secreto nuevo — la TUI no relee el
+/// `.env`.
+#[derive(Debug, Deserialize)]
+pub struct RotateResult {
+    pub results: Vec<ServiceOutcome>,
+    #[serde(default)]
+    pub service_secret: Option<String>,
+}
+
 /// Sobre `phase_status` (ver docs/adr/0001): un mensaje por cada `PhaseSpec`
-/// que corre `run_phase_list` del lado daemon — granularidad fina, no la
+/// que corre `lifecycle/executor.py` del lado daemon — granularidad fina, no la
 /// agrupación por servicio de la respuesta de `/boot`/`/terminate`.
 #[derive(Debug, Deserialize)]
 pub struct PhaseStatus {
@@ -150,10 +188,15 @@ pub struct ConfigField {
     pub kind: String,
     pub group: String,
     pub value: String,
+    /// El valor del Validated profile de la Platform para un campo de
+    /// hardware/cache; `None` en los campos que el perfil no cubre. Si el
+    /// valor efectivo difiere, la screen lo marca como override.
+    #[serde(default)]
+    pub profile: Option<String>,
 }
 
 /// Una sub-config de `RinthelConfig` (`llama`/`moe`/`understory`/
-/// `pithagoras`/`install`) — `enabled`/`enabled_env` son `None` para las que
+/// `deck`/`install`) — `enabled`/`enabled_env` son `None` para las que
 /// no tienen ese campo (`moe`/`install`: no son un
 /// `LocalProcessService`/`DockerComposeService`, no hay on/off).
 #[derive(Debug, Deserialize, Clone)]
