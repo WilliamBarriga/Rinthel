@@ -146,8 +146,12 @@ async def test_clone_llamacpp_raises_when_git_fails(host, report, llamacpp):
         await install.phase_install_clone_llamacpp(host, report, task=llamacpp)
 
 
-@pytest.mark.parametrize("binary", ["bin/llama-server", "bin/llama-server.exe", "bin/Release/llama-server.exe"])
-async def test_build_llamacpp_skips_when_the_binary_exists(host, report, llamacpp, binary):
+@pytest.mark.parametrize(
+    ("platform", "binary"),
+    [("linux", "bin/llama-server"), ("windows", "bin/llama-server.exe"), ("windows", "bin/Release/llama-server.exe")],
+)
+async def test_build_llamacpp_skips_when_the_binary_exists(host, report, llamacpp, platform, binary):
+    host.host_info.os = platform
     binary = llamacpp.repo_dir / "build-cuda" / binary
     binary.parent.mkdir(parents=True)
     binary.touch()
@@ -166,6 +170,31 @@ async def test_build_llamacpp_configures_then_builds_inside_the_repo(host, repor
     assert ("--config", "Release") == build.cmd[build.cmd.index("--config"):build.cmd.index("--config") + 2]
     assert configure.cwd == build.cwd == llamacpp.repo_dir
     assert "-DCMAKE_CUDA_COMPILER=/usr/bin/nvcc" in configure.cmd
+
+
+async def test_build_llamacpp_runs_the_same_commands_on_both_platforms(report, llamacpp):
+    def commands(platform):
+        host, _ = fake_host()
+        host.runner.succeed_by_default()
+        host.host_info.os = platform
+        host.host_info.install("nvcc", "/opt/nvcc")
+        host.host_info.install("cmake", "/opt/cmake")
+        return host
+
+    linux, windows = commands("linux"), commands("windows")
+    await install.phase_install_build_llamacpp(linux, report, task=llamacpp)
+    await install.phase_install_build_llamacpp(windows, report, task=llamacpp)
+
+    assert linux.runner.calls == windows.runner.calls != []
+
+
+async def test_build_llamacpp_runs_the_cmake_the_host_found(host, report, llamacpp):
+    host.host_info.install("nvcc", "/usr/bin/nvcc")
+    host.host_info.install("cmake", "/vs/cmake")
+
+    await install.phase_install_build_llamacpp(host, report, task=llamacpp)
+
+    assert [call.cmd[0] for call in host.runner.calls] == ["/vs/cmake", "/vs/cmake"]
 
 
 async def test_build_llamacpp_uses_cuda_toolkit_outside_path(host, report, llamacpp):

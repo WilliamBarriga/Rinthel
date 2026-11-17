@@ -8,19 +8,20 @@ from rinthel_tui.lifecycle.domain.types import Platform
 
 
 class SystemHostInfo:
-    """``HostInfo`` sobre shutil, un glob del toolkit de CUDA, ``os`` y hashlib.
-    ``path``, ``cuda_root`` y ``os_name`` son lo que varía: por defecto el
-    ``PATH`` del entorno, ``/usr/local`` y el ``os.name`` del proceso."""
+    """``HostInfo`` de Linux sobre shutil, un glob del toolkit de CUDA, ``os``
+    y hashlib. ``path`` y ``cuda_root`` son lo que varía: por defecto el
+    ``PATH`` del entorno y ``/usr/local``. El de Windows es ``WindowsHostInfo``."""
 
-    def __init__(
-        self, *, path: str | None = None, cuda_root: Path = Path("/usr/local"), os_name: str = os.name
-    ) -> None:
+    def __init__(self, *, path: str | None = None, cuda_root: Path = Path("/usr/local")) -> None:
         self._path = path
         self._cuda_root = cuda_root
-        self._os_name = os_name
 
     def platform(self) -> Platform:
-        return "windows" if self._os_name == "nt" else "linux"
+        return "linux"
+
+    def find_llama_server(self, build_dir: Path) -> Path | None:
+        binary = build_dir / "bin" / "llama-server"
+        return binary if binary.exists() else None
 
     def which(self, name: str) -> str | None:
         return shutil.which(name, path=self._path)
