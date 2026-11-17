@@ -25,7 +25,7 @@ model {
 
     servicio deck-server "Deck server" "Node + Express; owner of the pi runs and of deck.db" {
       source { path "deck/server/src" }
-      ruta srv-api "api" "Routes /api/*: sessions, agent (instance-soul), workspaces, models, canvases, appearance, voice, browser, memory" {
+      ruta srv-api "api" "Routes /api/*: sessions, agent (instance-soul), workspaces, models, canvases, appearance, voice, browser, memory, packages and pi-settings (admin)" {
         source { path "deck/server/src/api" }
       }
       modulo srv-auth "auth / tool-profile" "Login against the daemon; current role of the owner; tool profile by role" {
@@ -54,6 +54,10 @@ model {
         source { path "deck/server/src/session-browser.ts" }
         source { path "deck/server/src/browser-proxy.ts" }
         source { path "deck/server/src/browser" }
+      }
+      modulo srv-paquetes "pi-packages" "PiPackages port: pi packages of Deck's agentDir on the volume (list, install, remove, update) through pi's CLI, admin only; what Deck needs ships in the image (deck/skills, agent types)" {
+        source { path "deck/server/src/pi-packages.ts" }
+        source { path "deck/server/src/pi-packages-cli.ts" }
       }
       modulo srv-executors "executors" "host executor: pi runs in the server process"
       modulo srv-store "store" "Persistence in deck.db" {

@@ -25,6 +25,8 @@ export const ADAPTERS = [
   'session-proxy.ts', 'pi/sdk-client.ts', 'pi/host-exec/','session-slots/llama-slot-store.ts', 'session-roots-fs.ts', 'workspaces-fs.ts',
   // Subagents: pi's SDK for each child, and the agent types on disk (image and volume).
   'pi/subagents/',
+  // pi's package manager: its CLI, run as a child process.
+  'pi-packages-cli.ts',
   // Memoria: HTTP to Understory's MCP endpoint.
   'pi/memoria/',
   // The Instance SOUL is a file on Deck's volume.

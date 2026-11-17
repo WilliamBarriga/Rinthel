@@ -2,7 +2,7 @@ import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { FakeDaemon } from './helpers/fake-daemon.mts';
@@ -36,6 +36,7 @@ const { createCanvases } = await import('../server/src/canvases.ts');
 const { createCanvasActions, storedSessionNotes } = await import('../server/src/canvas-actions.ts');
 const { MEMBER_TOOLS } = await import('../server/src/tool-profile.ts');
 const { FsInstanceSoul } = await import('../server/src/instance-soul-fs.ts');
+const { InMemoryPiPackages } = await import('../server/src/pi-packages.ts');
 
 const slotsDir = path.join(root, 'data', 'llama-slots');
 const llama = await fakeLlama(slotsDir);
@@ -62,7 +63,10 @@ await proxy.start();
 const canvases = createCanvases(store);
 const instanceSoul = new FsInstanceSoul(path.join(root, 'data', 'instance', 'SOUL.md'));
 sessions = new SessionManager({ store, identity, proxy, roots, canvases, instanceSoulFile: instanceSoul.path, launch: (opts) => SdkPiClient.create(opts) });
-const app = createDeckApp({ store, daemon, identity, serviceSecret: 'svc', sessions, roots, slots, routing, canvases, canvasActions: createCanvasActions({ canvases, notes: storedSessionNotes(store) }), instanceSoul, webDist: path.join(root, 'no-web') });
+// No real package is ever installed: the pi CLI is a double here.
+const packages = new InMemoryPiPackages();
+const piSettingsFile = path.join(process.env.PI_CODING_AGENT_DIR!, 'settings.json');
+const app = createDeckApp({ store, daemon, identity, serviceSecret: 'svc', sessions, roots, slots, routing, canvases, canvasActions: createCanvasActions({ canvases, notes: storedSessionNotes(store) }), instanceSoul, webDist: path.join(root, 'no-web'), packages: { packages, settingsFile: piSettingsFile } });
 const server = app.listen(0, '127.0.0.1');
 await once(server, 'listening');
 const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -297,6 +301,44 @@ test('the admin turns voice on and off through Deck: stt and tts go to the daemo
   } finally {
     daemon.models.splice(daemon.models.length - voice.length, voice.length);
   }
+});
+
+test('the admin installs, lists, updates and removes pi packages; a member is refused before pi runs', async () => {
+  for (const [method, url, body] of [['GET', '/api/packages'], ['POST', '/api/packages', { spec: 'npm:pi-web@1.0.0' }], ['DELETE', '/api/packages', { spec: 'npm:pi-web@1.0.0' }], ['POST', '/api/packages/update'], ['GET', '/api/pi-settings'], ['PUT', '/api/pi-settings', { content: '{}' }]] as const) {
+    assert.equal((await call(method, url, BEA, body)).status, 403, `${method} ${url}`);
+  }
+  assert.deepEqual(packages.calls, []);
+
+  for (const spec of ['pi-web; rm -rf /', '--global', 'npm:x y', '', undefined]) {
+    assert.equal((await call('POST', '/api/packages', ADMIN, { spec })).status, 400, String(spec));
+    assert.equal((await call('DELETE', '/api/packages', ADMIN, { spec })).status, 400, String(spec));
+  }
+  assert.deepEqual(packages.calls, []);
+
+  const installed = await call('POST', '/api/packages', ADMIN, { spec: 'npm:pi-web@1.0.0' });
+  assert.deepEqual([installed.status, installed.body.ok], [200, true]);
+  assert.match((await call('GET', '/api/packages', ADMIN)).body.output, /npm:pi-web@1.0.0/);
+  assert.equal((await call('POST', '/api/packages/update', ADMIN)).status, 200);
+  assert.equal((await call('DELETE', '/api/packages', ADMIN, { spec: 'npm:pi-web@1.0.0' })).status, 200);
+  assert.deepEqual(packages.calls, ['install npm:pi-web@1.0.0', 'list', 'update', 'remove npm:pi-web@1.0.0']);
+
+  packages.failWith = 'npm ERR! 404 not found';
+  const failed = await call('POST', '/api/packages', ADMIN, { spec: 'npm:nope' });
+  packages.failWith = null;
+  assert.equal(failed.status, 502);
+  assert.match(failed.body.error, /404 not found/);
+});
+
+test("the admin edits pi's settings file; what pi could not parse is refused and never written", async () => {
+  assert.deepEqual((await call('GET', '/api/pi-settings', ADMIN)).body.content.trim(), '{}');
+  const saved = await call('PUT', '/api/pi-settings', ADMIN, { content: '{"theme":"dark"}\n' });
+  assert.equal(saved.status, 200);
+  assert.equal(readFileSync(piSettingsFile, 'utf8'), '{"theme":"dark"}\n');
+  assert.equal((await call('PUT', '/api/pi-settings', ADMIN, { content: '{broken' })).status, 400);
+  assert.equal((await call('PUT', '/api/pi-settings', ADMIN, {})).status, 400);
+  assert.equal(readFileSync(piSettingsFile, 'utf8'), '{"theme":"dark"}\n');
+  assert.equal((await call('GET', '/api/pi-settings', ADMIN)).body.content, '{"theme":"dark"}\n');
+  rmSync(piSettingsFile, { force: true });
 });
 
 test('a deleted Session takes its pi files and its saved slots with it', async () => {

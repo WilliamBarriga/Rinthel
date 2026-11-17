@@ -34,6 +34,7 @@ import { mountBrowserProxy } from "./browser-proxy.js";
 import type { BrowserSettings } from "./browser-settings.js";
 import type { BrowserRuntime } from "./instance-browser.js";
 import type { BrowserViewers } from "./browser/browser-frames.js";
+import { packagesRouter, type PackagesDeps } from "./api/packages.js";
 
 /** What the HTTP surface asks of the running Sessions (`SessionManager`, built by the composition). */
 export type DeckSessions = Pick<
@@ -68,6 +69,8 @@ export interface DeckAppDeps {
   webDist: string;
   /** The Instance browser: its admin routes and its `/browser-ui` view. Without it the Instance has no browser. */
   browser?: InstanceBrowserDeps;
+  /** pi's packages and settings file in Deck's agentDir (admin); without it there are no package routes. */
+  packages?: PackagesDeps;
 }
 
 /** What the Instance browser's routes and its view are served from. */
@@ -92,8 +95,8 @@ export interface InstanceBrowserDeps {
  *  3. `requireAuth` and the live identity every later route judges by (the Session routes refresh it
  *     before their handlers);
  *  4. the routers behind the login: retire, Sessions, their events and config, their Canvases,
- *     Appearance, the Instance SOUL, voice, workspaces, Local models, the Instance browser, and the
- *     pass-through to the daemon last among them;
+ *     Appearance, the Instance SOUL, voice, workspaces, Local models, the Instance browser, pi's
+ *     packages, and the pass-through to the daemon last among them;
  *  5. the Instance browser's view (`/browser-ui`), which judges its own caller;
  *  6. the web UI, for every path that is not `/api`.
  */
@@ -118,6 +121,7 @@ export function createDeckApp(deps: DeckAppDeps): Express {
   app.use("/api", workspacesRouter({ roots, identity }));
   app.use("/api", modelsRouter({ daemon, routing, generating: () => sessions.anyGenerating() }));
   if (deps.browser) app.use("/api", browserRouter({ store, settings: deps.browser.settings, runtime: deps.browser.runtime, cdpUrl: deps.browser.cdpUrl }));
+  if (deps.packages) app.use("/api", packagesRouter(deps.packages));
   app.use("/api", daemonProxyRouter(daemon));
 
   if (deps.browser) mountBrowserProxy(app, { settings: deps.browser.settings, identity, host: deps.browser.uiHost, viewers: deps.browser.viewers });

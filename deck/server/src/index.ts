@@ -1,4 +1,5 @@
 import path from "node:path";
+import { piPackagesCli } from "./pi-packages-cli.js";
 import { fileURLToPath } from "node:url";
 import { createCanvasActions, storedSessionNotes } from "./canvas-actions.js";
 import { createCanvases } from "./canvases.js";
@@ -112,6 +113,7 @@ const voice = {
   flags: voiceFlagsFromEnv(process.env),
 };
 
+const piAgentDir = process.env.PI_CODING_AGENT_DIR?.trim() || path.join(process.env.HOME || "/data/home", ".pi", "agent");
 const app = createDeckApp({
   store,
   daemon,
@@ -127,6 +129,8 @@ const app = createDeckApp({
   voice,
   webDist: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web/dist"),
   browser: { settings: browserStore, runtime: browserRuntime, cdpUrl: browserConfig.cdpUrl, uiHost: browserConfig.uiHost, viewers: browserViewers },
+  // pi's packages go into Deck's agentDir on the volume (pi's own rule: PI_CODING_AGENT_DIR, else ~/.pi/agent).
+  packages: { packages: piPackagesCli(), settingsFile: path.join(piAgentDir, "settings.json") },
 });
 
 ensureDir(config.binDir);
