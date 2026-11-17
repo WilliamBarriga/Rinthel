@@ -8,7 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 
 from rinthel_tui import config_edits
-from rinthel_tui.api.access import service
+from rinthel_tui.api.access import service, service_or_admin
 from rinthel_tui.api.config.dtos import ConfigPayload, ConfigUpdate, ConfigUpdateResult, ThemeResponse
 from rinthel_tui.api.deps import state
 from rinthel_tui.config import RinthelConfig
@@ -19,7 +19,7 @@ _cfg = state("cfg")
 router = APIRouter()
 
 
-@router.get("/theme", response_model=ThemeResponse, dependencies=[Depends(service)])
+@router.get("/theme", response_model=ThemeResponse, dependencies=[Depends(service_or_admin)])
 def get_theme():
     return {
         "canonical": {

@@ -24,9 +24,14 @@ def _guarded(app) -> list[tuple[str, str, APIRoute]]:
     return [(m, p, r) for m, p, r in _http_routes(app) if policies_of(r) != [access.public]]
 
 
-def test_no_route_is_public_outside_development_docs(app):
+def test_only_login_refresh_and_logout_are_public_outside_development_docs(app):
     public = {(m, p) for m, p, r in _http_routes(app) if policies_of(r) == [access.public]}
-    assert public == set()
+    assert public == {("POST", "/identity/login"), ("POST", "/identity/refresh"), ("POST", "/identity/logout")}
+
+
+def test_service_as_user_covers_only_session_principal(app):
+    acting = {(m, p) for m, p, r in _http_routes(app) if policies_of(r) == [access.service_as_user]}
+    assert acting == {("GET", "/identity/me/session-principal")}
 
 
 def test_every_route_declares_exactly_one_policy(app):

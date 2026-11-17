@@ -28,12 +28,12 @@ def install_security_schemes(app: FastAPI) -> None:
 
 def mount_docs(app: FastAPI, *, public: bool) -> None:
     """Monta ``/openapi.json`` como una ruta más, con su Access policy
-    declarada: ``service`` en producción, así el mapa de la API no queda
+    declarada: ``service_or_admin`` en producción, así el mapa de la API no queda
     público. Con ``public`` (``RINTHEL_DAEMON_DOCS=1``) monta además
     ``/docs`` y ``/redoc`` y las tres pasan a ``public`` — Swagger abre sin
     credenciales y Authorize manda las de cada ruta, que sigue aplicando su
     policy. Las tres quedan fuera del schema propio."""
-    policy = access.public if public else access.service
+    policy = access.public if public else access.service_or_admin
 
     @app.get("/openapi.json", include_in_schema=False, dependencies=[Depends(policy)])
     def openapi_json() -> dict:

@@ -62,3 +62,19 @@ _Avoid_: Perfil (es Validated profile), proveedor.
 **Instance browser**:
 El único browser que maneja el Agente. Hay uno por Instance, lo administra el Admin y solo lo usan las Sesiones de un Admin, compartido entre ellas.
 _Avoid_: Browser personal, browser del agente.
+
+**Usuario**:
+Una persona con cuenta en la Instance: nombre de usuario, contraseña y un rol, `admin` o `miembro`. Vive en `rinthel.db`, el archivo del daemon. Puede estar deshabilitado: no entra, y sus Panel tokens dejan de servir.
+_Avoid_: Cuenta, cliente, operador (el operador usa la TUI con el secreto de servicio, sin usuario).
+
+**Admin**:
+Usuario con rol `admin`. Administra a los demás usuarios desde Deck (crear, editar, deshabilitar, borrar, cambiar contraseñas, incluida la propia). La Instance nunca queda sin un Admin activo, y un Admin no puede deshabilitarse, borrarse ni quitarse el rol a sí mismo. El primero lo crea INSTALL; si se pierde su contraseña, `reset-admin` por CLI local es la única recuperación.
+_Avoid_: Root, superusuario, dueño.
+
+**Miembro**:
+Usuario con rol `miembro`. Trabaja en sus propias Sesiones de Deck y no administra usuarios ni edita su propia cuenta.
+_Avoid_: Usuario común, invitado, staff.
+
+**Panel token**:
+La credencial con que un Usuario entra a Deck: un access token (JWT firmado con `RINTHEL_PANEL_SECRET`, dura un día) y un refresh token que rota en cada uso (dura 30 días; se guarda solo su hash). Logout y deshabilitar al Usuario revocan los refresh. El token no es la autoridad: el rol y si el Usuario sigue activo se leen de `rinthel.db` en cada request.
+_Avoid_: Sesión (es una conversación con el Agente), cookie, API key.

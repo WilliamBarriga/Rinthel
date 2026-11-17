@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 
 from rinthel_tui.clock import Clock, SystemClock
 from rinthel_tui.config import RinthelConfig
+from rinthel_tui.identity.adapters.sqlite import SqliteIdentity
+from rinthel_tui.identity.domain.ports import DeckSessions, Identity
 from rinthel_tui.lifecycle.composition import real_host
 from rinthel_tui.lifecycle.domain.host import Host
 from rinthel_tui.lifecycle.services import LLAMA_SERVICE
@@ -27,6 +29,11 @@ class Adapters:
     telemetry: TelemetrySources
     # El host donde corren las phases de lifecycle (``executor.bound_to``).
     lifecycle_host: Host
+    # Users and Panel tokens, on ``rinthel.db`` (ADR 0007).
+    identity: Identity
+    # Deck's Sessions, retired before a user is deleted; ``None`` while Deck
+    # is disabled (no Sessions to retire).
+    deck_sessions: DeckSessions | None = None
     # El reloj de la app: lo comparten el Monitor y los casos de uso que
     # sellan instantes. Un test que quiere fijar el tiempo pasa un ``ManualClock``.
     clock: Clock = field(default_factory=SystemClock)
@@ -36,7 +43,12 @@ class Adapters:
         """``cfg_of`` es el ``cfg`` vivo de la app: por eso los arma
         ``create_app`` cuando no le pasan otros."""
         host = real_host()
-        return cls(telemetry=real_telemetry(cfg_of, host), lifecycle_host=host, clock=host.clock)
+        return cls(
+            telemetry=real_telemetry(cfg_of, host),
+            lifecycle_host=host,
+            identity=SqliteIdentity(cfg_of().instance.database_path, clock=host.clock),
+            clock=host.clock,
+        )
 
 
 def real_telemetry(cfg_of: Callable[[], RinthelConfig], host: Host) -> TelemetrySources:

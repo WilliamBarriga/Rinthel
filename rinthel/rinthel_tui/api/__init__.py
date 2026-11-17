@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from rinthel_tui.api import config, lifecycle, openapi, secrets, ws
+from rinthel_tui.api import config, identity, lifecycle, openapi, secrets, ws
 from rinthel_tui.api.adapters import Adapters
+from rinthel_tui.api.errors import install_errors
 from rinthel_tui.api.shared import Shared
 from rinthel_tui.api.ws import Broadcaster
 from rinthel_tui.config import RinthelConfig
@@ -51,8 +52,12 @@ def create_app(cfg: RinthelConfig, *, docs: bool = False, adapters: Adapters | N
     # ``compose`` y ``create_app`` solo las encadena.
     ws_area = ws.compose(adapters, shared)
     app.state.monitor = ws_area.monitor
-    for router in (config.router, ws_area.router, lifecycle.router, secrets.router):
+    identity_area = identity.compose(adapters)
+    app.state.identity = identity_area.identity
+    app.state.deck_sessions = identity_area.deck_sessions
+    for router in (config.router, ws_area.router, lifecycle.router, secrets.router, identity_area.router):
         app.include_router(router)
+    install_errors(app, identity_area.errors)
     openapi.install_security_schemes(app)
     openapi.mount_docs(app, public=docs)
     return app

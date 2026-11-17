@@ -114,6 +114,7 @@ def test_install_plan_preflight_first_then_every_unit_and_stops_on_failure(cfg):
             "◈ LLAMA.CPP — clone", "◈ LLAMA.CPP — build CUDA (native)", "◈ MODELO GGUF — descarga",
         ]),
         (None, "instance", ["◈ INSTANCE — secretos del .env"]),
+        (None, "identity", ["◈ IDENTITY — rinthel.db + primer admin"]),
         (None, "pithagoras", ["◈ PITHAGORAS — clone + configurar"]),
         (None, "understory", ["◈ UNDERSTORY — scaffold + configurar"]),
     ]

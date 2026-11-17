@@ -18,9 +18,11 @@ from datetime import datetime
 
 from fastapi import FastAPI
 
+from rinthel_tui import database
 from rinthel_tui.api import create_app
 from rinthel_tui.code_version import running_code_version
 from rinthel_tui.config import RinthelConfig, default_config
+from rinthel_tui.identity.adapters.sqlite import SqliteIdentity
 from rinthel_tui.instance import Instance
 
 
@@ -28,6 +30,26 @@ def startup_line(now: datetime, pid: int, version: str) -> str:
     """Marca de inicio de un boot en ``daemon.log`` (que se anexa, sin rotar):
     fecha ISO, PID y huella del código."""
     return f"[daemon] inicio {now.isoformat(timespec='seconds')} pid={pid} codigo={version}"
+
+
+def open_identity(instance: Instance) -> None:
+    """Startup gate of ``rinthel.db`` (ADR 0007), before the app exists:
+    migrates it, or stops the daemon with a clear error if SQLite is older
+    than 3.37 or the file has a schema newer than this code. Without an
+    active admin it warns: Deck still requires login and there is no open
+    mode, so the operator has to run ``reset-admin``."""
+    path = instance.database_path
+    try:
+        database.migrate(path)
+    except database.DatabaseError as exc:
+        print(f"[daemon] error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    if not SqliteIdentity(path).has_admin():
+        print(
+            "[daemon] aviso: sin admin activo: corré reset-admin "
+            "(python -m rinthel_tui.identity reset-admin)",
+            file=sys.stderr,
+        )
 
 
 def main() -> None:
@@ -48,6 +70,7 @@ def run(instance: Instance, cfg: RinthelConfig, *, create_app: Callable[..., Fas
             "corré rinthel-boot.sh (lo genera) o [0] INSTALL",
             file=sys.stderr,
         )
+    open_identity(instance)
     # `/docs` y `/redoc` solo en desarrollo: con el flag, esas dos y
     # `/openapi.json` son públicas. Mismo override que el puerto.
     docs = (instance.variable("RINTHEL_DAEMON_DOCS") or "").strip() == "1"

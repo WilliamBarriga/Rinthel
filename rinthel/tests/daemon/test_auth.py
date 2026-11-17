@@ -7,7 +7,7 @@ import pytest
 
 from rinthel_tui.config import Secrets
 
-SERVICE_ROUTES = ["/config", "/theme"]
+SERVICE_ROUTES = ["/config"]
 
 
 @pytest.mark.parametrize("route", SERVICE_ROUTES)
@@ -37,3 +37,14 @@ def test_lifecycle_commands_never_run_without_the_service_secret(client, host):
     for command in ("/boot", "/terminate", "/reload", "/install"):
         assert client.post(command).status_code == 401
     assert host.runner.calls == []
+
+
+@pytest.mark.parametrize("route", ["/theme", "/openapi.json"])
+def test_service_or_admin_routes_take_the_service_secret_or_an_admin_token(client, service_headers, seed_user, bearer, route):
+    seed_user("root", role="admin")
+    seed_user("ana")
+
+    assert client.get(route, headers=service_headers).status_code == 200
+    assert client.get(route, headers=bearer("root")).status_code == 200
+    assert client.get(route, headers=bearer("ana")).status_code == 403
+    assert client.get(route, headers={"x-rinthel-service-secret": "wrong-secret"}).status_code == 401

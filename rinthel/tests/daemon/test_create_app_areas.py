@@ -25,4 +25,6 @@ def test_the_daemon_serves_only_the_areas_of_the_trimmed_skeleton(app):
     assert paths == {
         "/theme", "/config", "/ws/monitor", "/boot", "/terminate", "/reload", "/install",
         "/secrets/rotate", "/openapi.json",
+        "/identity/login", "/identity/refresh", "/identity/logout", "/identity/me/session-principal",
+        "/identity/users", "/identity/users/{user_id}",
     }

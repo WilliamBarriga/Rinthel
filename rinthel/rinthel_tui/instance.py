@@ -66,6 +66,11 @@ class Instance:
         return self.root / "data"
 
     @property
+    def database_path(self) -> Path:
+        """The daemon's SQLite file (identity), see ``database.py``."""
+        return self.data_dir / "rinthel.db"
+
+    @property
     def logs_dir(self) -> Path:
         return self.root / "logs"
 
