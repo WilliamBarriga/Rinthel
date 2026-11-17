@@ -4,9 +4,24 @@
 # release y lanza la TUI vía rinthel-boot.sh. No toca GPU/CUDA/Docker — eso
 # vive enteramente en las fases de [0] INSTALL dentro de la propia TUI.
 # Idempotente: correrlo de nuevo con todo ya instalado no rompe nada.
+#
+# Uso:
+#   rinthel/install.sh                 bootstrap y abre la TUI
+#   rinthel/install.sh --skip-launch   solo el bootstrap
+#   rinthel/install.sh --voice         bootstrap, arranca el daemon si hace falta y corre
+#                                      INSTALL con la voz local (opt-in, solo Linux,
+#                                      repetible sobre una Instance existente); no abre la TUI
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(dirname "$DIR")"
+
+VOICE=0
+ARGS=()
+for arg in "$@"; do
+    if [[ "$arg" == "--voice" ]]; then VOICE=1; else ARGS+=("$arg"); fi
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
 MIN_MINOR=13
 
 _version_ok() {
@@ -79,6 +94,14 @@ fi
 
 echo "[install] usando $(cargo --version)"
 (cd "$DIR/rinthel-client" && cargo build --release --locked)
+
+# INSTALL --voice lo corre el daemon (POST /install, bajo el lock global del
+# lifecycle): primero el daemon arriba, después el pedido; su resultado es el
+# del script.
+if (( VOICE )); then
+    "$DIR/rinthel-boot.sh" --daemon-only
+    exec "$DIR/.venv/bin/python" -m rinthel_tui.install --root "$ROOT" --voice
+fi
 
 if [[ "${1:-}" == "--skip-launch" ]]; then
     exit 0

@@ -10,6 +10,9 @@
 # Uso:
 #   ./rinthel-boot.sh          arranca el daemon si hace falta, abre el cliente
 #   ./rinthel-boot.sh --stop   apaga el daemon (sin abrir el cliente)
+#   ./rinthel-boot.sh --daemon-only
+#                              arranca el daemon si hace falta, sin compilar ni
+#                              abrir el cliente (lo usa install.sh --voice)
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -108,11 +111,17 @@ if [[ "${1:-}" == "--stop" ]]; then
     exit 0
 fi
 
+DAEMON_ONLY=0
+if [[ "${1:-}" == "--daemon-only" ]]; then
+    DAEMON_ONLY=1
+    shift
+fi
+
 if [[ ! -x "$PYTHON" ]]; then
     echo "error: no se encontró $PYTHON — corré rinthel/install.sh primero." >&2
     exit 1
 fi
-build_client
+(( DAEMON_ONLY )) || build_client
 
 # Mismo secreto que valida la access policy `service` del daemon: la TUI lo
 # manda en cada request (`X-Rinthel-Service-Secret`). Se genera acá si falta,
@@ -149,4 +158,5 @@ else
     echo "[boot] daemon arriba (PID $(cat "$PIDFILE"))."
 fi
 
+(( DAEMON_ONLY )) && exit 0
 RINTHEL_SERVICE_SECRET="$SERVICE_SECRET" exec "$BINARY" --port "$PORT" "$@"

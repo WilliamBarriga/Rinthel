@@ -12,6 +12,7 @@ import { AppearanceProvider, AppearancePanel } from "./appearance/Appearance";
 import { InstanceSoulPanel } from "./instance-soul/InstanceSoulPanel";
 import { Sidebar } from "./shell/Sidebar";
 import { UsersPage } from "./users/UsersPage";
+import { VoicePage } from "./voice/VoicePage";
 import { BrowserPage } from "./browser/BrowserPage";
 import { NAVIGATION, canVisit, destinationFor, type NavigationEntry } from "./navigation";
 
@@ -58,6 +59,7 @@ export default function App({ navigation = NAVIGATION }: { navigation?: readonly
     "/sessions/:id": <ChatPage />,
     "/soul": <InstanceSoulPanel />,
     "/appearance": <div className="px-5 py-5"><AppearancePanel /></div>,
+    "/voice": <VoicePage />,
     "/settings": <SettingsPage />,
     "/browser": <BrowserPage onFailure={reportFailure} />,
     "/users": usersPage,

@@ -17,6 +17,10 @@ import { LlamaSlotStore } from "./session-slots/llama-slot-store.js";
 import { SessionSlots } from "./session-slots/session-slots.js";
 import { ensureDir, gracefulShutdown, loadTls, serve } from "./startup.js";
 import { openStore } from "./store/index.js";
+import { setTimeout as delay } from "node:timers/promises";
+import { voiceFirstSettings } from "./pi/voice-first.js";
+import { DirectVoiceSpeech } from "./voice/direct-voice-speech.js";
+import { voiceFlagsFromEnv } from "./voice/voice-config.js";
 import { browserSettings } from "./browser-settings.js";
 import { attachBrowserUpgrade } from "./browser-proxy.js";
 import { createBrowserRuntime } from "./extensions/browser-runtime.js";
@@ -96,9 +100,16 @@ sessions = new SessionManager({
   instanceSoulFile: instanceSoul.path,
   hostExec: config.hostExec,
   memoria: config.understoryToken ? { token: config.understoryToken, url: () => routing.understoryUrl() } : undefined,
+  voice: voiceFirstSettings(process.env),
   launch: (opts) => SdkPiClient.create(opts),
   browser: { driver: browserDriver, cdpEndpoint: browserConfig.cdpUrl, allowlist: () => browserStore.allowlist() },
 });
+
+// Voice: straight to whisper-server and audiocpp-server on the daemon's route; a busy TTS is waited for.
+const voice = {
+  speech: new DirectVoiceSpeech({ routing, busy: { retryMs: 750, waitMs: 15000, sleep: (ms, signal) => delay(ms, undefined, { signal }) } }),
+  flags: voiceFlagsFromEnv(process.env),
+};
 
 const app = createDeckApp({
   store,
@@ -112,6 +123,7 @@ const app = createDeckApp({
   canvases,
   canvasActions,
   instanceSoul,
+  voice,
   webDist: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web/dist"),
   browser: { settings: browserStore, runtime: browserRuntime, cdpUrl: browserConfig.cdpUrl, uiHost: browserConfig.uiHost, viewers: browserViewers },
 });

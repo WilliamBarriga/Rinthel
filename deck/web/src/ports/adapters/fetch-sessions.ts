@@ -19,7 +19,7 @@ export function fetchSessionsApi(fetchImpl: FetchLike = globalFetch, openStream:
     createAgent: (title) => requestJson<Session>(fetchImpl, "/api/agent/sessions", post({ title })),
     get: (id) => requestJson<Session>(fetchImpl, session(id)),
     async remove(id) { await requestJson(fetchImpl, session(id), { method: "DELETE" }); },
-    prompt: (id, message) => requestJson<PromptAccepted>(fetchImpl, `${session(id)}/prompt`, post({ message })),
+    prompt: (id, message, options) => requestJson<PromptAccepted>(fetchImpl, `${session(id)}/prompt`, post({ message, ...(options?.voice ? { voice: true } : {}) })),
     async abort(id) { await requestJson(fetchImpl, `${session(id)}/abort`, post({})); },
     config: (id) => requestJson<SessionConfig>(fetchImpl, `${session(id)}/config`),
     async answerDialog(id, dialog, answer) { await requestJson(fetchImpl, `${session(id)}/ui-response`, post({ id: dialog, ...answer })); },

@@ -121,6 +121,25 @@ test('a member chats in an agent Session: the turn goes to the Local model and i
   assert.deepEqual(body.tools.map((t: any) => t.function.name).sort(), [...MEMBER_TOOLS].sort());
 });
 
+test('a voice Turn reaches the Local model with the audio marker and without thinking; a typed one does not', async () => {
+  const id = (await call('POST', '/api/agent/sessions', ANA, {})).body.id;
+  // A Session that thinks: the voice Turn's first call is the one that does not.
+  assert.equal((await call('POST', `/api/sessions/${id}/config`, ANA, { thinkingLevel: 'high' })).status, 200);
+  await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'dime la hora', voice: true });
+  const events = await settled(id, ANA);
+  assert.deepEqual(events.filter((e) => e.type === 'portal_prompt').map((e) => [e.payload.message, e.payload.voice]), [['dime la hora', true]]);
+  const spoken = llama.bodies.at(-1);
+  // The marker opens the message, before the staff framing of a first prompt.
+  assert.match(JSON.stringify(spoken.messages.at(-1)), /"text":"\[Audio mode\]\\n[^"]*dime la hora"/);
+  assert.match(promptText(spoken), /prefixes user requests sent in voice mode/);
+  assert.equal(spoken.chat_template_kwargs?.enable_thinking, false);
+  await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'escrito' });
+  await settled(id, ANA);
+  const typed = llama.bodies.at(-1);
+  assert.doesNotMatch(JSON.stringify(typed.messages.at(-1)), /Audio mode/);
+  assert.notEqual(typed.chat_template_kwargs?.enable_thinking, false);
+});
+
 test('a member\'s Session loads the Instance SOUL as its own, and never a SOUL.md of their home', async () => {
   instanceSoul.write('# SOUL.md\nYou are Aria, the Agent of this Instance.');
   const id = (await call('POST', '/api/agent/sessions', ANA, {})).body.id;

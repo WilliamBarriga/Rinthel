@@ -9,6 +9,7 @@ import { fetchModelsApi } from '../web/src/ports/adapters/fetch-models.ts';
 import { fetchCanvasesApi } from '../web/src/ports/adapters/fetch-canvases.ts';
 import { fetchAppearanceApi } from '../web/src/ports/adapters/fetch-appearance.ts';
 import { fetchInstanceSoulApi } from '../web/src/ports/adapters/fetch-instance-soul.ts';
+import { fetchVoiceSpeech } from '../web/src/ports/adapters/fetch-voice-speech.ts';
 import { fetchBrowserApi } from '../web/src/ports/adapters/fetch-browser.ts';
 
 /**
@@ -89,6 +90,12 @@ for (const [name, make, minimum] of [
   ['canvases', (f: typeof fetch) => fetchCanvasesApi(f, (url) => { void f(url); return { addEventListener() {}, onmessage: null, close() {} }; }), 3],
   ['appearance', fetchAppearanceApi, 3],
   ['instance-soul', fetchInstanceSoulApi, 2],
+  // Speech takes the signal of its turn, so each method is called with a live one.
+  ['voice', (f: typeof fetch) => {
+    const voice = fetchVoiceSpeech(f);
+    const signal = new AbortController().signal;
+    return { settings: () => voice.settings(), saveConfig: () => voice.saveConfig({ enabled: true }), speak: (id: string) => voice.speak(id, 'x', signal), transcribe: (id: string) => voice.transcribe(id, new Blob([]), signal) };
+  }, 4],
   ['browser', fetchBrowserApi, 9],
 ] as const) {
   test(`every request of the ${name} adapter is a route the real server or the daemon has`, async () => {

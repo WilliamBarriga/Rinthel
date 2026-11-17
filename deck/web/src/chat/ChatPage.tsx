@@ -8,6 +8,9 @@ import { useActiveModel } from "../models/use-local-model";
 import { CanvasPanel } from "../canvas/CanvasPanel";
 import { SessionBrowser } from "./SessionBrowser";
 import { useChat } from "./use-chat";
+import { VoiceControl } from "../voice/VoiceControl";
+import type { WorkPhase } from "../voice/ActivityProgress";
+import type { VoiceEvent } from "../voice/use-voice-profiling";
 import { windowLabel, type TranscriptItem, type UiDialog } from "./model/transcript";
 
 /** One Session's chat: the transcript, llama-server's prefill progress, and the composer. */
@@ -22,6 +25,11 @@ export function ChatPage() {
   const model = chat.transcript.route?.model ?? active.model;
   const contextWindow = chat.window ?? active.contextWindow;
   const prefill = chat.transcript.prefill;
+  const [stage, setStage] = useState<HTMLDivElement | null>(null);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const compaction = chat.transcript.compaction;
+  const workPhase: WorkPhase | null = chat.busy && compaction.active ? { kind: "compacting", since: compaction.since }
+    : prefill && prefill.total > 0 ? { kind: "processing", prefill } : null;
 
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
@@ -44,7 +52,13 @@ export function ChatPage() {
 
       <div className="flex min-h-0 flex-1">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <section aria-label="Transcripción" className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+      {/* Voice mode takes the chat's place: the stage goes here, the dialogs stay below it. */}
+      <div ref={setStage} className={voiceMode ? "flex min-h-0 flex-1 flex-col" : "hidden"} />
+      {voiceMode && chat.transcript.dialogs.length > 0 && (
+        <div className="space-y-3 px-5 py-3">{chat.transcript.dialogs.map((d) => <Dialog key={d.id} dialog={d} onAnswer={(r) => void chat.answer(d.id, r)} />)}</div>
+      )}
+
+      <section aria-label="Transcripción" hidden={voiceMode} className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
         {chat.transcript.items.length === 0 && <p className="text-sm text-fg-subtle">Escribe para empezar.</p>}
         {chat.transcript.items.map((item) => <Item key={`${item.kind}-${item.id}`} item={item} />)}
         {prefill && prefill.total > 0 && (
@@ -55,7 +69,7 @@ export function ChatPage() {
         {chat.transcript.dialogs.map((d) => <Dialog key={d.id} dialog={d} onAnswer={(r) => void chat.answer(d.id, r)} />)}
       </section>
 
-      <form onSubmit={submit} className="border-t border-line px-5 py-3">
+      <form onSubmit={submit} hidden={voiceMode} className="border-t border-line px-5 py-3">
         {chat.error && <p role="alert" className="mb-2 text-xs text-red-500">{chat.error}</p>}
         <div className="prompt-shell">
           <textarea
@@ -73,6 +87,11 @@ export function ChatPage() {
               {isAdmin && <ModelPicker compact onSwitched={() => void active.refresh()} />}
             </div>
             <div className="composer-actions">
+              <VoiceControl
+                sessionId={id} title={chat.session?.title ?? "Sesión"} stageTarget={stage} workPhase={workPhase}
+                items={chat.transcript.items} running={chat.busy} compaction={chat.transcript.compaction} events={chat.events as VoiceEvent[]}
+                onModeChange={setVoiceMode} onSend={chat.sendVoice} onAbort={chat.stop}
+              />
               {chat.busy ? (
                 <button type="button" aria-label="Detener" className="prompt-action prompt-stop" onClick={() => void chat.stop()}><LuSquare /></button>
               ) : (

@@ -63,9 +63,13 @@ cd rinthel && python -m pytest -m live --start-llm      # plus real llama-server
 ```
 
 Run 3 has no CI: it runs by hand, on Linux, before merging a change to the
-daemon, the lifecycle or Local models. Deck's opt-in
-`live-transcription.test.mts` (a real whisper server, Linux only) is run
-by hand from `deck/` in the same pass; the Deck package documents its command.
+daemon, the lifecycle or Local models. Deck's opt-in live transcription (a
+real whisper server, Linux only) is run by hand in the same pass, against the
+`stt` route of the Instance:
+
+```bash
+cd deck && RINTHEL_LIVE_WHISPER_URL=http://127.0.0.1:8178 npm run test:live-transcription
+```
 
 ## 1. Automated suite
 
@@ -138,8 +142,9 @@ noted as **skipped**, not as done.
 
 - [ ] **INSTALL with voice on an existing Instance.** *Manual (2): it builds
   whisper.cpp and audio.cpp, downloads real models and loads one on the GPU.*
-  With the stack booted, `rinthel/.venv/bin/python -m rinthel_tui.install --voice`
-  ends with every unit `ok`; the Monitor shows `stt` and `tts` ready, and
+  `rinthel/install.sh --voice` (it brings the daemon up if needed; the same as
+  `rinthel/.venv/bin/python -m rinthel_tui.install --voice` with the stack
+  booted) ends with every unit `ok`; the Monitor shows `stt` and `tts` ready, and
   `GET /model-provider/routing` carries both. Run it again: nothing is rebuilt
   or downloaded and both stay running.
 - [ ] **Voice off and back.** *Manual (2): it stops a real service.* Turning
@@ -207,9 +212,17 @@ interface with the real daemon, model and host, and how it looks.
 - [ ] **Terminal (admin only).** *Manual (2): it opens a real pty on the host.*
   The Session terminal opens, takes commands and closes without leaving the
   process. `miembro` does not see it.
-- [ ] **Voice, theme and settings.** *Manual (1 and 3): it needs a microphone.*
-  The voice adapter records and transcribes a sentence; the theme selector
-  switches light/dark without breaking the layout, also at phone width.
+- [ ] **Voice end to end.** *Manual (1 and 3): it needs a microphone, a
+  speaker and real whisper and audio.cpp.* With `stt` and `tts` active, a
+  `miembro` turns voice on in Voz and opens one of their Sessions over HTTPS
+  (or on localhost): the microphone button is there. A spoken question is
+  transcribed and answered aloud, phrase by phrase; speaking over the reply
+  interrupts it; mute keeps the reply playing; ending voice mode releases the
+  microphone (the browser's indicator goes off) and the chat comes back with
+  the draft intact. The same Session opened by `admin` refuses voice (`403`);
+  with `tts` turned off the button disappears on the next read of Voz.
+- [ ] **Theme.** *Manual (1).* The theme selector switches light/dark without
+  breaking the layout, also at phone width.
 
 ### Logs
 

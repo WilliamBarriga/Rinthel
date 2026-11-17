@@ -6,7 +6,7 @@ export interface FakeSessionsApi extends SessionsApi {
   /** Sends an event to whoever follows Session `id`, as the server would. */
   emit(id: string, type: string, payload: unknown, live?: boolean): void;
   /** Every prompt that got in, in order. */
-  readonly prompts: { id: string; message: string }[];
+  readonly prompts: { id: string; message: string; voice?: boolean }[];
   readonly aborted: string[];
   readonly answered: { id: string; dialog: string; answer: { value?: unknown; cancelled?: boolean } }[];
 }
@@ -35,7 +35,7 @@ export function fakeSessionsApi({ sessions = [] as Session[], workspaces = [] as
     if (!row) throw new PortError("http", 404, "Sesión no encontrada");
     return row;
   };
-  const prompts: { id: string; message: string }[] = [];
+  const prompts: FakeSessionsApi["prompts"] = [];
   const aborted: string[] = [];
   const answered: FakeSessionsApi["answered"] = [];
   const api: FakeSessionsApi = {
@@ -67,9 +67,9 @@ export function fakeSessionsApi({ sessions = [] as Session[], workspaces = [] as
     },
     async get(id) { return { ...find(id) }; },
     async remove(id) { const at = rows.findIndex((s) => s.id === id); if (at >= 0) rows.splice(at, 1); },
-    async prompt(id, message) {
+    async prompt(id, message, options) {
       find(id);
-      prompts.push({ id, message });
+      prompts.push(options?.voice ? { id, message, voice: true } : { id, message });
       const turn = `turn-${prompts.length}`;
       queueMicrotask(() => {
         api.emit(id, "portal_prompt", { message, turn_id: turn });

@@ -96,7 +96,7 @@ describe("the Appearance screen", () => {
 
 describe("the Sidebar", () => {
   it("lists the surfaces that stay, for everyone, and none of the ones that left", () => {
-    expect(NAVIGATION.map((e) => e.id)).toEqual(["sessions", "chat", "soul", "appearance", "browser", "users", "settings"]);
+    expect(NAVIGATION.map((e) => e.id)).toEqual(["sessions", "chat", "soul", "appearance", "voice", "browser", "users", "settings"]);
     for (const left of ["sources", "audit", "legacy", "guard-log", "model-audit"]) expect(NAVIGATION.some((e) => e.id === left || e.path.includes(left))).toBe(false);
   });
 

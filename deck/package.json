@@ -14,7 +14,8 @@
     "dev:server": "npm run dev -w @deck/server",
     "dev:web": "npm run dev -w @deck/web",
     "start": "node server/dist/index.js",
-    "test:browser": "npm run build -w @deck/canvas-catalog && npm run build -w @deck/server && playwright test"
+    "test:browser": "npm run build -w @deck/canvas-catalog && npm run build -w @deck/server && playwright test",
+    "test:live-transcription": "node --import tsx --test tests/live/live-transcription.live.mts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

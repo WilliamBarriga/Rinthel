@@ -36,7 +36,7 @@ export interface PiClient extends EventEmitter {
   readonly profile: ToolProfile;
 
   /** Resolves once pi has taken the message (started, queued); the run goes on and reports through events. */
-  prompt(message: string): Promise<void>;
+  prompt(message: string, options?: { voice?: boolean }): Promise<void>;
   abort(): Promise<void>;
   /** Whether the agent has stopped for good, not merely between turns. */
   isIdle(): boolean;

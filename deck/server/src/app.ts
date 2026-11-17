@@ -24,6 +24,10 @@ import { instanceSoulRouter } from "./api/instance-soul.js";
 import { workspacesRouter } from "./api/workspaces.js";
 import { modelsRouter } from "./api/models.js";
 import { mountWebUi } from "./api/web-ui.js";
+import { voiceRouter } from "./api/voice.js";
+import { FakeVoiceSpeech, type VoiceSpeech } from "./voice/voice-speech.js";
+import { DEFAULT_VOICE_FLAGS } from "./voice/voice-config.js";
+import type { VoiceFlags } from "@deck/contract";
 import { daemonProxyRouter } from "./daemon-proxy.js";
 import { browserRouter } from "./api/browser.js";
 import { mountBrowserProxy } from "./browser-proxy.js";
@@ -58,6 +62,8 @@ export interface DeckAppDeps {
   canvasActions: CanvasActions;
   /** The SOUL every member's Sessions load. */
   instanceSoul: InstanceSoul;
+  /** Speech for voice and the pipeline's switches; without it the Instance has no `stt` nor `tts`. */
+  voice?: { speech: VoiceSpeech; flags: VoiceFlags };
   /** The built web UI; without it the server is an API only. */
   webDist: string;
   /** The Instance browser: its admin routes and its `/browser-ui` view. Without it the Instance has no browser. */
@@ -86,7 +92,7 @@ export interface InstanceBrowserDeps {
  *  3. `requireAuth` and the live identity every later route judges by (the Session routes refresh it
  *     before their handlers);
  *  4. the routers behind the login: retire, Sessions, their events and config, their Canvases,
- *     Appearance, the Instance SOUL, workspaces, Local models, the Instance browser, and the
+ *     Appearance, the Instance SOUL, voice, workspaces, Local models, the Instance browser, and the
  *     pass-through to the daemon last among them;
  *  5. the Instance browser's view (`/browser-ui`), which judges its own caller;
  *  6. the web UI, for every path that is not `/api`.
@@ -108,6 +114,7 @@ export function createDeckApp(deps: DeckAppDeps): Express {
   app.use("/api", canvasesRouter({ store, canvases: deps.canvases, actions: deps.canvasActions, allowed: (req) => refreshSessionReader(req, identity) }));
   app.use("/api", appearanceRouter(store.settings));
   app.use("/api", instanceSoulRouter(deps.instanceSoul));
+  app.use("/api", voiceRouter({ store, ...(deps.voice ?? { speech: new FakeVoiceSpeech({ stt: false, tts: false }), flags: DEFAULT_VOICE_FLAGS }) }));
   app.use("/api", workspacesRouter({ roots, identity }));
   app.use("/api", modelsRouter({ daemon, routing, generating: () => sessions.anyGenerating() }));
   if (deps.browser) app.use("/api", browserRouter({ store, settings: deps.browser.settings, runtime: deps.browser.runtime, cdpUrl: deps.browser.cdpUrl }));

@@ -29,6 +29,8 @@ export const ADAPTERS = [
   'pi/memoria/',
   // The Instance SOUL is a file on Deck's volume.
   'instance-soul-fs.ts',
+  // Voice: HTTP straight to whisper-server and audiocpp-server.
+  'voice/direct-voice-speech.ts',
   // The Instance browser: docker over its socket, a local Chrome, the MCP driver's processes, and its proxied view.
   'extensions/', 'browser-proxy.ts',
 ];
