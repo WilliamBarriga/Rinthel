@@ -8,7 +8,7 @@ model {
       proceso api-compose "create_app" "Single composition root: adapters from the config, shared state and one compose() per area in explicit order" {
         source { path "rinthel/rinthel_tui/api/__init__.py" }
       }
-      modulo api-access "access / caller" "Access policies (public, service, service_as_user, user, admin) and caller_of: authenticated user -> Caller" {
+      modulo api-access "access / caller" "Access policies (public, service, service_as_user, user, admin) and any_of; service_or_admin guards /theme and /openapi.json" {
         source { path "rinthel/rinthel_tui/api/access.py" }
       }
       ruta api-lifecycle "lifecycle" "/boot, /terminate, /reload, /install (service policy)" {
@@ -34,8 +34,15 @@ model {
     modulo identity "identity" "Users (admin or miembro), refresh tokens, last-admin guard, Panel token issue and refresh" {
       source { path "rinthel/rinthel_tui/identity" }
       puerto id-puertos "ports" "Identity port; transaction() wraps multi-step use cases"
-      adaptador id-sqlite "sqlite" "rinthel.db; connection per request, BEGIN IMMEDIATE on writes"
-      adaptador id-memoria "memory" "Double with a contract suite"
+      adaptador id-sqlite "sqlite" "rinthel.db; connection per call, BEGIN IMMEDIATE on writes"
+      adaptador id-memoria "memory" "Doubles of Identity and DeckSessions with a contract suite"
+      puerto id-deck "DeckSessions" "One method: retire a user's Sessions before deleting the user; None while Deck is disabled"
+      adaptador id-deck-http "deck_http" "httpx: POST /api/agent/retire-sessions with the service secret and X-Rinthel-User-Id"
+      proceso id-admin "reset-admin" "First admin of INSTALL and the local reset-admin command"
+    }
+
+    modulo database "database" "rinthel.db: connection (rollback journal, foreign_keys, busy_timeout) and migrations by user_version at startup; fails if SQLite < 3.37 or the file is newer" {
+      source { path "rinthel/rinthel_tui/database.py" }
     }
 
     modulo models "models" "Local models: catalog file, active model, route and switch" {
@@ -59,15 +66,10 @@ model {
       modulo lc-install "install" "Install: pinned models, compose services, first admin user" {
         source { path "rinthel/rinthel_tui/lifecycle/install.py" }
       }
-      modulo lc-db-setup "migrations" "Migrates rinthel.db by user_version at startup; fails if the file is newer"
       puerto host "Host" "Eight ports: Runner, Processes, Compose, Probe, Clock, HostInfo, PackageRegistry, DataDirs"
       adaptador host-procesos "processes" "Per Platform (POSIX, Windows)"
       adaptador host-compose "docker_compose"
       adaptador host-sondeo "probe / host_info / npm_registry"
-    }
-
-    modulo session-host "session_host" "Reduced to one method: on user delete the daemon calls Deck POST /api/agent/retire-sessions first, then deletes in its own transaction" {
-      source { path "rinthel/rinthel_tui/session_host" }
     }
 
     modulo monitoring "monitoring" "Telemetry streams: host resources, managed services and the active model status" {
@@ -98,7 +100,8 @@ model {
   daemon.lifecycle.lc-planes -> daemon.lifecycle.lc-specs
   daemon.lifecycle.lc-specs -> daemon.lifecycle.lc-fases
   daemon.lifecycle.lc-install -> daemon.identity "first admin"
-  daemon.lifecycle.lc-db-setup -> daemon.identity.id-sqlite "user_version migrations"
+  daemon.lifecycle.lc-install -> daemon.database "migrate"
+  daemon.identity.id-sqlite -> daemon.database "connection"
   daemon.lifecycle.lc-fases -> daemon.lifecycle.host
   daemon.lifecycle.host-procesos -> daemon.lifecycle.host
   daemon.lifecycle.host-compose -> daemon.lifecycle.host
@@ -107,5 +110,6 @@ model {
   daemon.monitoring.mon-memoria -> daemon.monitoring.mon-puertos
   daemon.identity.id-sqlite -> daemon.identity.id-puertos
   daemon.identity.id-memoria -> daemon.identity.id-puertos
-  daemon.identity -> daemon.session-host "delete user"
+  daemon.identity.id-deck-http -> daemon.identity.id-deck
+  daemon.identity.id-admin -> daemon.identity.id-puertos
 }

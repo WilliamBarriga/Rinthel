@@ -2,7 +2,7 @@
 
 El dominio de cada módulo del daemon define el interface de sus seams (el host donde corre la Instance: comandos, procesos, `docker compose`, sondeos, directorios de datos; las fuentes de telemetría del Monitor) y `subprocess`, `socket`, `urllib`, `psutil`, `nvidia-smi` y el filesystem son adapters intercambiables detrás. Se hace así para cambiar la infraestructura sin tocar el dominio: el adapter Windows de `Processes` y `Probe` entra por la raíz de composición, sin `os.name` en el dominio. El vocabulario (module, interface, seam, adapter, depth) es el de la skill `codebase-design`.
 
-Cada módulo con regla en `rinthel/tests/import_table.py` (`lifecycle`, `monitoring`) tiene la misma forma; `api`, `install`, `config`, `instance` y los demás de `UNGUARDED` son composición o infraestructura compartida:
+Cada módulo con regla en `rinthel/tests/import_table.py` (`lifecycle`, `monitoring`, `identity`) tiene la misma forma; `api`, `install`, `config`, `instance`, `database` y los demás de `UNGUARDED` son composición o infraestructura compartida:
 
 - **`domain/`** define el puerto como un `Protocol`, sus tipos y sus errores, y la regla que los usa.
 - **`adapters/`** trae el adapter real y, donde conviene, uno en memoria.

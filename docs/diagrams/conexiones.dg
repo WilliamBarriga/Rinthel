@@ -29,7 +29,7 @@ model {
   deck.deck-server.srv-daemon -> daemon.api "REST; service credential"
   deck.deck-server.srv-auth -> daemon.api.api-identity "login, session-principal"
   deck.deck-server.srv-routing -> daemon.api.api-models "GET /model-provider/routing"
-  daemon.session-host -> deck.deck-server.srv-api "POST /api/agent/retire-sessions"
+  daemon.identity.id-deck-http -> deck.deck-server.srv-api "POST /api/agent/retire-sessions"
 
   // Deck -> models, SQLite, Docker
   deck.deck-server.srv-routing -> modelos.llama-server "direct, per-Session slot"
@@ -51,7 +51,7 @@ model {
 
   // Daemon -> the rest of the Instance
   daemon.identity.id-sqlite -> rinthel-db
-  daemon.lifecycle.lc-db-setup -> rinthel-db "migrate by user_version"
+  daemon.database -> rinthel-db "migrate by user_version"
   daemon.lifecycle.host-procesos -> modelos "spawn / kill"
   daemon.lifecycle.host-compose -> docker "docker compose up / down"
   daemon.lifecycle.host-compose -> deck "up / recreate"
@@ -61,7 +61,7 @@ model {
   daemon.lifecycle.lc-install -> github "llama.cpp, whisper.cpp, audio.cpp"
   daemon.models.mod-cambio -> modelos.llama-server "switch the Local model"
   daemon.monitoring.mon-host -> modelos "GPU / CPU"
-  boot -> daemon.lifecycle.lc-db-setup "before the daemon serves"
+  boot -> daemon.database "before the daemon serves"
   cliente-tui -> daemon.api.api-lifecycle "Boot, Terminate, Reload, Install"
   cliente-tui -> daemon.api.api-ws "Monitor"
   docker -> docker-hub "images"

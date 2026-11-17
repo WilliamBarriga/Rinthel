@@ -2,8 +2,8 @@
 // Both migrate themselves at startup by PRAGMA user_version; tables are STRICT; `?` = nullable.
 // Deck stores the user id as opaque text with no FK: the two files never reference each other.
 model {
-  base rinthel-db "rinthel.db" "Daemon file in the state directory; rollback journal, connection per request, BEGIN IMMEDIATE on writes" {
-    source { path "rinthel/rinthel_tui/identity" }
+  base rinthel-db "rinthel.db" "Daemon file at data/rinthel.db; rollback journal, connection per call, BEGIN IMMEDIATE on writes" {
+    source { path "rinthel/rinthel_tui/database.py" }
 
     tabla users "users" {
       id: int pk
