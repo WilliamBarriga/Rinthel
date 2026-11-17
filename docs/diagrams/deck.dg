@@ -57,7 +57,9 @@ model {
         modulo pi-hostexec "host-exec tools" "rinthel_host_exec and its history: loaded with a token in admin Sessions only, role checked on every call; lost when the Session is tainted" {
           source { path "deck/server/src/pi/host-exec/host-exec-tools.ts" }
         }
-        modulo pi-subagent "subagent tool" "Child agent that shares the slot of its parent; lost when tainted"
+        modulo pi-subagent "subagent tool" "Child agent on the parent's model access, sharing its slot one request at a time; admin only, role checked on every call; agent types from the image plus the volume; its answer taints, and a tainted Session loses it" {
+          source { path "deck/server/src/pi/subagents/subagent-tool.ts" }
+        }
         modulo pi-memoria "memory tools" "understory_memory_query / add / update (admin only); a child gets query only"
         modulo pi-browser "browser tools" "Instance browser tools"
         modulo pi-canvas "canvas tools" "canvas_list / create / read / write / delete: the only tools of a member"

@@ -40,6 +40,10 @@ _Avoid_: Sesión sucia, taint a secas.
 El estado del Local model que Deck guarda por Sesión en el disco de `llama-server` (`data/deck/llama-slots`): se restaura antes de cada llamada al modelo y se guarda después, así volver a una Sesión no relee todo su historial. Es de un dueño, un Local model y una Sesión; se va con la Sesión y, pasado el tope de bytes, se borra el usado hace más tiempo.
 _Avoid_: Caché de sesión, KV cache a secas.
 
+**Subagent**:
+Un agente hijo al que el Agente de un admin le delega una tarea con la herramienta `subagent`. Corre en un contexto propio, en memoria, y se va al responder; usa el Local model de su padre y comparte el Slot de la Sesión, una petición a la vez. Nunca tiene `subagent`, host-exec ni escritura en Memoria. Su respuesta es palabras ajenas: deja la Sesión contaminada. Sus tipos (`scout`, `worker`, `reviewer`…) vienen en la imagen de Deck y el volumen puede sumar o reemplazar alguno.
+_Avoid_: Sub-sesión, agente secundario.
+
 **Canvas**:
 Un documento que el Agente escribe para la persona dentro de una Sesión; la persona lo lee, lo descarga y no lo edita. Es de uno de dos tipos: `markdown` (texto) o `ui` (una interfaz armada con un catálogo cerrado de componentes: encabezados, texto, tablas, tarjetas, botones y campos de formulario). Vive en memoria hasta que se guarda en `deck.db`. En un `ui`, filtrar y rellenar campos es local al navegador; la única acción que sale es «preguntar al agente».
 _Avoid_: Artefacto, página, documento a secas.
