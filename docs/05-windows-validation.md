@@ -17,7 +17,7 @@ and one concrete profile.
 | Model | Qwen3.6-35B-A3B UD-Q4_K_XL, 21.28 GiB |
 
 The exact configuration is in
-[`windows-hardware-optimization.md`](windows-hardware-optimization.md). Local
+[`02-hardware-optimization.md`](02-hardware-optimization.md#windows-validated-profile). Local
 files live by default under `%USERPROFILE%\Rinthel-data`; no user path,
 password or token is part of the repository.
 
@@ -45,10 +45,13 @@ the Windows Validated profile live in one place,
 `rinthel_tui/config.py::VALIDATED_PROFILES["windows"]`, and the 65,536-token
 window in the default entry INSTALL writes to `models.local.json`.
 `install.ps1` does not write the profile to `.env`. The `llama-server` argv is
-still identical to the validated one and is pinned by
-`rinthel/tests/models/test_validated_profile.py`; that is why neither the
-move to Deck nor the Windows override asks for a new benchmark. Any change to
-that argv does.
+pinned by `rinthel/tests/models/test_validated_profile.py`. It is **not**
+identical to the one benchmarked here: every tuning flag is, but one flag was
+appended after the benchmark, `--slot-save-path <root>/data/deck/llama-slots`
+(where Deck saves and restores each Session's slot). It changes no inference
+value, but the argv with it has **not** been benchmarked on Windows: that
+measurement is still pending on the reference machine. Any other change to
+the argv also asks for a new benchmark.
 
 The lifecycle uses Windows adapters of its own (`WindowsRunner`,
 `WindowsProcesses`, `WindowsHostInfo`: `creationflags`, stopping the process

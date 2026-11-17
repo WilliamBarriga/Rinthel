@@ -56,14 +56,17 @@ user turns it on for their own Sessions in Deck's Voz screen
 ## Documentation
 
 - [`docs/01-system-overview.md`](docs/01-system-overview.md) — what runs, lifecycle phases, code structure.
-- [`docs/02-hardware-optimization.md`](docs/02-hardware-optimization.md) — Linux inference profile.
+- [`docs/02-hardware-optimization.md`](docs/02-hardware-optimization.md) — the Linux and Windows Validated profiles.
 - [`docs/03-troubleshooting.md`](docs/03-troubleshooting.md) — common errors.
 - [`docs/04-windows-installation.md`](docs/04-windows-installation.md) and [`docs/05-windows-validation.md`](docs/05-windows-validation.md) — Windows bootstrap and its Validated profile.
-- [`docs/06-ubuntu-installation.md`](docs/06-ubuntu-installation.md) — Ubuntu bootstrap.
+- [`docs/06-ubuntu-installation.md`](docs/06-ubuntu-installation.md) — Ubuntu bootstrap, and what to delete when coming from an older layout.
 - [`docs/07-host-exec.md`](docs/07-host-exec.md) — `hostexecd`.
 - [`docs/local-models.md`](docs/local-models.md) — the Local model catalog, switching and routing.
 - [`docs/deck/`](docs/deck/) — Deck architecture and configuration.
 - [`docs/diagrams/`](docs/diagrams/) — architecture map.
+- [`docs/adr/`](docs/adr/) — architecture decision records.
+- [`docs/testing/live-checklist.md`](docs/testing/live-checklist.md) — what to check by hand on a real Instance.
+- [`rinthel/README.md`](rinthel/README.md) and [`deck/README.md`](deck/README.md) — the daemon with its TUI client, and Deck, for working on them.
 
 Configuration lives in a single root `.env` (copy from `.env.example`).
 
