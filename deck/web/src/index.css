@@ -513,3 +513,19 @@
 .voice-profile p {margin:10px 0;color:rgb(var(--fg-muted));}
 .voice-profile table {width:100%;margin:12px 0;}.voice-profile td{padding:5px 3px;border-bottom:1px solid rgb(var(--line));}.voice-profile td:not(:first-child){text-align:right;white-space:nowrap;}
 .voice-profile pre {white-space:pre-wrap;font-size:10px;max-height:160px;overflow:auto;}.voice-profile button{padding:6px 10px;border:1px solid rgb(var(--line));border-radius:8px;}
+
+/* A Session's view of the Instance browser, beside the chat (admin). */
+.session-browser-toggle { position: absolute; z-index: 15; right: 20px; top: 12px; display: flex; align-items: center; gap: 6px; padding: 7px 11px; border: 1px solid rgb(var(--line)); border-radius: 12px; background: rgb(var(--surface)); color: rgb(var(--fg)); font-size: 12px; }
+.session-browser-toggle span { color: rgb(var(--accent)); }
+.session-tools-resizer { width: 6px; flex-shrink: 0; cursor: col-resize; background: rgb(var(--line)); }
+.session-tools-resizer:focus-visible { outline: 2px solid rgb(var(--accent)); }
+.session-tools { display: flex; min-height: 0; flex-direction: column; flex-shrink: 0; border-left: 1px solid rgb(var(--line)); background: rgb(var(--surface)); }
+.session-tools[hidden] { display: none; }
+.session-tools-heading { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid rgb(var(--line)); font-size: 13px; font-weight: 600; }
+.session-tools-heading button { padding: 4px; border-radius: 8px; }
+.session-tools-heading button:hover { background: rgb(var(--fg) / .08); }
+.session-tools-option { display: flex; align-items: center; gap: 8px; padding: 10px 14px 0; font-size: 12px; }
+.session-tools-note { padding: 4px 14px; font-size: 11px; color: rgb(var(--fg-subtle)); }
+.session-tools-body { display: flex; min-height: 0; flex: 1; padding: 8px; }
+.session-tools-body iframe { flex: 1; width: 100%; border: 1px solid rgb(var(--line)); border-radius: 10px; background: #fff; }
+@media (max-width: 600px) { .session-browser-toggle { right: 8px; } }

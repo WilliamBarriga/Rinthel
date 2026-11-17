@@ -9,12 +9,14 @@ import { fakeModelsApi } from "./fakes/models";
 import { fakeCanvasesApi } from "./fakes/canvases";
 import { fakeAppearanceApi } from "./fakes/appearance";
 import { fakeInstanceSoulApi } from "./fakes/instance-soul";
+import { fakeBrowserApi } from "./fakes/browser";
 
 /** Fakes for every port; a test overrides only the ones it cares about. */
 export function fakePorts(overrides: Partial<Ports> = {}): Ports {
   return {
     authApi: fakeAuthApi(), usersAdminApi: fakeUsersAdminApi(), sessionsApi: fakeSessionsApi(), modelsApi: fakeModelsApi(),
     canvasesApi: fakeCanvasesApi(), appearanceApi: fakeAppearanceApi(), instanceSoulApi: fakeInstanceSoulApi(),
+    browserApi: fakeBrowserApi(),
     ...overrides,
   };
 }

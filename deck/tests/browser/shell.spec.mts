@@ -6,7 +6,7 @@ test('the admin lands on Sesiones; the Sidebar lists exactly the registry and th
   await login(page);
   await expect(page.getByRole('heading', { name: `Hola, ${DEMO_USER.username}`, exact: true })).toBeVisible();
   const sidebar = page.getByRole('navigation', { name: 'Navegación' });
-  for (const name of ['Sesiones', 'SOUL de la Instance', 'Apariencia', 'Usuarios', 'Ajustes']) {
+  for (const name of ['Sesiones', 'SOUL de la Instance', 'Apariencia', 'Instance browser', 'Usuarios', 'Ajustes']) {
     await expect(sidebar.getByRole('button', { name, exact: true })).toBeVisible();
   }
   for (const name of ['Buzones', 'Bandeja', 'Expertos', 'Browser', 'Registro del Guard']) {
@@ -26,7 +26,9 @@ test('a member does not see the admin destinations and a deep link to them goes 
   await expect(page).toHaveURL(/\/$/);
   const sidebar = page.getByRole('navigation', { name: 'Navegación' });
   await expect(sidebar.getByRole('button', { name: 'Sesiones', exact: true })).toBeVisible();
-  for (const name of ['Usuarios', 'Ajustes']) await expect(sidebar.getByRole('button', { name, exact: true })).toHaveCount(0);
-  await page.goto('/users');
-  await expect(page).toHaveURL(/\/$/);
+  for (const name of ['Instance browser', 'Usuarios', 'Ajustes']) await expect(sidebar.getByRole('button', { name, exact: true })).toHaveCount(0);
+  for (const deep of ['/users', '/browser']) {
+    await page.goto(deep);
+    await expect(page).toHaveURL(/\/$/);
+  }
 });
