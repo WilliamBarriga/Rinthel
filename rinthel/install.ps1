@@ -72,23 +72,18 @@ $EnvFile = Join-Path $InstanceRoot '.env'
 if (-not (Test-Path -LiteralPath $EnvFile)) {
     $DataRoot = (Join-Path $env:USERPROFILE 'Rinthel-data').Replace('\', '/')
     $UserRoot = $env:USERPROFILE.Replace('\', '/')
+    # Only machine paths: the Validated profile of Windows lives in the
+    # daemon config (rinthel_tui/config.py::VALIDATED_PROFILES), and the
+    # Local model in the catalog that [0] INSTALL writes.
     @(
         "RINTHEL_LLAMA_BIN=$DataRoot/llama.cpp/build-cuda/bin/Release/llama-server.exe"
-        "RINTHEL_LLAMA_MODEL_PATH=$DataRoot/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
+        "RINTHEL_MODELS_DIR=$DataRoot/models"
         "RINTHEL_LLAMA_LOG_PATH=$DataRoot/logs/llama-server.log"
         "RINTHEL_LLAMACPP_REPO_DIR=$DataRoot/llama.cpp"
         "RINTHEL_UNDERSTORY_DIR=$DataRoot/understory"
         "RINTHEL_PITHAGORAS_DIR=$DataRoot/pithagoras"
         "RINTHEL_WORKSPACES_DIR=$UserRoot"
         "RINTHEL_PI_AGENT_DIR=$UserRoot/.pi/agent"
-        'RINTHEL_CONTEXT_WINDOW=65536'
-        'RINTHEL_N_CPU_MOE=34'
-        'RINTHEL_UBATCH_SIZE=2048'
-        'RINTHEL_BATCH_SIZE=2048'
-        'RINTHEL_SPEC_TYPE=none'
-        'RINTHEL_CACHE_TYPE_K=q8_0'
-        'RINTHEL_CACHE_TYPE_V=q8_0'
-        'RINTHEL_MOE_CACHE_MIB=0'
     ) | Set-Content -LiteralPath $EnvFile -Encoding UTF8
     Write-Host "[install] configuración Windows creada en $EnvFile"
 }

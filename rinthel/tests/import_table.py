@@ -72,6 +72,19 @@ RULES: dict[str, list[Rule]] = {
                 why="arma rutas (pathlib) y su entorno base nunca lo lee; la red, el filesystem global, los procesos "
                     "y el reloj tienen su puerto (Probe, HostInfo, Processes, Clock)"),
     ],
+    "models": [
+        _domain("models", no_adapters=True, forbid=("rinthel_tui.config", "rinthel_tui.lifecycle"),
+                infra_allowed=frozenset({"pathlib"}),
+                why="los tipos nombran rutas (pathlib) pero el dominio no toca el disco; catálogo, instance.toml, "
+                    "el managed service y los turnos tienen su puerto"),
+        _pkg("models",
+             only=("rinthel_tui.models", "rinthel_tui.faults", "rinthel_tui.atomic_write", "rinthel_tui.instance_toml",
+                   "rinthel_tui.config", "rinthel_tui.lifecycle"),
+             per_file={"rinthel_tui/models/__main__.py": (
+                 ("rinthel_tui.instance",), "el CLI offline es raíz de composición: descubre la Instance")},
+             why="los adapters escriben con atomic_write/instance_toml; el del managed service corre el Lifecycle "
+                 "plan de llama con el cfg vivo"),
+    ],
     "identity": [
         _domain("identity", no_adapters=True, no_system_clock=True,
                 why="users and guards only: SQLite and Deck's HTTP live behind Identity and DeckSessions"),
@@ -101,6 +114,7 @@ UNGUARDED: dict[str, str] = {
     "faults": "la inyección de fallos que comparten los dobles en memoria (ADR 0005), sin dependencias",
     "install": _PLAIN,
     "instance": _PLAIN,
+    "instance_toml": _PLAIN,
     "theme": "TUI, no es del daemon",
     "tools": "herramientas del agente, sin dominio",
 }

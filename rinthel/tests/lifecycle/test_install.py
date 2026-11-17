@@ -3,6 +3,7 @@ idempotencia (reruns seguros, omiten lo que ya existe) y generación de .env a
 partir de .env.example. Corren sobre el ``Host`` de dobles con ``tmp_path``
 real: ningún comando real, ningún parche."""
 
+import dataclasses
 import json
 import stat
 from pathlib import Path
@@ -13,6 +14,7 @@ from dotenv import dotenv_values
 from rinthel_tui import database
 from rinthel_tui.identity import tokens
 from rinthel_tui.identity.adapters.sqlite import SqliteIdentity
+from rinthel_tui.install.portal_model import PORTAL_MODEL_ID, PORTAL_PROVIDER, PortalModel, phase_publish_portal_model
 from rinthel_tui.instance import Instance
 from rinthel_tui.lifecycle import install, install_tasks
 from rinthel_tui.lifecycle.domain.errors import PhaseError
@@ -42,8 +44,7 @@ def portal(cfg, tmp_path):
         branch=install_tasks.PORTAL_BRANCH,
         workspaces_dir=tmp_path / "workspaces",
         pi_agent_dir=tmp_path / "pi",
-        llama_port=8080,
-        llama_model=tmp_path / "model.gguf",
+        llama_url="http://127.0.0.1:8080",
     )
 
 
@@ -80,18 +81,19 @@ async def test_setup_portal_skips_clone_and_env_when_they_already_exist(host, re
     assert any("conservo sus secretos" in msg for msg in report.warnings)
 
 
-async def test_setup_portal_on_windows_points_pi_at_the_host_llama_server(host, report, portal):
-    host.host_info.os = "windows"
+@pytest.mark.parametrize("platform", ["linux", "windows"])
+async def test_setup_portal_points_pi_at_the_active_local_model_on_every_rerun(host, report, portal, platform):
+    host.host_info.os = platform
+    portal = dataclasses.replace(portal, llama_url="http://host.docker.internal:8080")
     (portal.dir / ".git").mkdir(parents=True)
-    (portal.dir / ".env").write_text("EXISTING=1\n")
+    (portal.dir / ".env").write_text("EXISTING=1\nPI_PROVIDER=openrouter\nPI_MODEL=/old/model.gguf\n")
 
     await install.phase_install_setup_portal(host, report, task=portal)
 
-    content = (portal.dir / ".env").read_text()
-    assert "LLAMA_BASE_URL=http://host.docker.internal:8080" in content
-    assert "PI_PROVIDER=local-llm" in content
-    assert f"PI_MODEL={portal.llama_model}" in content
-    assert json.loads((portal.pi_agent_dir / "models.json").read_text())["providers"]["local-llm"]
+    content = dotenv_values(portal.dir / ".env")
+    assert content["EXISTING"] == "1"
+    assert content["LLAMA_BASE_URL"] == "http://host.docker.internal:8080"
+    assert (content["PI_PROVIDER"], content["PI_MODEL"]) == (PORTAL_PROVIDER, PORTAL_MODEL_ID)
 
 
 async def test_setup_portal_provisions_one_host_exec_token(host, report, portal, cfg):
@@ -164,18 +166,56 @@ def test_prepare_portal_for_windows_is_idempotent(report, tmp_path):
     assert dockerfile_path.read_text() == first_dockerfile
 
 
-def test_write_local_model_config_is_idempotent(report, tmp_path):
-    agent_dir = tmp_path / "agent"
-    model_path = tmp_path / "model.gguf"
+# ── el modelo del portal: su pi apunta al Local model activo ───────
 
-    install.write_local_model_config(agent_dir, model_path, 8080, report)
-    first = (agent_dir / "models.json").read_text()
-    install.write_local_model_config(agent_dir, model_path, 8080, report)
 
-    provider = json.loads(first)["providers"]["local-llm"]
-    assert provider["baseUrl"] == "http://host.docker.internal:8080/v1"
-    assert provider["models"][0]["id"] == str(model_path)
-    assert (agent_dir / "models.json").read_text() == first
+def _portal_model(tmp_path, model) -> PortalModel:
+    return PortalModel(tmp_path / "linux-agent", tmp_path / "windows-agent", "http://127.0.0.1:8080", model)
+
+
+@pytest.mark.parametrize("platform,agent", [("linux", "linux-agent"), ("windows", "windows-agent")])
+async def test_the_portal_pi_reads_the_active_model_where_its_platform_mounts_it(
+    host, report, cfg, tmp_path, platform, agent
+):
+    host.host_info.os = platform
+    await phase_publish_portal_model(host, report, task=_portal_model(tmp_path, cfg.local_model))
+
+    provider = json.loads((tmp_path / agent / "models.json").read_text())["providers"][PORTAL_PROVIDER]
+    assert provider["baseUrl"] == "http://127.0.0.1:8080/v1"
+    assert provider["models"] == [
+        {"id": PORTAL_MODEL_ID, "name": cfg.local_model.name, "contextWindow": cfg.local_model.context_window}
+    ]
+
+
+async def test_publishing_keeps_the_other_providers_and_follows_a_new_model(host, report, cfg, tmp_path):
+    path = tmp_path / "linux-agent" / "models.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({"providers": {"otro": {"apiKey": "keep"}}}))
+    other = dataclasses.replace(cfg.local_model, id="otro-modelo", name="Otro", context_window=8192)
+
+    await phase_publish_portal_model(host, report, task=_portal_model(tmp_path, cfg.local_model))
+    await phase_publish_portal_model(host, report, task=_portal_model(tmp_path, other))
+
+    providers = json.loads(path.read_text())["providers"]
+    assert providers["otro"] == {"apiKey": "keep"}
+    assert providers[PORTAL_PROVIDER]["models"][0] == {"id": PORTAL_MODEL_ID, "name": "Otro", "contextWindow": 8192}
+
+
+async def test_without_an_active_model_the_portal_file_is_left_alone(host, report, tmp_path):
+    await phase_publish_portal_model(host, report, task=_portal_model(tmp_path, None))
+
+    assert not (tmp_path / "linux-agent").exists()
+    assert len(report.warnings) == 1
+
+
+async def test_a_broken_portal_models_file_fails_the_phase(host, report, cfg, tmp_path):
+    path = tmp_path / "linux-agent" / "models.json"
+    path.parent.mkdir()
+    path.write_text("{roto")
+
+    with pytest.raises(PhaseError):
+        await phase_publish_portal_model(host, report, task=_portal_model(tmp_path, cfg.local_model))
+    assert path.read_text() == "{roto"
 
 
 # ── UNDERSTORY ──────────────────────────────────────────────────────
@@ -201,27 +241,6 @@ async def test_setup_understory_generates_env_and_bundle(host, report, cfg, tmp_
     assert (task.dir / ".env").read_text() == "AUTH_TOKEN=abc123\n"
     assert (task.dir / "bundle" / "agents" / "index.md").exists()
     assert (task.dir / "bundle" / "index.md").exists()
-
-
-# ── el perfil Ubuntu ────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize("phase", ["portal", "understory"])
-async def test_the_ubuntu_profile_prepares_the_monorepo_from_the_instance_env(
-    host, report, cfg, tmp_path, portal, monkeypatch, phase
-):
-    from rinthel_tui.install import ubuntu
-
-    cfg.instance.env_path.write_text("COMPOSE_FILE=docker-compose.ubuntu.yml\n")
-    calls = []
-    monkeypatch.setattr(ubuntu, "prepare", calls.append)
-
-    if phase == "portal":
-        await install.phase_install_setup_portal(host, report, task=portal)
-    else:
-        await install.phase_install_setup_understory(host, report, task=_understory(cfg, tmp_path))
-
-    assert calls == [cfg.instance.root]
 
 
 # ── SECRETOS DE LA INSTANCE ─────────────────────────────────────────

@@ -96,26 +96,18 @@ git branch --show-current
 rinthel/install.sh --skip-launch
 ```
 
-La rama debe ser `fix/ubuntu-26-04`. El script instala Rust si falta,
-crea `.venv`, prepara la configuración Linux y compila el cliente.
-No descarga el modelo ni inicia los contenedores en este paso.
+El script instala Rust si falta, crea `.venv`, instala el daemon y compila
+el cliente. No descarga el modelo ni inicia los contenedores en este paso.
 
-El perfil Linux usa `COMPOSE_FILE=docker-compose.ubuntu.yml` en `.env`,
-datos en `data/`, secretos generados localmente y el proveedor `local-llm`.
-No reutilices un `.venv` o rutas absolutas de Windows. El instalador conserva
-los valores existentes en `.env`; revisa ese archivo si lo copiaste de otra
-máquina. Los archivos `.env` y `data/` están ignorados por Git.
+Linux usa el compose raíz único (ya no hay un perfil Ubuntu aparte ni
+`COMPOSE_FILE`), datos en `data/` y secretos generados localmente. No
+reutilices un `.venv` o rutas absolutas de Windows. Los archivos `.env`,
+`data/` y `models.local.json` están ignorados por Git.
 
-Si el checkout también contiene host exec, el bootstrap añade su overlay al
-perfil Ubuntu, prepara el token compartido y monta la extensión en el portal.
-Al integrar host exec en una instalación Ubuntu existente, vuelve a ejecutar
-el bootstrap y recrea el portal para cargar ese entorno. El perfil Windows
-mantiene sus stacks separados.
-
-Ambos contenedores usan `network_mode: host`, por lo que alcanzan al modelo
-en `127.0.0.1:8080` sin reglas iptables especiales. Los servidores web
-escuchan en las interfaces del host; limita con tu firewall el acceso desde
-otras máquinas si solo quieres uso local. El perfil no activa VPN ni voz.
+El portal usa la red del host, por lo que alcanza al modelo en
+`127.0.0.1:8080` (`deck.host_address`) sin reglas iptables especiales. Los
+servidores web escuchan en las interfaces del host; limita con tu firewall el
+acceso desde otras máquinas si solo quieres uso local.
 
 Comprueba la configuración sin imprimir secretos:
 
@@ -126,17 +118,18 @@ rinthel/rinthel-boot.sh
 
 En la interfaz:
 
-1. **INSTALL**: valida dependencias, compila llama.cpp upstream (ggml-org, rama `master`) con CUDA y descarga el GGUF
-   (aproximadamente 22 GB). Deja que la descarga termine: la lógica antigua
-   puede confundir una descarga interrumpida con un archivo completo.
+1. **INSTALL**: valida dependencias, compila llama.cpp upstream (ggml-org, rama `master`) con CUDA, descarga el GGUF
+   del Local model por defecto (aproximadamente 22 GB) y escribe el catálogo
+   inicial `models.local.json` con ese modelo activo
+   ([`local-models.md`](local-models.md)).
 2. **BOOT**: carga el modelo y construye/inicia Understory y Pithagoras.
 3. **MONITOR**: confirma que los tres servicios estén disponibles.
 4. Abre <http://127.0.0.1:4100>. La contraseña está en `PORTAL_PASSWORD` del
    `.env` local. Understory queda en <http://127.0.0.1:3800>.
 
-El perfil conserva los valores de inferencia validados en Windows como
-punto de partida, sin afirmar el mismo rendimiento en Linux. Cierra juegos
-u otras aplicaciones que consuman mucha RAM/VRAM durante la primera prueba.
+Linux arranca con su Validated profile (`VALIDATED_PROFILES["linux"]` en
+`rinthel_tui/config.py`). Cierra juegos u otras aplicaciones que consuman
+mucha RAM/VRAM durante la primera prueba.
 
 En Pithagoras, para conectar las herramientas de memoria, abre **Settings →
 MCP**, instala `pi-mcp-adapter` si el portal lo solicita, y añade un servidor
@@ -164,14 +157,14 @@ tail -n 60 logs/llama-server.log
 ```
 
 Si Docker muestra permisos denegados, confirma que la sesión tenga el grupo
-`docker`; reiniciar solo la terminal puede no aplicar el cambio. Ejecuta de
-nuevo `rinthel/install.sh --skip-launch` después de instalar Docker para registrar
-su GID real. No uses `sudo rinthel/install.sh`, porque los datos quedarían con
-propietario root.
+`docker`; reiniciar solo la terminal puede no aplicar el cambio. Si tu
+`docker` no es el GID 984, pon `DOCKER_GID` en `.env`. No uses
+`sudo rinthel/install.sh`, porque los datos quedarían con propietario root.
 
-Si cambias el puerto del modelo o su ruta en CONFIGURAR, ejecuta de nuevo
-`rinthel/install.sh --skip-launch`, detén el daemon con `--stop` y vuelve a abrirlo;
-así se actualizan `models.json` y las variables que heredan los contenedores.
+Para cambiar de Local model, edita `models.local.json` y usa
+`python -m rinthel_tui.models use <id>` con los servicios parados, o el
+cambio del daemon ([`local-models.md`](local-models.md)). Cada BOOT y cada
+cambio reescriben el `models.json` del portal.
 
 ## Pruebas reproducibles
 

@@ -62,7 +62,6 @@ if [[ ! -x "$DIR/.venv/bin/python" ]]; then
 fi
 
 "$DIR/.venv/bin/python" -m pip install -q -e "$DIR"
-"$DIR/.venv/bin/python" -m rinthel_tui.install.ubuntu
 
 # ── Rust (cliente) ──────────────────────────────────────────────
 # El binario Rust es el cliente reemplazable, el daemon Python es la

@@ -23,7 +23,6 @@ ahora es consistente con el resto de los servicios (``RINTHEL_LLAMA_PORT``/
 """
 
 import os
-import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -32,6 +31,11 @@ from typing import Any
 from dotenv import dotenv_values
 
 from rinthel_tui.instance import Instance
+from rinthel_tui.lifecycle.domain.types import Platform
+from rinthel_tui.models.adapters.json_catalog import JsonCatalog
+from rinthel_tui.models.adapters.toml_active import TomlActiveModels
+from rinthel_tui.models.domain.models import resolve
+from rinthel_tui.models.domain.types import DEFAULT_REASONING_FORMAT, LocalModel
 
 
 def _p(path: str) -> Path:
@@ -142,6 +146,8 @@ def _load(
     return cls(**{f.attr: _LOADERS[f.kind](f.env, default_of(f), source) for f in fields})
 
 
+_LOCAL_MODEL_HINT = "es del Local model: editá models.local.json y elegí el activo con «models use <id>»"
+
 # Variables del fork thecodacus/llama.cpp que llama.cpp upstream no tiene: un
 # .env viejo las puede seguir trayendo y se ignoran en silencio.
 _LEGACY_ENV: dict[str, str] = {
@@ -150,20 +156,24 @@ _LEGACY_ENV: dict[str, str] = {
     "RINTHEL_MOE_TRACE_BUILD": "llama-moe-trace ya no existe en upstream",
     "RINTHEL_MOE_TRACE_OUT_DIR": "llama-moe-trace ya no existe en upstream",
     "RINTHEL_SCHED_ASYNC_CPU": "--no-sched-async-cpu ya no existe en upstream",
+    # Lo que ahora es de cada Local model (catálogo ``models.local.json`` y
+    # ``[models]`` de ``data/instance.toml``), no del ``.env``.
+    "RINTHEL_LLAMA_MODEL_PATH": _LOCAL_MODEL_HINT,
+    "RINTHEL_CONTEXT_WINDOW": _LOCAL_MODEL_HINT,
+    "RINTHEL_LLAMA_MMPROJ_PATH": _LOCAL_MODEL_HINT,
+    "RINTHEL_LLAMA_MMPROJ_ENABLED": _LOCAL_MODEL_HINT,
+    "RINTHEL_MTP_ENABLED": _LOCAL_MODEL_HINT,
+    "RINTHEL_MODEL_DOWNLOAD_URL": "INSTALL descarga el modelo por defecto del Validated profile",
 }
 
 
 @dataclass(frozen=True)
 class LlamaConfig:
     bin: Path
-    model: Path
     port: int
     log: Path
     enabled: bool
     ngl: str
-    context_window: int
-    mmproj: str
-    mmproj_enabled: bool
     flash_attention: bool
     fit_to_memory: bool
     n_cpu_moe: int
@@ -180,13 +190,10 @@ class LlamaConfig:
     cache_reuse: int
     cache_ram: int
     load_mode: str
-    # ``mtp_enabled`` es el interruptor único de MTP (multi-token
-    # prediction / speculative decoding) — un solo parámetro para
-    # prenderlo/apagarlo. Cuando es False el argv arranca con
-    # ``--spec-type none`` sin importar ``spec_type`` (ver
-    # ``lifecycle/services.py::_llama_argv``); cuando es True se usa
-    # ``spec_type`` como modo (default ``draft-mtp``).
-    mtp_enabled: bool
+    # El modo de MTP (speculative decoding) cuando el Local model activo lo
+    # prende (``mtp`` en su entrada del catálogo); con ``mtp`` apagado el
+    # argv arranca con ``--spec-type none`` sin mirar este valor (ver
+    # ``lifecycle/services.py::_llama_argv``).
     spec_type: str
     spec_draft_n_max: int
     cache_type_k: str
@@ -198,19 +205,10 @@ class LlamaConfig:
 # relación con flash attention pese a lo que sugeriría un nombre distinto.
 LLAMA_FIELDS: list[Field] = [
     Field("bin", "RINTHEL_LLAMA_BIN", Path, "~/llama.cpp/src/build-cuda/bin/llama-server", exists=True, group="general"),
-    Field("model", "RINTHEL_LLAMA_MODEL_PATH", Path, "~/llama.cpp/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", exists=True, group="general"),
     Field("port", "RINTHEL_LLAMA_PORT", int, 8080, port=True, group="general"),
     Field("log", "RINTHEL_LLAMA_LOG_PATH", Path, lambda i: str(i.logs_dir / "llama-server.log"), group="general"),
     Field("enabled", "RINTHEL_LLAMA_ENABLED", bool, True, group="general"),
     Field("ngl", "RINTHEL_NGL", str, "all", group="compute"),
-    Field("context_window", "RINTHEL_CONTEXT_WINDOW", int, 112000, positive=True, group="general"),
-    # str (no Path/exists=True) a propósito: "" = sin visión, arg --mmproj
-    # se omite en _llama_argv (services.py) en ese caso.
-    Field("mmproj", "RINTHEL_LLAMA_MMPROJ_PATH", str, "", group="vision"),
-    # Separado de `mmproj` (el path) a propósito: deja apagar/prender visión
-    # sin perder el path guardado — _llama_argv (services.py) exige los dos
-    # (enabled=true Y path no vacío) para mandar --mmproj.
-    Field("mmproj_enabled", "RINTHEL_LLAMA_MMPROJ_ENABLED", bool, True, group="vision"),
     Field("flash_attention", "RINTHEL_FLASH_ATTENTION", bool, True, group="compute"),
     Field("fit_to_memory", "RINTHEL_FIT_TO_MEMORY", bool, False, group="compute"),
     Field("n_cpu_moe", "RINTHEL_N_CPU_MOE", int, 60, group="compute"),
@@ -227,28 +225,66 @@ LLAMA_FIELDS: list[Field] = [
     Field("cache_reuse", "RINTHEL_CACHE_REUSE", int, 256, group="cache"),
     Field("cache_ram", "RINTHEL_CACHE_RAM", int, -1, group="cache"),
     Field("load_mode", "RINTHEL_LOAD_MODE", str, "mlock", group="general"),
-    # Interruptor único de MTP (apagado por default — prenderlo sin el
-    # .env que calibró esta máquina reproduce el OOM de
-    # test-tarkAIrk/logs/08, ver docs/02-hardware-optimization.md).
-    # Primero en el grupo para que aparezca arriba de los dos campos de
-    # "cómo" (spec_type/spec_draft_n_max) en [N] CONFIGURAR.
-    Field("mtp_enabled", "RINTHEL_MTP_ENABLED", bool, False, group="speculative"),
     Field("spec_type", "RINTHEL_SPEC_TYPE", str, "draft-mtp", group="speculative"),
     Field("spec_draft_n_max", "RINTHEL_SPEC_DRAFT_N_MAX", int, 2, group="speculative"),
     Field("cache_type_k", "RINTHEL_CACHE_TYPE_K", str, "f16", group="cache"),
     Field("cache_type_v", "RINTHEL_CACHE_TYPE_V", str, "f16", group="cache"),
 ]
 
-# Keep the measured Windows profile local to Windows. Explicit environment
-# values still take precedence; the established Linux defaults remain intact.
-_WINDOWS_LLAMA_DEFAULTS: dict[str, Any] = {
-    "context_window": 65536,
-    "n_cpu_moe": 34,
-    "ubatch_size": 2048,
-    "batch_size": 2048,
-    "spec_type": "none",
-    "cache_type_k": "q8_0",
-    "cache_type_v": "q8_0",
+@dataclass(frozen=True)
+class DefaultModel:
+    """El Local model que INSTALL descarga y deja activo: la entrada inicial
+    del catálogo, con la ventana de contexto medida para la Platform."""
+
+    id: str
+    name: str
+    file: str
+    url: str
+    context_window: int
+    reasoning_format: str = DEFAULT_REASONING_FORMAT
+
+
+@dataclass(frozen=True)
+class ValidatedProfile:
+    """El Validated profile de una Platform (ver GLOSSARY.md), en un solo
+    lugar: ``llama`` pisa el default de los ``LLAMA_FIELDS`` de hardware
+    (una variable explícita del ``.env`` o del shell sigue ganando) y
+    ``model`` es el Local model por defecto. Cambiar cualquiera de los dos
+    cambia el argv de ``llama-server``, y eso pide un benchmark nuevo
+    (``docs/05-windows-validation.md``)."""
+
+    llama: dict[str, Any]
+    model: DefaultModel
+
+
+_QWEN = "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
+
+
+def _qwen(context_window: int) -> DefaultModel:
+    return DefaultModel(
+        id="qwen3.6-35b-a3b",
+        name="Qwen3.6 35B A3B",
+        file=_QWEN,
+        url=f"https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/resolve/main/{_QWEN}",
+        context_window=context_window,
+    )
+
+
+VALIDATED_PROFILES: dict[Platform, ValidatedProfile] = {
+    # Los defaults de LLAMA_FIELDS son los de Linux.
+    "linux": ValidatedProfile(llama={}, model=_qwen(112000)),
+    # Medido en la máquina de referencia (docs/05-windows-validation.md).
+    "windows": ValidatedProfile(
+        llama={
+            "n_cpu_moe": 34,
+            "ubatch_size": 2048,
+            "batch_size": 2048,
+            "spec_type": "none",
+            "cache_type_k": "q8_0",
+            "cache_type_v": "q8_0",
+        },
+        model=_qwen(65536),
+    ),
 }
 
 
@@ -281,24 +317,6 @@ UNDERSTORY_FIELDS: list[Field] = [
 
 
 @dataclass(frozen=True)
-class DeckConfig:
-    """Deck, the web portal: its own port while the legacy portal keeps 4100."""
-
-    dir: Path
-    port: int
-    enabled: bool
-
-
-DECK_FIELDS: list[Field] = [
-    # Subtree del monorepo. Estado real (deck.db, home de pi) vive en la raíz
-    # de la Instance, en data/deck.
-    Field("dir", "RINTHEL_DECK_DIR", Path, lambda i: str(i.deck_dir)),
-    Field("port", "RINTHEL_DECK_PORT", int, 4200, port=True),
-    Field("enabled", "RINTHEL_DECK_ENABLED", bool, True),
-]
-
-
-@dataclass(frozen=True)
 class PithagorasConfig:
     """El portal heredado, hasta que Deck lo reemplace."""
 
@@ -313,6 +331,37 @@ PITHAGORAS_FIELDS: list[Field] = [
     Field("port", "RINTHEL_PITHAGORAS_PORT", int, 4100, port=True),
     Field("enabled", "RINTHEL_PITHAGORAS_ENABLED", bool, True),
 ]
+
+
+@dataclass(frozen=True)
+class DeckConfig:
+    """Lo que el daemon necesita saber de Deck. ``host_address`` es cómo Deck
+    alcanza el host desde su contenedor: el daemon arma con ella toda URL que
+    le entrega (la ruta de llama, voz, hostexecd); Deck nunca las reescribe.
+    Hasta que Deck reemplace al portal heredado, este la usa igual, y Deck
+    escucha en su propio puerto."""
+
+    host_address: str
+    dir: Path
+    port: int
+    enabled: bool
+
+
+DECK_FIELDS: list[Field] = [
+    Field("host_address", "RINTHEL_DECK_HOST_ADDRESS", str, "127.0.0.1"),
+    # Subtree del monorepo. Estado real (deck.db, home de pi) vive en la raíz
+    # de la Instance, en data/deck.
+    Field("dir", "RINTHEL_DECK_DIR", Path, lambda i: str(i.deck_dir)),
+    Field("port", "RINTHEL_DECK_PORT", int, 4200, port=True),
+    Field("enabled", "RINTHEL_DECK_ENABLED", bool, True),
+]
+
+# Default por Platform: en Linux el contenedor comparte la red del host;
+# Docker Desktop (Windows) llega al host por su nombre reservado.
+_DECK_DEFAULTS: dict[Platform, dict[str, Any]] = {
+    "linux": {},
+    "windows": {"host_address": "host.docker.internal"},
+}
 
 
 @dataclass(frozen=True)
@@ -352,7 +401,7 @@ IDENTITY_FIELDS: list[Field] = [
 class InstallConfig:
     llamacpp_repo_dir: Path
     llamacpp_repo_url: str
-    model_download_url: str
+    models_dir: Path
     pithagoras_repo_url: str
     workspaces_dir: Path
     pi_agent_dir: Path
@@ -361,12 +410,8 @@ class InstallConfig:
 INSTALL_FIELDS: list[Field] = [
     Field("llamacpp_repo_dir", "RINTHEL_LLAMACPP_REPO_DIR", Path, "~/llama.cpp/src"),
     Field("llamacpp_repo_url", "RINTHEL_LLAMACPP_REPO_URL", str, "https://github.com/ggml-org/llama.cpp.git"),
-    Field(
-        "model_download_url",
-        "RINTHEL_MODEL_DOWNLOAD_URL",
-        str,
-        "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
-    ),
+    # Donde INSTALL baja el GGUF del Local model por defecto (fuera del repo).
+    Field("models_dir", "RINTHEL_MODELS_DIR", Path, "~/llama.cpp/models"),
     Field("pithagoras_repo_url", "RINTHEL_PITHAGORAS_REPO_URL", str, "https://github.com/WilliamBarriga/pithagoras.git"),
     Field("workspaces_dir", "RINTHEL_WORKSPACES_DIR", Path, "~"),
     Field("pi_agent_dir", "RINTHEL_PI_AGENT_DIR", Path, "~/.pi/agent"),
@@ -408,6 +453,27 @@ class RinthelConfig:
     identity: IdentityConfig = IdentityConfig()
     # Las variables legacy presentes al construir el cfg (shell o ``.env``).
     legacy_env: tuple[str, ...] = ()
+    platform: Platform = "linux"
+    # El Local model activo de ``llm`` que llama-server sirve (o va a servir
+    # en el próximo boot). ``None``: no hay uno usable y llama no arranca;
+    # ``model_warning`` dice por qué.
+    local_model: LocalModel | None = None
+    model_warning: str | None = None
+
+    @property
+    def profile(self) -> ValidatedProfile:
+        return VALIDATED_PROFILES[self.platform]
+
+    def model_llama(self) -> LlamaConfig:
+        """``llama`` con los overrides propios del Local model activo (solo
+        los de su lista blanca: sampling y speculative decoding)."""
+        if self.local_model is None or not self.local_model.overrides:
+            return self.llama
+        kinds = {f.attr: f.kind for f in LLAMA_FIELDS}
+        return replace(
+            self.llama,
+            **{attr: _PARSERS[kinds[attr]](str(v)) for attr, v in self.local_model.overrides.items()},
+        )
 
     def validate(self) -> list[str]:
         """Devuelve warnings de paths que no existen todavía (no bloquean:
@@ -453,6 +519,8 @@ class RinthelConfig:
                 if not path.exists():
                     warnings.append(f"{f.env}={path} no existe todavía")
         warnings.extend(f"{name} ya no se usa: {_LEGACY_ENV[name]}" for name in self.legacy_env)
+        if self.model_warning:
+            warnings.append(self.model_warning)
         warnings.extend(self._mtp_warnings())
         return warnings
 
@@ -469,9 +537,10 @@ class RinthelConfig:
         buffer extra), ``logs/27`` (MTP + batch 2048 = 48 MiB libres, reproduce
         el OOM) y ``handoff/03`` (MTP no soporta ``--parallel`` > 1 ni
         ``--mmproj``)."""
-        llama = self.llama
-        if not llama.mtp_enabled:
+        model = self.local_model
+        if model is None or not model.mtp:
             return []
+        llama = self.model_llama()
         out: list[str] = []
         if max(llama.batch_size, llama.ubatch_size) > 1024:
             out.append(
@@ -485,14 +554,14 @@ class RinthelConfig:
                 f"MTP + RINTHEL_PARALLEL={llama.parallel}: llama.cpp no soporta MTP con "
                 "--parallel > 1 (test-tarkAIrk/handoff/03) — bajá parallel a 1 con MTP prendido"
             )
-        if llama.mmproj_enabled and llama.mmproj:
+        if model.mmproj is not None:
             out.append(
                 "MTP + visión (--mmproj): llama.cpp no soporta MTP con --mmproj — el flag queda "
-                "omitido del argv mientras MTP esté prendido (la config guardada no se toca)"
+                "omitido del argv mientras MTP esté prendido (el catálogo no se toca)"
             )
         if llama.spec_type in ("", "none"):
             out.append(
-                f"mtp_enabled=true pero RINTHEL_SPEC_TYPE={llama.spec_type or '(vacío)'}: "
+                f"mtp=true en {model.id} pero spec_type={llama.spec_type or '(vacío)'}: "
                 "el argv arranca con --spec-type none, MTP queda apagado pese al interruptor"
             )
         return out
@@ -553,32 +622,34 @@ def with_secret(cfg: RinthelConfig, env: str, value: str) -> RinthelConfig:
     return replace(cfg, secrets=replace(cfg.secrets, **{attr: value}))
 
 
-def default_config(instance: Instance | None = None, *, platform: str | None = None) -> RinthelConfig:
+def with_local_model(cfg: RinthelConfig, model: LocalModel) -> RinthelConfig:
+    """``cfg`` con ``model`` como Local model activo de ``llm``."""
+    return replace(cfg, local_model=model, model_warning=None)
+
+
+def default_config(instance: Instance | None = None, *, platform: Platform | None = None) -> RinthelConfig:
     """Config construida desde el ``.env`` de ``instance`` (default:
     ``Instance.discover()``), leído del archivo en cada llamada — sin
     ``load_dotenv`` al importar. Las ``RINTHEL_*`` del shell ganan.
-    ``platform`` (``os.name`` por defecto) elige el Validated profile."""
+    ``platform`` (la del proceso por defecto) elige el Validated profile. El
+    Local model activo sale del catálogo y de ``instance.toml``."""
     instance = instance or Instance.discover()
-    platform = os.name if platform is None else platform
+    platform = platform or ("windows" if os.name == "nt" else "linux")
     file_env = {k: v for k, v in dotenv_values(instance.env_path).items() if v is not None}
     env = {**file_env, **os.environ}
-
-    llama = _load(
-        LlamaConfig,
-        LLAMA_FIELDS,
-        env,
-        instance,
-        defaults=_WINDOWS_LLAMA_DEFAULTS if platform == "nt" else None,
-    )
+    active = resolve(JsonCatalog(instance.models_catalog_path), TomlActiveModels(instance.instance_toml_path), "llm")
     return RinthelConfig(
         instance=instance,
-        llama=llama,
+        llama=_load(LlamaConfig, LLAMA_FIELDS, env, instance, defaults=VALIDATED_PROFILES[platform].llama),
         moe=_load(MoeConfig, MOE_FIELDS, env, instance),
         understory=_load(UnderstoryConfig, UNDERSTORY_FIELDS, env, instance),
         pithagoras=_load(PithagorasConfig, PITHAGORAS_FIELDS, env, instance),
-        deck=_load(DeckConfig, DECK_FIELDS, env, instance),
         install=_load(InstallConfig, INSTALL_FIELDS, env, instance),
+        deck=_load(DeckConfig, DECK_FIELDS, env, instance, defaults=_DECK_DEFAULTS[platform]),
         secrets=Secrets(**{attr: _str_env(name, "", env) for attr, name in SECRET_ENVS.items()}),
         identity=_load(IdentityConfig, IDENTITY_FIELDS, env, instance),
         legacy_env=tuple(name for name in _LEGACY_ENV if name in env),
+        platform=platform,
+        local_model=active.model,
+        model_warning=active.warning,
     )

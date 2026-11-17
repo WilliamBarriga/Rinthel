@@ -26,7 +26,7 @@ model {
       ruta api-identity "identity" "Login, refresh, users, /me/session-principal" {
         source { path "rinthel/rinthel_tui/api/identity" }
       }
-      ruta api-models "models" "GET /model-provider/routing (service policy) and the active Local model switch" {
+      ruta api-models "models" "GET /model-provider/routing (service policy); GET /models and POST /models/activate (admin policy)" {
         source { path "rinthel/rinthel_tui/api/models" }
       }
     }
@@ -50,6 +50,9 @@ model {
       modulo mod-catalogo "catalog" "models.local.json (hand-written, untracked) and the Validated profile of the Platform"
       proceso mod-cambio "switch" "kill, spawn, ready, rollback on failure, under the global lifecycle lock"
       modulo mod-ruta "routing" "URL, id, context window and reasoning format of the active model; the active id lives in instance.toml"
+      puerto mod-puertos "ports" "Catalog, ActiveModels, ModelService, Turns"
+      adaptador mod-archivos "json_catalog / toml_active / llama_slots / lifecycle_llama" "Catalog file, instance.toml, llama-server /slots and the llama restart plan"
+      adaptador mod-memoria "memory" "Doubles with a contract suite"
     }
 
     modulo lifecycle "lifecycle" "Lifecycle plans of the managed services" {

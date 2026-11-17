@@ -4,6 +4,7 @@ import os
 import signal
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 import psutil
 
@@ -20,6 +21,10 @@ class AsyncioProcesses:
     def __init__(self) -> None:
         self._procs: dict[int, asyncio.subprocess.Process] = {}
 
+    def _isolation(self) -> dict[str, Any]:
+        """Popen options that put the child in its own session/group."""
+        return {"start_new_session": True}
+
     async def spawn(
         self, argv: Sequence[str], *, log: Path, cwd: Path | None = None, env: Mapping[str, str] | None = None
     ) -> ProcessHandle:
@@ -32,7 +37,7 @@ class AsyncioProcesses:
                     env={**os.environ, **env} if env else None,
                     stdout=log_file,
                     stderr=asyncio.subprocess.STDOUT,
-                    start_new_session=True,
+                    **self._isolation(),
                 )
             except OSError as exc:
                 raise SpawnFailed(f"{argv[0]}: {exc.strerror or exc}") from exc

@@ -3,6 +3,7 @@ antes de armar la app, para separar boots en un ``daemon.log`` que se anexa."""
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -31,6 +32,13 @@ def test_run_prints_marker_before_building_the_app(cfg, capsys: pytest.CaptureFi
     first = capsys.readouterr().out.splitlines()[0]
     assert first.startswith("[daemon] inicio ")
     assert " pid=" in first
+
+
+def test_run_warns_when_no_local_model_can_run(cfg, capsys: pytest.CaptureFixture[str]) -> None:
+    unknown = dataclasses.replace(cfg, local_model=None, model_warning="Local model activo desconocido: borrado")
+    with pytest.raises(_Stop):
+        rinthel_tui.daemon.run(cfg.instance, unknown, create_app=_no_app)
+    assert "Local model activo desconocido: borrado" in capsys.readouterr().err
 
 
 def test_run_warns_when_the_service_secret_is_missing(cfg, capsys: pytest.CaptureFixture[str]) -> None:

@@ -18,6 +18,8 @@ from rinthel_tui.config import Secrets
 from rinthel_tui.identity import tokens
 from rinthel_tui.identity.adapters.sqlite import SqliteIdentity
 from rinthel_tui.identity.domain.types import UserRow
+from rinthel_tui.models.adapters.memory import InMemoryActiveModels, InMemoryCatalog, InMemoryTurns
+from rinthel_tui.models.composition import ModelAdapters
 from rinthel_tui.monitoring.adapters.memory import (
     InMemoryContainers,
     InMemoryGpu,
@@ -57,6 +59,13 @@ def host():
 
 
 @pytest.fixture
+def model_adapters() -> ModelAdapters:
+    """Catálogo, modelo activo y turnos en memoria: los Local models que el
+    test declare."""
+    return ModelAdapters(catalog=InMemoryCatalog(), active=InMemoryActiveModels(), turns=InMemoryTurns())
+
+
+@pytest.fixture
 def clock() -> ManualClock:
     return ManualClock()
 
@@ -74,10 +83,10 @@ def identity(identity_path, clock) -> SqliteIdentity:
 
 
 @pytest.fixture
-def adapters(telemetry, host, identity) -> Adapters:
+def adapters(telemetry, host, identity, model_adapters) -> Adapters:
     """The app's clock stays the system one: the Monitor samples on it. A
     test that moves time for tokens swaps in ``clock``."""
-    return Adapters(telemetry=telemetry, lifecycle_host=host, identity=identity)
+    return Adapters(telemetry=telemetry, lifecycle_host=host, identity=identity, models=model_adapters)
 
 
 @pytest.fixture

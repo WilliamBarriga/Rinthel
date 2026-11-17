@@ -37,8 +37,8 @@ for **Understory** (MCP memory layer) and **Pithagoras** (task portal).
   validated Windows profile, measured performance and grounded-use cases.
 - [`docs/windows-hardware-optimization.md`](docs/windows-hardware-optimization.md) —
   inference settings for the validated Windows hardware.
-- [`docs/local-model-picker.md`](docs/local-model-picker.md) —
-  authenticated model switching for the Ubuntu portal.
+- [`docs/local-models.md`](docs/local-models.md) — the Local model
+  catalog, the active model, switching and the routing Deck reads.
 
 ## `[0]` Quick install (new machine)
 
@@ -54,8 +54,8 @@ Con Python 3.13+, Rust y Git disponibles:
 El bootstrap crea `.venv`, instala el daemon, compila el cliente y abre
 Rinthel. CUDA, CMake y Docker Desktop se validan después desde `INSTALL`;
 el script no los instala ni descarga el modelo sin que el usuario elija esa
-opción en la TUI. En la máquina Windows de referencia, el instalador también
-crea un perfil conservador para 32 GB de RAM y 8 GB de VRAM; consulta
+opción en la TUI. En Windows rige el Validated profile medido para 32 GB de
+RAM y 8 GB de VRAM (en la config del daemon, no en `.env`); consulta
 [`docs/05-windows-validation.md`](docs/05-windows-validation.md) antes de
 subir contexto, batch u offload de GPU.
 
@@ -69,18 +69,15 @@ Ubuntu 26.04 incluye Python 3.14; no necesita el PPA deadsnakes.
 rinthel/install.sh
 ```
 
-El bootstrap crea `.venv`, instala el daemon, prepara `.env` y `data/`,
-compila el cliente Rust y abre la TUI. `rinthel/install.sh --skip-launch` instala
-sin abrir la interfaz. Rust se instala con rustup si no existe Cargo.
+El bootstrap crea `.venv`, instala el daemon, compila el cliente Rust y
+abre la TUI. `rinthel/install.sh --skip-launch` instala sin abrir la
+interfaz. Rust se instala con rustup si no existe Cargo. Linux usa el
+compose raíz único.
 
-El perfil Linux selecciona `docker-compose.ubuntu.yml`: los contenedores
-usan la red del host para alcanzar llama-server por loopback, sin reglas
-iptables ni paquetes Pi de otra máquina. Los secretos existentes se
-conservan. El perfil de inferencia es el punto de partida de Windows;
-todavía requiere un benchmark en Linux.
-
-Después usa **INSTALL** para compilar llama.cpp y descargar el modelo
-(~22 GB), y **BOOT** para iniciar los servicios. CUDA, CMake y Docker deben
+Después usa **INSTALL** para compilar llama.cpp, descargar el Local model
+por defecto (~22 GB) y escribir el catálogo inicial (ver
+[`docs/local-models.md`](docs/local-models.md)), y **BOOT** para iniciar
+los servicios. CUDA, CMake y Docker deben
 estar instalados antes de ejecutar INSTALL. Node.js no hace falta en el
 host: los servicios web se compilan en Docker.
 
@@ -172,15 +169,16 @@ cp .env.example .env
 (it's in `.gitignore`). Without a `.env`, the embedded defaults from
 `rinthel_tui/config.py::default_config()` are used.
 
-Available variables: binary/model/log paths, each service's port, and all
-the inference flags (`-c`, `--temp`, `--top-p`, `--n-cpu-moe`, `--threads`,
+Available variables: binary/log paths, each service's port, and all
+the hardware and sampling flags (`--temp`, `--top-p`, `--n-cpu-moe`, `--threads`,
 etc.) — see `.env.example` for the full list with their values, and
 [`docs/02-hardware-optimization.md`](docs/02-hardware-optimization.md) for
 why each inference flag is set the way it is.
 
-If `RINTHEL_LLAMA_BIN` or `RINTHEL_LLAMA_MODEL_PATH` point at something
-that doesn't exist, the app **doesn't crash on startup** — it just warns
-on stderr. The real failure (with a clear message) only happens if you
+If `RINTHEL_LLAMA_BIN` points at something that doesn't exist, or the
+active Local model is unknown or invalid, the app **doesn't crash on
+startup** — it just warns on stderr (without an active model, BOOT leaves
+`llama-server` out). The real failure (with a clear message) only happens if you
 pick BOOT and the llama-server spawn phase actually fails. More cases in
 [`docs/03-troubleshooting.md`](docs/03-troubleshooting.md).
 

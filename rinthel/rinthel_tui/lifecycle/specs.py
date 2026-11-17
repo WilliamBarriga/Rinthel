@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from rinthel_tui.config import RinthelConfig
-from rinthel_tui.lifecycle import install, services
+from rinthel_tui.install import portal_model
+from rinthel_tui.lifecycle import install, install_tasks, services
 from rinthel_tui.lifecycle.domain.host import Host
 from rinthel_tui.lifecycle.domain.outcome import PhaseReport
 from rinthel_tui.lifecycle.domain.phases import data_dir, docker, managed_service
@@ -136,7 +137,31 @@ def _enabled_docker(cfg: RinthelConfig) -> list[DockerComposeService]:
 
 
 def _local_unit(cfg: RinthelConfig, svc: LocalProcessService) -> Unit:
+    if svc is services.LLAMA_SERVICE and cfg.local_model is None:
+        # Sin Local model activo usable llama no arranca: el aviso queda en
+        # el resultado del boot y el resto de los servicios sigue.
+        notice = PhaseSpec(
+            f"◈ {svc.menu_label}  --  SIN LOCAL MODEL ACTIVO",
+            managed_service.phase_notice,
+            {"message": cfg.model_warning or "sin Local model activo"},
+        )
+        return Unit(svc.display_name.lower(), (notice,))
     return Unit(svc.display_name.lower(), (_spawn_spec(cfg, svc), _wait_spec(cfg, svc)))
+
+
+def llama_restart_plan(cfg: RinthelConfig) -> Plan:
+    """El cambio de Local model: parar lo que escuche en el puerto de llama,
+    lanzar con el modelo de ``cfg`` y esperar a que responda. Cada paso es
+    obligatorio: un puerto que no se libera o un modelo que no responde es un
+    fallo, y quien cambia decide el rollback."""
+    llama = services.LLAMA_SERVICE
+    spec = llama.spec(cfg)
+    phases = (
+        PhaseSpec(f"◈ {llama.kill_label}", managed_service.phase_kill, {"service": spec, "required": True}),
+        _spawn_spec(cfg, llama),
+        PhaseSpec(f"◈ ESPERANDO {llama.wait_label}", managed_service.phase_wait_ready, {"service": spec, "required": True}),
+    )
+    return Plan(on_failure="stop", batches=(Batch(marker=None, units=(Unit(llama.display_name.lower(), phases),)),))
 
 
 def _portal_data_dir(cfg: RinthelConfig, svc: DockerComposeService) -> tuple[str, Path] | None:
@@ -163,6 +188,13 @@ def _docker_unit(cfg: RinthelConfig, svc: DockerComposeService, *, rebuild: bool
             {"path": path, "uid": uid, "gid": gid},
         )
         phases.insert(0, data)
+    if svc is services.PITHAGORAS_SERVICE:
+        model = PhaseSpec(
+            "◈ PORTAL  --  LOCAL MODEL ACTIVO",
+            portal_model.phase_publish_portal_model,
+            {"task": install_tasks.portal_model(cfg)},
+        )
+        phases.insert(1, model)
     return Unit(svc.display_name.lower(), tuple(phases))
 
 

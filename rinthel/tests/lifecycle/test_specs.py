@@ -59,6 +59,7 @@ def test_boot_plan_checks_docker_then_spawns_llama_then_ups_each_docker_service(
         (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER", "◈ ESPERANDO UNDERSTORY"]),
         (None, "pithagoras", [
             "◈ DATOS DEL PORTAL  --  DUEÑO DEL DIRECTORIO",
+            "◈ PORTAL  --  LOCAL MODEL ACTIVO",
             "◈ PITHAGORAS  --  PI TASK PORTAL",
             "◈ ESPERANDO PITHAGORAS",
         ]),
@@ -81,7 +82,7 @@ def test_terminate_plan_stops_every_service_and_continues_on_failure(cfg):
 
     assert plan.on_failure == "continue"
     assert _shape(plan) == [
-        (None, "llama-server", ["◈ LLAMA-SERVER  --  Qwen3.6-35B-A3B-MTP"]),
+        (None, "llama-server", ["◈ LLAMA-SERVER  --  LOCAL MODEL"]),
         (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER"]),
         (None, "pithagoras", ["◈ PITHAGORAS  --  PI TASK PORTAL"]),
         (None, "deck", ["◈ DECK  --  WEB PORTAL"]),
@@ -93,7 +94,7 @@ def test_reload_plan_shuts_down_then_boots_local_then_rebuilds_docker(cfg):
 
     assert plan.on_failure == "stop"
     assert _shape(plan) == [
-        (None, "llama-server", ["◈ LLAMA-SERVER  --  Qwen3.6-35B-A3B-MTP"]),
+        (None, "llama-server", ["◈ LLAMA-SERVER  --  LOCAL MODEL"]),
         (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER"]),
         (None, "pithagoras", ["◈ PITHAGORAS  --  PI TASK PORTAL"]),
         (None, "deck", ["◈ DECK  --  WEB PORTAL"]),
@@ -103,6 +104,7 @@ def test_reload_plan_shuts_down_then_boots_local_then_rebuilds_docker(cfg):
         ("rebuild", "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER", "◈ ESPERANDO UNDERSTORY"]),
         ("rebuild", "pithagoras", [
             "◈ DATOS DEL PORTAL  --  DUEÑO DEL DIRECTORIO",
+            "◈ PORTAL  --  LOCAL MODEL ACTIVO",
             "◈ PITHAGORAS  --  PI TASK PORTAL",
             "◈ ESPERANDO PITHAGORAS",
         ]),
@@ -124,6 +126,7 @@ def test_install_plan_preflight_first_then_every_unit_and_stops_on_failure(cfg):
         (None, "preflight", ["◈ PREFLIGHT — GPU/CUDA/cmake/docker"]),
         (None, "llama.cpp + modelo", [
             "◈ LLAMA.CPP — clone", "◈ LLAMA.CPP — build CUDA (native)", "◈ MODELO GGUF — descarga",
+            "◈ LOCAL MODELS — catálogo inicial",
         ]),
         (None, "instance", ["◈ INSTANCE — secretos del .env"]),
         (None, "identity", ["◈ IDENTITY — rinthel.db + primer admin"]),

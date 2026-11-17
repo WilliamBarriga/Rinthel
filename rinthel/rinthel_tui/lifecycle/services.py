@@ -3,8 +3,6 @@
 Understory y el portal vía docker compose) sin tocar ``managed_service.py``.
 """
 
-from pathlib import Path
-
 from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle.managed_service import DockerComposeService, LocalProcessService
 
@@ -12,49 +10,51 @@ from rinthel_tui.lifecycle.managed_service import DockerComposeService, LocalPro
 
 
 def _llama_argv(cfg: RinthelConfig) -> list[str]:
-    """El argv del Validated profile: cualquier cambio de orden o de flags
-    pide un benchmark nuevo (``docs/05-windows-validation.md``)."""
+    """El argv del Validated profile con el Local model activo: cualquier
+    cambio de orden o de flags pide un benchmark nuevo
+    (``docs/05-windows-validation.md``). Sin Local model activo no hay nada
+    que lanzar (``specs.boot_plan`` deja a llama-server fuera); parar por
+    puerto no necesita el argv."""
+    model = cfg.local_model
+    if model is None:
+        return []
+    llama = cfg.model_llama()
     argv = [
-        str(cfg.llama.bin), "-m", str(cfg.llama.model),
-        "-ngl", cfg.llama.ngl,
-        "-c", str(cfg.llama.context_window),
-        "-fa", "on" if cfg.llama.flash_attention else "off",
-        "-fit", "on" if cfg.llama.fit_to_memory else "off",
+        str(llama.bin), "-m", str(model.gguf),
+        "-ngl", llama.ngl,
+        "-c", str(model.context_window),
+        "-fa", "on" if llama.flash_attention else "off",
+        "-fit", "on" if llama.fit_to_memory else "off",
         # 0.0.0.0, no 127.0.0.1 (el default de llama-server): Understory
         # corre en un container Docker y llega acá vía host.docker.internal
         # (host-gateway), que no alcanza un bind en loopback puro.
         "--host", "0.0.0.0",
-        "--port", str(cfg.llama.port),
-        "--n-cpu-moe", str(cfg.llama.n_cpu_moe),
-        "--threads-batch", str(cfg.llama.threads_batch),
-        "--threads", str(cfg.llama.threads),
-        "--ubatch-size", str(cfg.llama.ubatch_size),
-        "--batch-size", str(cfg.llama.batch_size),
-        "--parallel", str(cfg.llama.parallel),
-        "--temp", str(cfg.llama.temperature),
-        "--top-p", str(cfg.llama.top_p),
-        "--top-k", str(cfg.llama.top_k),
-        "--min-p", str(cfg.llama.min_p),
-        "--repeat-penalty", str(cfg.llama.repeat_penalty),
-        "--cache-reuse", str(cfg.llama.cache_reuse),
-        "--cache-ram", str(cfg.llama.cache_ram),
-        "--load-mode", cfg.llama.load_mode,
-        # Interruptor único de MTP: apagado, el modo se fuerza a "none" sin
-        # mirar spec_type (así RINTHEL_MTP_ENABLED=false apaga MTP aunque
-        # .env todavía traiga RINTHEL_SPEC_TYPE=draft-mtp); prendido, manda
-        # spec_type (default draft-mtp).
-        "--spec-type", cfg.llama.spec_type if cfg.llama.mtp_enabled else "none",
-        "--spec-draft-n-max", str(cfg.llama.spec_draft_n_max),
-        "--cache-type-k", cfg.llama.cache_type_k,
-        "--cache-type-v", cfg.llama.cache_type_v,
+        "--port", str(llama.port),
+        "--n-cpu-moe", str(llama.n_cpu_moe),
+        "--threads-batch", str(llama.threads_batch),
+        "--threads", str(llama.threads),
+        "--ubatch-size", str(llama.ubatch_size),
+        "--batch-size", str(llama.batch_size),
+        "--parallel", str(llama.parallel),
+        "--temp", str(llama.temperature),
+        "--top-p", str(llama.top_p),
+        "--top-k", str(llama.top_k),
+        "--min-p", str(llama.min_p),
+        "--repeat-penalty", str(llama.repeat_penalty),
+        "--cache-reuse", str(llama.cache_reuse),
+        "--cache-ram", str(llama.cache_ram),
+        "--load-mode", llama.load_mode,
+        # MTP lo prende el Local model (``mtp``): apagado, el modo se fuerza a
+        # "none" sin mirar spec_type; prendido, manda spec_type.
+        "--spec-type", llama.spec_type if model.mtp else "none",
+        "--spec-draft-n-max", str(llama.spec_draft_n_max),
+        "--cache-type-k", llama.cache_type_k,
+        "--cache-type-v", llama.cache_type_v,
     ]
     # --mmproj se omite con MTP: llama.cpp no lo soporta junto a spec
-    # decoding. El path y su toggle quedan guardados igual — solo se saltea
-    # el flag en este arranque.
-    if cfg.llama.mmproj_enabled and cfg.llama.mmproj and not cfg.llama.mtp_enabled:
-        # str (no Path) en LlamaConfig: expandimos "~" acá, el argv va
-        # directo al proceso sin pasar por un shell.
-        argv += ["--mmproj", str(Path(cfg.llama.mmproj).expanduser())]
+    # decoding. La entrada del catálogo no cambia; solo se saltea el flag.
+    if model.mmproj is not None and not model.mtp:
+        argv += ["--mmproj", str(model.mmproj)]
     if cfg.moe.cache_mib > 0:
         argv += ["--moe-cache-mib", str(cfg.moe.cache_mib)]
     return argv
@@ -71,7 +71,7 @@ LLAMA_SERVICE = LocalProcessService(
     display_name="llama-server",
     menu_label="LLAMA-SERVER",
     wait_label="LLAMA-SERVER",
-    kill_label="LLAMA-SERVER  --  Qwen3.6-35B-A3B-MTP",
+    kill_label="LLAMA-SERVER  --  LOCAL MODEL",
     build_argv=_llama_argv,
     port_of=lambda cfg: cfg.llama.port,
     log_of=lambda cfg: cfg.llama.log,

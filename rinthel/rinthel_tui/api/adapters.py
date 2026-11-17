@@ -17,6 +17,7 @@ from rinthel_tui.identity.domain.ports import DeckSessions, Identity
 from rinthel_tui.lifecycle.composition import real_host
 from rinthel_tui.lifecycle.domain.host import Host
 from rinthel_tui.lifecycle.services import LLAMA_SERVICE
+from rinthel_tui.models.composition import ModelAdapters
 from rinthel_tui.monitoring.adapters.docker_compose import DockerComposeContainers
 from rinthel_tui.monitoring.adapters.http_readiness import HttpReadiness
 from rinthel_tui.monitoring.adapters.log_file import FileLog
@@ -34,6 +35,8 @@ class Adapters:
     lifecycle_host: Host
     # Users and Panel tokens, on ``rinthel.db`` (ADR 0007).
     identity: Identity
+    # Catálogo, modelo activo y turnos en curso de los Local models.
+    models: ModelAdapters
     # Deck's Sessions, retired before a user is deleted; ``None`` while Deck
     # is disabled (no Sessions to retire).
     deck_sessions: DeckSessions | None = None
@@ -52,6 +55,7 @@ class Adapters:
             lifecycle_host=host,
             identity=SqliteIdentity(cfg.instance.database_path, clock=host.clock),
             deck_sessions=real_deck_sessions(cfg),
+            models=ModelAdapters.real(cfg_of),
             clock=host.clock,
         )
 

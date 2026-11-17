@@ -54,14 +54,14 @@ without running out of memory — the cache is what keeps the hot experts
 resident in VRAM even though every MoE layer is CPU-side. With more VRAM
 available, lowering this number gains prefill speed.
 
-## `RINTHEL_MTP_ENABLED` — MTP on/off with a single parameter
+## `mtp` — MTP on/off per Local model
 
 The gguf ships with MTP (multi-token prediction, speculative decoding)
-baked in. One boolean turns it on and off — `true` → `--spec-type
-draft-mtp` (mode from `RINTHEL_SPEC_TYPE`), `false` → `--spec-type
-none`, regardless of what the mode variable says. Same checkbox in
-`[N] CONFIGURAR > LLAMA-SERVER > SPECULATIVE DECODING`, so toggling it
-never means editing `.env` by hand.
+baked in. The `mtp` boolean of the Local model's catalog entry turns it on
+and off — `true` → `--spec-type draft-mtp` (mode from `RINTHEL_SPEC_TYPE`),
+`false` → `--spec-type none`, regardless of what the mode variable says
+(see [`local-models.md`](local-models.md); the old `RINTHEL_MTP_ENABLED`
+is ignored).
 
 MTP is **off** in this setup (decision 2026-09-24): it needs ~650 MiB of
 extra compute buffer for its CUDA graph capture (`test-tarkAIrk/logs/08`)

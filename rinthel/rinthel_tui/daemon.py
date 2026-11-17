@@ -70,6 +70,8 @@ def run(instance: Instance, cfg: RinthelConfig, *, create_app: Callable[..., Fas
             "corré rinthel-boot.sh (lo genera) o [0] INSTALL",
             file=sys.stderr,
         )
+    if cfg.model_warning:
+        print(f"[daemon] aviso: {cfg.model_warning} — llama-server no arranca", file=sys.stderr)
     open_identity(instance)
     # `/docs` y `/redoc` solo en desarrollo: con el flag, esas dos y
     # `/openapi.json` son públicas. Mismo override que el puerto.

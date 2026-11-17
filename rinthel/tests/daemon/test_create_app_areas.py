@@ -27,4 +27,5 @@ def test_the_daemon_serves_only_the_areas_of_the_trimmed_skeleton(app):
         "/secrets/rotate", "/openapi.json",
         "/identity/login", "/identity/refresh", "/identity/logout", "/identity/me/session-principal",
         "/identity/users", "/identity/users/{user_id}",
+        "/model-provider/routing", "/models", "/models/activate",
     }

@@ -4,6 +4,8 @@ config; estos tests cubren el shape genérico de
 `POST /config` por HTTP, sin tocar el `.env` real del repo (el `cfg` del
 harness vive sobre una Instance en `tmp_path`)."""
 
+import dataclasses
+
 import pytest
 
 
@@ -125,31 +127,23 @@ def test_configuration_validation_does_not_probe_gpu_or_run_install(post_config,
     assert host.compose.calls == []
 
 
-# ── El interruptor único de MTP llega al cliente con sus warnings ─────────
 
 
-def test_post_config_toggles_mtp_with_a_single_parameter(post_config, get_config, daemon_cfg):
-    # Un solo override prende MTP — es el mismo parámetro que el checkbox de
-    # [N] CONFIGURAR manda, no hace falta tocar spec_type a mano.
-    body = post_config({"RINTHEL_MTP_ENABLED": "true"})
-
-    assert (body["ok"], body["written"]) == (True, 1)
-    assert "RINTHEL_MTP_ENABLED=true" in daemon_cfg.instance.env_path.read_text()
-    assert _llama_fields(get_config())["mtp_enabled"] == {
-        "attr": "mtp_enabled",
-        "env": "RINTHEL_MTP_ENABLED",
-        "kind": "bool",
-        "group": "speculative",
-        "value": "true",
-    }
+# ── Lo que es de cada Local model ya no es config del .env ─────────────
 
 
-def test_post_config_surfaces_the_mtp_batch_warning(post_config):
-    # Encender MTP con batch 2048 devuelve el warning en la respuesta: es lo
-    # único que la TUI pinta en la barra de estado de [N] CONFIGURAR.
-    post_config({"RINTHEL_BATCH_SIZE": "2048", "RINTHEL_UBATCH_SIZE": "2048"})
+def test_local_model_fields_are_not_config_fields(get_config):
+    envs = {f["env"] for s in get_config()["services"] for f in s["fields"]}
+    for env in ("RINTHEL_LLAMA_MODEL_PATH", "RINTHEL_CONTEXT_WINDOW", "RINTHEL_MTP_ENABLED", "RINTHEL_LLAMA_MMPROJ_PATH"):
+        assert env not in envs
 
-    body = post_config({"RINTHEL_MTP_ENABLED": "true"})
+
+def test_post_config_surfaces_the_mtp_batch_warning_of_the_active_model(app, post_config, daemon_cfg):
+    # Con un Local model que prende MTP, subir el batch a 2048 devuelve el
+    # warning en la respuesta: es lo que la TUI pinta en [N] CONFIGURAR.
+    app.state.cfg = dataclasses.replace(daemon_cfg, local_model=dataclasses.replace(daemon_cfg.local_model, mtp=True))
+
+    body = post_config({"RINTHEL_BATCH_SIZE": "2048", "RINTHEL_UBATCH_SIZE": "2048"})
 
     assert body["ok"] is True
     assert any("MTP + batch/ubatch" in w for w in body["warnings"])

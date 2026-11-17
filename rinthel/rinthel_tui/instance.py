@@ -75,6 +75,21 @@ class Instance:
         return self.root / "logs"
 
     @property
+    def instance_toml_path(self) -> Path:
+        """Instance settings the daemon writes (the active Local model per Capability)."""
+        return self.data_dir / "instance.toml"
+
+    @property
+    def models_catalog_path(self) -> Path:
+        """The Local model catalog, edited by hand; never tracked."""
+        return self.root / "models.local.json"
+
+    @property
+    def models_example_path(self) -> Path:
+        """A documented example of the catalog, written by INSTALL next to it."""
+        return self.root / "models.local.example.json"
+
+    @property
     def understory_dir(self) -> Path:
         """Default of ``cfg.understory.dir``."""
         return self.root / "understory"

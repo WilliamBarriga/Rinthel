@@ -5,6 +5,7 @@ usamos monkeypatch.setenv/delenv de pytest directamente, sin mocks de objetos.
 """
 
 import dataclasses
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +19,7 @@ from rinthel_tui.config import (
     stringify,
     with_overrides,
 )
+from rinthel_tui.instance import Instance
 
 
 def test_int_env_uses_default_when_unset(monkeypatch):
@@ -48,41 +50,18 @@ def test_default_config_respects_port_override(monkeypatch):
     assert cfg.llama.port == 9999
 
 
-@pytest.mark.parametrize("platform,expected", [
-    ("nt", (65536, 34, 2048, 2048, "none", "q8_0", "q8_0")),
-    ("posix", (112000, 60, 512, 512, "draft-mtp", "f16", "f16")),
-])
-def test_default_config_keeps_platform_profiles_separate(monkeypatch, platform, expected):
-    for name in (
-        "RINTHEL_CONTEXT_WINDOW",
-        "RINTHEL_N_CPU_MOE",
-        "RINTHEL_UBATCH_SIZE",
-        "RINTHEL_BATCH_SIZE",
-        "RINTHEL_SPEC_TYPE",
-        "RINTHEL_CACHE_TYPE_K",
-        "RINTHEL_CACHE_TYPE_V",
-    ):
-        monkeypatch.delenv(name, raising=False)
-
-    cfg = default_config(platform=platform)
-    assert (
-        cfg.llama.context_window, cfg.llama.n_cpu_moe,
-        cfg.llama.ubatch_size, cfg.llama.batch_size,
-        cfg.llama.spec_type,
-        cfg.llama.cache_type_k, cfg.llama.cache_type_v,
-    ) == expected
+@pytest.mark.parametrize("platform,address", [("linux", "127.0.0.1"), ("windows", "host.docker.internal")])
+def test_deck_host_address_defaults_per_platform(monkeypatch, platform, address):
+    monkeypatch.delenv("RINTHEL_DECK_HOST_ADDRESS", raising=False)
+    assert default_config(platform=platform).deck.host_address == address
 
 
-@pytest.mark.parametrize("platform", ["nt", "posix"])
-def test_platform_profile_preserves_explicit_env_overrides(monkeypatch, platform):
-    monkeypatch.setenv("RINTHEL_CONTEXT_WINDOW", "32768")
-    monkeypatch.setenv("RINTHEL_N_CPU_MOE", "42")
-    cfg = default_config(platform=platform)
-    assert cfg.llama.context_window == 32768
-    assert cfg.llama.n_cpu_moe == 42
+def test_deck_host_address_can_be_set(monkeypatch):
+    monkeypatch.setenv("RINTHEL_DECK_HOST_ADDRESS", "10.0.0.5")
+    assert default_config(platform="windows").deck.host_address == "10.0.0.5"
 
 
-# ── RinthelConfig.validate() ──────────────────────────────────────────────
+# ── RinthelConfig.validate()──────────────────────────────────────────────
 
 
 def test_validate_raises_on_duplicate_ports():
@@ -115,51 +94,45 @@ def test_validate_warns_on_missing_paths_but_does_not_raise():
     assert any("no existe todavía" in w for w in warnings)
 
 
-# ── MTP: interruptor único + warnings de los combos inseguros ─────────────
+# ── MTP: lo prende el Local model + warnings de los combos inseguros ─────
+
+
+def _mtp(cfg, *, mtp=True, mmproj=None, **llama):
+    model = dataclasses.replace(cfg.local_model, mtp=mtp, mmproj=mmproj)
+    return dataclasses.replace(cfg, local_model=model, llama=dataclasses.replace(cfg.llama, **llama))
 
 
 def test_validate_warns_when_mtp_is_on_with_a_batch_that_does_not_fit(cfg):
     # test-tarkAIrk/logs/27: MTP + batch 2048 = 48 MiB libres, CUDA OOM.
-    risky = dataclasses.replace(
-        cfg, llama=dataclasses.replace(cfg.llama, mtp_enabled=True, batch_size=2048, ubatch_size=2048)
-    )
+    risky = _mtp(cfg, batch_size=2048, ubatch_size=2048)
     warnings = risky.validate()
     assert any("MTP + batch/ubatch 2048/2048" in w and "logs/27" in w for w in warnings)
 
 
 def test_validate_does_not_warn_about_batch_size_with_mtp_off(cfg):
-    off = dataclasses.replace(
-        cfg, llama=dataclasses.replace(cfg.llama, mtp_enabled=False, batch_size=2048, ubatch_size=2048)
-    )
+    off = _mtp(cfg, mtp=False, batch_size=2048, ubatch_size=2048)
     assert not any("MTP + batch/ubatch" in w for w in off.validate())
 
 
 def test_validate_warns_on_mtp_with_parallel_gt_1_and_with_vision(cfg):
     # Las dos limitaciones propias de llama.cpp (handoff/03), no de VRAM.
-    combo = dataclasses.replace(
-        cfg,
-        llama=dataclasses.replace(
-            cfg.llama,
-            mtp_enabled=True,
-            batch_size=512,
-            ubatch_size=512,
-            parallel=2,
-            mmproj="~/llama.cpp/models/mmproj-F16.gguf",
-            mmproj_enabled=True,
-        ),
-    )
+    combo = _mtp(cfg, mmproj=Path("/m/mmproj-F16.gguf"), batch_size=512, ubatch_size=512, parallel=2)
     warnings = combo.validate()
     assert any("--parallel > 1" in w for w in warnings)
     assert any("--mmproj" in w for w in warnings)
 
 
-def test_validate_warns_when_the_mtp_switch_contradicts_spec_type(cfg):
-    # Interruptor prendido pero modo "none": el argv arrancaría con
-    # --spec-type none, MTP apagado pese al checkbox.
-    contradictory = dataclasses.replace(
-        cfg, llama=dataclasses.replace(cfg.llama, mtp_enabled=True, spec_type="none", batch_size=512, ubatch_size=512)
-    )
+def test_validate_warns_when_the_model_turns_mtp_on_but_spec_type_is_none(cfg):
+    # MTP prendido en el catálogo pero modo "none": el argv arrancaría con
+    # --spec-type none, MTP apagado pese a la entrada.
+    contradictory = _mtp(cfg, spec_type="none", batch_size=512, ubatch_size=512)
     assert any("queda apagado" in w for w in contradictory.validate())
+
+
+def test_a_model_override_tunes_its_own_sampling(cfg):
+    model = dataclasses.replace(cfg.local_model, overrides={"temperature": 0.6, "top_k": 40})
+    tuned = dataclasses.replace(cfg, local_model=model).model_llama()
+    assert (tuned.temperature, tuned.top_k, tuned.n_cpu_moe) == (0.6, 40, cfg.llama.n_cpu_moe)
 
 
 # ── enabled ────────────────────────────────────────────────────────────────
@@ -188,19 +161,16 @@ def test_enabled_can_be_disabled_per_service(monkeypatch, env_var, attr):
     assert getattr(cfg, attr).enabled is False
 
 
-def test_validate_no_warnings_when_all_paths_exist(tmp_path):
-    base = default_config()
+def test_validate_no_warnings_when_all_paths_exist(cfg, tmp_path):
     existing = tmp_path / "bin"
     existing.write_text("")
-    cfg = dataclasses.replace(
-        base,
-        # mtp_enabled=False para aislar este chequeo (paths) de los warnings
-        # de MTP de `_mtp_warnings` — el .env real de esta máquina tiene MTP
-        # prendido con batch 2048, combination que SÍ debe warniar (ver
-        # test de más abajo).
-        llama=dataclasses.replace(base.llama, bin=existing, model=existing, mtp_enabled=False),
-    )
-    assert cfg.validate() == []
+    complete = dataclasses.replace(cfg, llama=dataclasses.replace(cfg.llama, bin=existing))
+    assert complete.validate() == []
+
+
+def test_validate_warns_without_an_active_local_model(tmp_path):
+    warnings = default_config(Instance(tmp_path), platform="linux").validate()
+    assert any("sin Local model activo" in w for w in warnings)
 
 
 # ── stringify/diff_overrides/with_overrides ─────────────────────────────
@@ -289,12 +259,12 @@ def test_kind_names_cover_every_field_kind_in_use():
 def test_legacy_fork_env_vars_warn(monkeypatch):
     monkeypatch.setenv("RINTHEL_MOE_CACHE_SLOTS", "16")
     monkeypatch.setenv("RINTHEL_SCHED_ASYNC_CPU", "false")
-    warnings = default_config(platform="posix").validate()
+    warnings = default_config(platform="linux").validate()
     assert any("RINTHEL_MOE_CACHE_SLOTS" in w and "RINTHEL_MOE_CACHE_MIB" in w for w in warnings)
     assert any("RINTHEL_SCHED_ASYNC_CPU" in w for w in warnings)
 
 
 def test_default_paths_are_not_machine_specific():
-    cfg = default_config(platform="posix")
+    cfg = default_config(platform="linux")
     for path in (cfg.llama.bin, cfg.install.llamacpp_repo_dir):
         assert not str(path).startswith("/rinthel-disk")

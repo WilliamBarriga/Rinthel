@@ -37,3 +37,10 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 # Los tests se importan entre sí (`tests.lifecycle.fakes`).
 pythonpath = ["."]
+# The live suite (tests/live) talks to a real daemon subprocess and, with
+# --start-llm, a real llama-server: out by default, run it with `-m live`
+# (the CLI `-m` overrides this one).
+addopts = "-m 'not live'"
+markers = [
+    "live: against a real daemon process and the real hardware (tests/live)",
+]
