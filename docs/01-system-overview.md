@@ -24,10 +24,12 @@ project (`docker-compose.yaml`, `name: rinthel-general`): Deck enters by
 `include: deck/docker-compose.yml`, Understory by `extends:`. There is one
 `.env`, at the root.
 
-Deck runs as `PUID:PGID` (written by INSTALL from the host user) so what it
-writes under `data/deck` stays editable from the host. On Linux it shares the
-host network and binds `4100` directly; on Windows the port is published on
-loopback only (see [`04-windows-installation.md`](04-windows-installation.md)).
+On Linux Deck runs as `PUID:PGID` (written by INSTALL from the host user) so
+what it writes under `data/deck` stays editable from the host, shares the
+host network and binds `4100` directly. On Windows `compose/windows.override.yaml`
+(selected by INSTALL through `COMPOSE_FILE`) puts it in a bridge network with
+the port published on loopback only (see
+[`04-windows-installation.md`](04-windows-installation.md)).
 
 `llama-server` binds to `0.0.0.0`; `ufw` restricts the host-process ports
 (`sudo ufw status verbose`). Understory is published on the host loopback

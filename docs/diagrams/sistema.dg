@@ -27,8 +27,9 @@ model {
     }
   }
 
-  servicio docker "Docker services" "Root docker-compose.yaml (name rinthel-general): Deck and Understory; deck-browser is installed by Deck over the Docker socket" {
+  servicio docker "Docker services" "Root docker-compose.yaml (name rinthel-general): Deck and Understory; deck-browser is installed by Deck over the Docker socket. Windows adds compose/windows.override.yaml (COMPOSE_FILE): Deck in a bridge on loopback, Understory and deck-browser by name on shared networks" {
     source { path "docker-compose.yaml" }
+    source { path "compose/windows.override.yaml" }
     servicio deck-browser "deck-browser" "The Instance browser: one Chromium with a fixed CDP endpoint, its profile volume keeps the logins; started and stopped by an admin"
   }
 
