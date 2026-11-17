@@ -134,6 +134,19 @@ noted as **skipped**, not as done.
   docker.socket docker` (and `start` afterwards) and a human reading the
   error.* The Boot stops with a readable error and starts nothing.
 
+### Voice (Linux, opt-in)
+
+- [ ] **INSTALL with voice on an existing Instance.** *Manual (2): it builds
+  whisper.cpp and audio.cpp, downloads real models and loads one on the GPU.*
+  With the stack booted, `rinthel/.venv/bin/python -m rinthel_tui.install --voice`
+  ends with every unit `ok`; the Monitor shows `stt` and `tts` ready, and
+  `GET /model-provider/routing` carries both. Run it again: nothing is rebuilt
+  or downloaded and both stay running.
+- [ ] **Voice off and back.** *Manual (2): it stops a real service.* Turning
+  `tts` off (`POST /models/off` from Deck, or `models off tts` with the
+  services stopped) frees port `7860`; the next Boot leaves `audiocpp-server`
+  out; activating `pocket-tts-es` again brings it back.
+
 ### TUI
 
 - [ ] **`phase_*` progress** of Boot, Terminate and Reload. *Manual (1): order
@@ -144,6 +157,7 @@ noted as **skipped**, not as done.
 - [ ] **The Local model line of the Monitor.** *Manual (1): it is read on
   screen.* While an admin switches the Local model from Deck, the Monitor shows
   the `llm` line of `models_status` going down and up with the new model.
+  With voice active, the `stt` and `tts` lines show their model and state.
 
 ### Deck (web)
 

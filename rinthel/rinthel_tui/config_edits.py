@@ -9,7 +9,13 @@ from rinthel_tui import config
 from rinthel_tui.config import ConfigError, RinthelConfig
 from rinthel_tui.env_file import update_env_file
 from rinthel_tui.instance import RotatableSecret
-from rinthel_tui.lifecycle.services import DECK_SERVICE, LLAMA_SERVICE, UNDERSTORY_SERVICE
+from rinthel_tui.lifecycle.services import (
+    AUDIOCPP_SERVICE,
+    DECK_SERVICE,
+    LLAMA_SERVICE,
+    UNDERSTORY_SERVICE,
+    WHISPER_SERVICE,
+)
 
 # display_name de cada sub-config con instancia de servicio real — moe/install
 # no tienen una (no son LocalProcessService/DockerComposeService), caen al
@@ -18,6 +24,8 @@ _DISPLAY_NAMES = {
     "llama": LLAMA_SERVICE.display_name,
     "understory": UNDERSTORY_SERVICE.display_name,
     "deck": DECK_SERVICE.display_name,
+    "whisper": WHISPER_SERVICE.display_name,
+    "audiocpp": AUDIOCPP_SERVICE.display_name,
 }
 
 

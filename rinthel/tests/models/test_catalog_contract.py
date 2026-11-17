@@ -143,3 +143,55 @@ def test_a_repeated_id_leaves_the_second_one_not_activable(tmp_path):
     assert first.activable
     assert not second.activable
     assert "repetido" in second.problem
+
+
+# ── voice entries (stt/tts) ──────────────────────────────────────────────
+
+
+def _voice(model_id: str, capability: str, path: Path, **extra) -> dict:
+    return {"id": model_id, "name": model_id.upper(), "capability": capability, "gguf": str(path), **extra}
+
+
+def test_an_stt_entry_takes_a_whisper_ggml_file_without_a_context_window(tmp_path):
+    ggml = tmp_path / "ggml-base.bin"
+    ggml.write_bytes(b"lmgg" + b"\0" * 32)
+
+    read = _only(tmp_path, _voice("whisper-base", "stt", ggml))
+
+    assert read.activable, read.problem
+    assert (read.model.capability, read.model.gguf, read.model.voice) == ("stt", ggml, None)
+
+
+def test_a_tts_entry_reads_its_fixed_voice(tmp_path):
+    wav = tmp_path / "voice.wav"
+    wav.write_bytes(b"RIFF")
+
+    read = _only(tmp_path, _voice("pocket", "tts", gguf(tmp_path / "pocket.gguf"), voice=str(wav)))
+
+    assert read.activable, read.problem
+    assert read.model.voice == wav
+
+
+def test_a_tts_voice_that_does_not_exist_is_not_activable(tmp_path):
+    read = _only(tmp_path, _voice("pocket", "tts", gguf(tmp_path / "pocket.gguf"), voice=str(tmp_path / "nada.wav")))
+
+    assert not read.activable
+    assert "voz no encontrada" in read.problem
+
+
+@pytest.mark.parametrize("raw", [
+    lambda d: {**entry("m", gguf(d / "m.gguf")), "voice": str(d / "m.gguf")},
+    lambda d: _voice("w", "stt", gguf(d / "w.bin"), voice=str(d / "w.bin")),
+], ids=["llm", "stt"])
+def test_only_a_tts_entry_has_a_voice(tmp_path, raw):
+    read = _only(tmp_path, raw(tmp_path))
+
+    assert not read.activable
+    assert "voice" in read.problem
+
+
+def test_a_voice_entry_whose_file_is_missing_is_not_activable(tmp_path):
+    read = _only(tmp_path, _voice("w", "stt", tmp_path / "nada.bin"))
+
+    assert not read.activable
+    assert "no encontrado" in read.problem

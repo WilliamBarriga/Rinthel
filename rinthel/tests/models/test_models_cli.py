@@ -59,6 +59,65 @@ def test_use_refuses_what_cannot_be_activated(instance, capsys, model_id, reason
     assert reason in capsys.readouterr().err
 
 
+@pytest.fixture
+def voiced(instance):
+    """The catalog with a whisper entry, ``stt`` active."""
+    (instance.root / "ggml-base.bin").write_bytes(b"lmgg")
+    data = json.loads(instance.models_catalog_path.read_text())
+    data["models"].append({"id": "oido", "name": "Oído", "capability": "stt", "gguf": str(instance.root / "ggml-base.bin")})
+    data["models"].append({**data["models"][-1], "id": "oido2"})
+    instance.models_catalog_path.write_text(json.dumps(data))
+    TomlActiveModels(instance.instance_toml_path).set("stt", "oido")
+    return instance
+
+
+def _run_voice(instance, *args, whisper_running=False):
+    probe = FakeProbe()
+    probe.script_port(8178, whisper_running)
+    return main(["--root", str(instance.root), *args], probe=probe)
+
+
+def test_use_switches_a_voice_model_with_its_service_stopped(voiced):
+    assert _run_voice(voiced, "use", "oido2") == 0
+
+    assert TomlActiveModels(voiced.instance_toml_path).get("stt") == "oido2"
+
+
+def test_use_refuses_a_voice_model_while_its_service_runs(voiced, capsys):
+    assert _run_voice(voiced, "use", "oido2", whisper_running=True) == 2
+
+    assert TomlActiveModels(voiced.instance_toml_path).get("stt") == "oido"
+    assert "whisper-server" in capsys.readouterr().err
+
+
+def test_off_turns_a_voice_capability_off_with_its_service_stopped(voiced):
+    assert _run_voice(voiced, "off", "stt") == 0
+
+    assert TomlActiveModels(voiced.instance_toml_path).get("stt") is None
+    assert TomlActiveModels(voiced.instance_toml_path).get("llm") == "a"
+    assert default_config(voiced, platform="linux").stt_model is None
+
+
+def test_off_refuses_while_the_service_runs(voiced, capsys):
+    assert _run_voice(voiced, "off", "stt", whisper_running=True) == 2
+
+    assert TomlActiveModels(voiced.instance_toml_path).get("stt") == "oido"
+
+
+def test_voice_cannot_be_chosen_on_windows(voiced, capsys):
+    probe = FakeProbe()
+
+    assert main(["--root", str(voiced.root), "use", "oido2"], probe=probe, platform="windows") == 2
+
+    assert TomlActiveModels(voiced.instance_toml_path).get("stt") == "oido"
+    assert "Linux" in capsys.readouterr().err
+
+
+def test_off_is_only_for_voice(voiced):
+    with pytest.raises(SystemExit):
+        _run_voice(voiced, "off", "llm")
+
+
 def test_list_marks_the_active_model_and_the_invalid_entries(instance, capsys):
     assert _run(instance, "list") == 0
 

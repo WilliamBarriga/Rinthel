@@ -28,7 +28,12 @@ def _llama_fields(body: dict) -> dict:
 
 def test_get_config_lists_every_sub_config_including_install(get_config):
     attrs = [s["attr"] for s in get_config()["services"]]
-    assert attrs == ["llama", "moe", "understory", "deck", "install"]
+    assert attrs == ["llama", "moe", "understory", "deck", "install", "whisper", "audiocpp"]
+
+
+def test_get_config_names_the_voice_services(get_config):
+    names = {s["attr"]: s["display_name"] for s in get_config()["services"]}
+    assert (names["whisper"], names["audiocpp"]) == ("whisper-server", "audiocpp-server")
 
 
 def test_get_config_never_shows_the_instance_secrets(get_config, daemon_cfg):

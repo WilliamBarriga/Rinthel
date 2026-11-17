@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from rinthel_tui.api import create_app
 from rinthel_tui.api.adapters import real_telemetry
-from rinthel_tui.models.domain.types import CatalogEntry
+from rinthel_tui.models.domain.types import CatalogEntry, LocalModel
 
 FIXTURES = Path(__file__).parent.parent / "protocol_fixtures"
 TELEMETRY = {"docker_status", "gpu_sample", "cpu_ram_sample", "log_line", "models_status"}
@@ -50,8 +50,16 @@ def test_every_telemetry_message_keeps_the_envelope_the_clients_read(
     daemon_cfg.llama.log.write_text(_fixture("log_line")["data"]["line"] + "\n")
     host.probe.script_http(f"http://127.0.0.1:{daemon_cfg.llama.port}/v1/models", True)
     host.probe.script_http(f"http://127.0.0.1:{daemon_cfg.understory.port}/", True)
-    adapters.models.catalog.set_entries([CatalogEntry(daemon_cfg.local_model.id, daemon_cfg.local_model)])
+    # Voice active as INSTALL with voice leaves it: whisper answers, audio.cpp not yet.
+    host.probe.script_http(f"http://127.0.0.1:{daemon_cfg.whisper.port}/health", True)
+    adapters.models.catalog.set_entries([
+        CatalogEntry(daemon_cfg.local_model.id, daemon_cfg.local_model),
+        CatalogEntry("whisper-base", LocalModel("whisper-base", "Whisper", "stt", Path("/m/ggml-base.bin"), 0)),
+        CatalogEntry("pocket-tts-es", LocalModel("pocket-tts-es", "Pocket", "tts", Path("/m/pocket.gguf"), 0)),
+    ])
     adapters.models.active.set("llm", daemon_cfg.local_model.id)
+    adapters.models.active.set("stt", "whisper-base")
+    adapters.models.active.set("tts", "pocket-tts-es")
     # Only Understory among the managed services, as in the shared fixture: Deck off.
     cfg = dataclasses.replace(daemon_cfg, deck=dataclasses.replace(daemon_cfg.deck, enabled=False))
     telemetry = real_telemetry(lambda: app.state.cfg, host, adapters.models)

@@ -6,11 +6,12 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from rinthel_tui.api.access import service
 from rinthel_tui.api.deps import get_lifecycle
-from rinthel_tui.api.lifecycle.dtos import ServiceOutcome
+from rinthel_tui.api.lifecycle.dtos import InstallRequest, ServiceOutcome
+from rinthel_tui.config import with_voice_from_instance
 from rinthel_tui.lifecycle.commands import Lifecycle, LifecycleBusy
 from rinthel_tui.lifecycle.domain.types import UnitOutcome
 
@@ -47,5 +48,12 @@ async def reload(lifecycle: Lifecycle = Depends(get_lifecycle)):
 
 
 @router.post("/install", response_model=Results, dependencies=[Depends(service)])
-async def install(lifecycle: Lifecycle = Depends(get_lifecycle)):
-    return await _run(lifecycle.install)
+async def install(request: Request, body: InstallRequest | None = None, lifecycle: Lifecycle = Depends(get_lifecycle)):
+    """``{"voice": true}`` is INSTALL ``--voice`` (opt-in): afterwards the live
+    ``cfg`` takes the voice models INSTALL left active, so routing and the
+    next boot or reload see them."""
+    voice = body is not None and body.voice
+    results = await _run(lambda: lifecycle.install(voice=voice))
+    if voice:
+        request.app.state.cfg = with_voice_from_instance(request.app.state.cfg)
+    return results

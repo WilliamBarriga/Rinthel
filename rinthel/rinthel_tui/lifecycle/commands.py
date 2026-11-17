@@ -19,6 +19,7 @@ from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle import specs
 from rinthel_tui.lifecycle.domain.types import UnitOutcome
 from rinthel_tui.lifecycle.executor import Broadcast, Execute
+from rinthel_tui.lifecycle.managed_service import LocalProcessService
 
 
 class LifecycleBusy(Exception):
@@ -67,11 +68,16 @@ class Lifecycle:
     async def reload(self) -> list[UnitOutcome]:
         return await self._run(specs.reload_plan(self._cfg))
 
-    async def install(self) -> list[UnitOutcome]:
-        return await self._run(specs.install_plan(self._cfg))
+    async def install(self, *, voice: bool = False) -> list[UnitOutcome]:
+        return await self._run(specs.install_plan(self._cfg, voice=voice))
 
-    async def restart_llama(self) -> list[UnitOutcome]:
-        """El cambio de Local model (``specs.llama_restart_plan``). Sin tomar
-        el lock: quien cambia ya lo tiene para el cambio entero, rollback
+    async def restart(self, service: LocalProcessService) -> list[UnitOutcome]:
+        """El cambio de Local model (``specs.restart_plan``). Sin tomar el
+        lock: quien cambia ya lo tiene para el cambio entero, rollback
         incluido."""
-        return await self._execute(specs.llama_restart_plan(self._cfg), self._broadcast)
+        return await self._execute(specs.restart_plan(self._cfg, service), self._broadcast)
+
+    async def stop(self, service: LocalProcessService) -> list[UnitOutcome]:
+        """Apagar una Capability (``specs.stop_plan``), sin tomar el lock: lo
+        tiene quien apaga."""
+        return await self._execute(specs.stop_plan(self._cfg, service), self._broadcast)

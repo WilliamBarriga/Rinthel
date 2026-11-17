@@ -18,8 +18,12 @@ COMMANDS = ["boot", "terminate", "reload", "install"]
 
 
 class FakeLifecycle:
+    # What each command was asked with, for the last test that ran it.
+    asked: dict[str, dict] = {}
+
     def __getattr__(self, command: str):
-        async def run() -> list[UnitOutcome]:
+        async def run(**kwargs) -> list[UnitOutcome]:
+            FakeLifecycle.asked[command] = kwargs
             return [UnitOutcome(service=command, ok=True, message="hecho")]
 
         return run
@@ -27,6 +31,7 @@ class FakeLifecycle:
 
 @pytest.fixture(autouse=True)
 def _fake_lifecycle(app):
+    FakeLifecycle.asked = {}
     app.dependency_overrides[get_lifecycle] = FakeLifecycle
 
 
@@ -36,6 +41,32 @@ def test_lifecycle_command_returns_the_outcomes_of_its_run(client, service_heade
 
     assert response.status_code == 200
     assert response.json() == {"results": [{"service": command, "ok": True, "message": "hecho"}]}
+
+
+def test_install_runs_without_voice_unless_asked(client, service_headers):
+    client.post("/install", headers=service_headers)
+    assert FakeLifecycle.asked["install"] == {"voice": False}
+
+    client.post("/install", json={"voice": True}, headers=service_headers)
+    assert FakeLifecycle.asked["install"] == {"voice": True}
+
+
+def test_install_with_voice_brings_the_new_voice_models_into_the_live_config(app, client, service_headers, daemon_cfg):
+    from rinthel_tui.models.adapters.json_catalog import write_catalog
+    from rinthel_tui.models.adapters.toml_active import TomlActiveModels
+    from rinthel_tui.models.domain.types import LocalModel
+
+    instance = daemon_cfg.instance
+    ggml = instance.root / "ggml-base.bin"
+    ggml.write_bytes(b"lmgg")
+    write_catalog(instance.models_catalog_path, [LocalModel("whisper-base", "Whisper", "stt", ggml, 0)])
+    TomlActiveModels(instance.instance_toml_path).set("stt", "whisper-base")
+
+    client.post("/install", json={"voice": True}, headers=service_headers)
+
+    assert app.state.cfg.stt_model.id == "whisper-base"
+    route = client.get("/model-provider/routing", headers=service_headers).json()["capabilities"]["stt"]
+    assert route["url"] == f"http://{daemon_cfg.deck.host_address}:{daemon_cfg.whisper.port}"
 
 
 @pytest.mark.parametrize("command", COMMANDS)
@@ -52,7 +83,7 @@ def test_a_phase_error_is_a_failed_unit_in_the_install_http_response(app, client
         pass
 
     class FailingInstall:
-        async def install(self):
+        async def install(self, *, voice=False):
             plan = Plan("stop", (Batch(None, (Unit("model", (PhaseSpec("download", failing_phase),)),)),))
             return await executor.execute(plan, broadcast, fake_host()[0])
 
@@ -75,7 +106,7 @@ def test_install_returns_the_configure_failure_as_a_service_outcome(app, client,
     )),))
 
     class BuildLifecycle:
-        async def install(self) -> list[UnitOutcome]:
+        async def install(self, *, voice=False) -> list[UnitOutcome]:
             return await executor.execute(plan, app.state.broadcaster.broadcast, host)
 
     app.dependency_overrides[get_lifecycle] = BuildLifecycle

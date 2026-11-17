@@ -11,7 +11,7 @@ model {
       modulo api-access "access / caller" "Access policies (public, service, service_as_user, user, admin) and any_of; service_or_admin guards /theme and /openapi.json" {
         source { path "rinthel/rinthel_tui/api/access.py" }
       }
-      ruta api-lifecycle "lifecycle" "/boot, /terminate, /reload, /install (service policy)" {
+      ruta api-lifecycle "lifecycle" "/boot, /terminate, /reload, /install with optional voice (service policy)" {
         source { path "rinthel/rinthel_tui/api/lifecycle" }
       }
       ruta api-secrets "secrets" "/secrets/rotate and write-only secrets" {
@@ -26,7 +26,7 @@ model {
       ruta api-identity "identity" "Login, refresh, users, /me/session-principal" {
         source { path "rinthel/rinthel_tui/api/identity" }
       }
-      ruta api-models "models" "GET /model-provider/routing (service policy); GET /models and POST /models/activate (admin policy)" {
+      ruta api-models "models" "GET /model-provider/routing (service policy); GET /models, POST /models/activate and POST /models/off (admin policy)" {
         source { path "rinthel/rinthel_tui/api/models" }
       }
     }
@@ -48,10 +48,10 @@ model {
     modulo models "models" "Local models: catalog file, active model, route and switch" {
       source { path "rinthel/rinthel_tui/models" }
       modulo mod-catalogo "catalog" "models.local.json (hand-written, untracked) and the Validated profile of the Platform"
-      proceso mod-cambio "switch" "kill, spawn, ready, rollback on failure, under the global lifecycle lock"
-      modulo mod-ruta "routing" "URL, id, context window and reasoning format of the active model; the active id lives in instance.toml"
+      proceso mod-cambio "switch" "kill, spawn, ready, rollback on failure, under the global lifecycle lock; voice also turns off (stt, tts)"
+      modulo mod-ruta "routing" "URL, id, context window and reasoning format of each active model (llm, and stt/tts on Linux); the active ids live in instance.toml"
       puerto mod-puertos "ports" "Catalog, ActiveModels, ModelService, Turns"
-      adaptador mod-archivos "json_catalog / toml_active / llama_slots / lifecycle_llama" "Catalog file, instance.toml, llama-server /slots and the llama restart plan"
+      adaptador mod-archivos "json_catalog / toml_active / llama_slots / lifecycle_service" "Catalog file, instance.toml, llama-server /slots and the restart and stop plans of each Capability's service"
       adaptador mod-memoria "memory" "Doubles with a contract suite"
     }
 
@@ -66,7 +66,7 @@ model {
       modulo lc-fases "phases / services" "Phases and the catalog of managed services (local process or compose)" {
         source { path "rinthel/rinthel_tui/lifecycle/services.py" }
       }
-      modulo lc-install "install" "Install: pinned models, root .env secrets and container user (PUID/PGID/DOCKER_GID), Understory bundle, first admin user" {
+      modulo lc-install "install" "Install: pinned models, root .env secrets and container user (PUID/PGID/DOCKER_GID), Understory bundle, first admin user; opt-in voice unit (whisper.cpp, audio.cpp, voice models, start stt/tts)" {
         source { path "rinthel/rinthel_tui/lifecycle/install.py" }
       }
       puerto host "Host" "Eight ports: Runner, Processes, Compose, Probe, Clock, HostInfo, PackageRegistry, DataDirs"
@@ -98,7 +98,7 @@ model {
   daemon.api.api-models -> daemon.models
   daemon.api.api-config -> daemon.nu-config
   daemon.api.api-config -> daemon.nu-theme
-  daemon.models.mod-cambio -> daemon.lifecycle.lc-planes "restarts llama-server"
+  daemon.models.mod-cambio -> daemon.lifecycle.lc-planes "restarts or stops the Capability's service"
   daemon.models.mod-catalogo -> daemon.nu-config "active id from instance.toml"
   daemon.lifecycle.lc-planes -> daemon.lifecycle.lc-specs
   daemon.lifecycle.lc-specs -> daemon.lifecycle.lc-fases

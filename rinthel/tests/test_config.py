@@ -264,5 +264,51 @@ def test_legacy_fork_env_vars_warn(monkeypatch):
 
 def test_default_paths_are_not_machine_specific():
     cfg = default_config(platform="linux")
-    for path in (cfg.llama.bin, cfg.install.llamacpp_repo_dir):
+    for path in (cfg.llama.bin, cfg.install.llamacpp_repo_dir, cfg.whisper.bin, cfg.audiocpp.bin):
         assert not str(path).startswith("/rinthel-disk")
+
+
+# ── voice: the active stt/tts of instance.toml, Linux only ──────────────
+
+
+def _voice_instance(tmp_path, *, active: dict[str, str]) -> Instance:
+    import json
+
+    from rinthel_tui.models.adapters.toml_active import TomlActiveModels
+
+    (tmp_path / "ggml-base.bin").write_bytes(b"lmgg")
+    (tmp_path / "pocket.gguf").write_bytes(b"GGUF")
+    instance = Instance(tmp_path)
+    instance.models_catalog_path.write_text(json.dumps({"models": [
+        {"id": "whisper-base", "name": "Whisper", "capability": "stt", "gguf": str(tmp_path / "ggml-base.bin")},
+        {"id": "pocket", "name": "Pocket", "capability": "tts", "gguf": str(tmp_path / "pocket.gguf")},
+    ]}))
+    for capability, model_id in active.items():
+        TomlActiveModels(instance.instance_toml_path).set(capability, model_id)
+    return instance
+
+
+def test_the_active_voice_models_reach_the_config_on_linux(tmp_path):
+    cfg = default_config(_voice_instance(tmp_path, active={"stt": "whisper-base", "tts": "pocket"}), platform="linux")
+
+    assert (cfg.model_of("stt").id, cfg.model_of("tts").id) == ("whisper-base", "pocket")
+
+
+def test_without_an_active_key_voice_is_off_and_says_nothing(tmp_path):
+    cfg = default_config(_voice_instance(tmp_path, active={}), platform="linux")
+
+    assert (cfg.model_of("stt"), cfg.model_of("tts")) == (None, None)
+    assert not any("stt" in w or "tts" in w for w in cfg.validate())
+
+
+def test_an_unusable_active_voice_id_warns(tmp_path):
+    cfg = default_config(_voice_instance(tmp_path, active={"tts": "nadie"}), platform="linux")
+
+    assert cfg.model_of("tts") is None
+    assert any("nadie" in w for w in cfg.validate())
+
+
+def test_voice_is_never_active_on_windows(tmp_path):
+    cfg = default_config(_voice_instance(tmp_path, active={"stt": "whisper-base"}), platform="windows")
+
+    assert cfg.model_of("stt") is None

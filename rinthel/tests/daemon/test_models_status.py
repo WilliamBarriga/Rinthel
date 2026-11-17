@@ -106,6 +106,32 @@ def test_voice_is_reported_only_when_active_on_linux(daemon_cfg, adapters, host,
     assert [c["capability"] for c in windows["capabilities"]] == ["llm"]
 
 
+def test_an_active_voice_model_reports_the_state_of_its_service(daemon_cfg, adapters, host, catalog, service_headers):
+    catalog.catalog.set_entries([
+        *catalog.catalog.entries(), CatalogEntry("pocket", LocalModel("pocket", "Pocket", "tts", Path("/m/p.gguf"), 0)),
+    ])
+    catalog.active.set("stt", "whisper")
+    catalog.active.set("tts", "pocket")
+    host.probe.script_http(f"http://127.0.0.1:{daemon_cfg.whisper.port}/health", True)
+
+    capabilities = _models_status(daemon_cfg, adapters, host, service_headers)["capabilities"]
+
+    assert capabilities[1:] == [
+        {"capability": "stt", "model": "whisper", "state": "ready", "error": None},
+        {"capability": "tts", "model": "pocket", "state": "down", "error": None},
+    ]
+
+
+def test_an_unusable_active_voice_id_is_off_with_its_error(daemon_cfg, adapters, host, catalog, service_headers):
+    catalog.active.set("tts", "nadie")
+    host.probe.script_http(f"http://127.0.0.1:{daemon_cfg.audiocpp.port}/health", True)
+
+    (_, tts) = _models_status(daemon_cfg, adapters, host, service_headers)["capabilities"]
+
+    assert (tts["model"], tts["state"]) == ("nadie", "off")
+    assert "desconocido" in tts["error"]
+
+
 def test_each_enabled_managed_service_is_a_row_with_its_state(daemon_cfg, adapters, host, catalog, service_headers):
     host.probe.script_http(f"http://127.0.0.1:{daemon_cfg.understory.port}/", True)
 

@@ -35,7 +35,7 @@ from rinthel_tui.lifecycle.domain.types import Platform
 from rinthel_tui.models.adapters.json_catalog import JsonCatalog
 from rinthel_tui.models.adapters.toml_active import TomlActiveModels
 from rinthel_tui.models.domain.models import resolve
-from rinthel_tui.models.domain.types import DEFAULT_REASONING_FORMAT, LocalModel
+from rinthel_tui.models.domain.types import DEFAULT_REASONING_FORMAT, VOICE, Capability, LocalModel
 
 
 def _p(path: str) -> Path:
@@ -346,6 +346,56 @@ _DECK_DEFAULTS: dict[Platform, dict[str, Any]] = {
 
 
 @dataclass(frozen=True)
+class WhisperConfig:
+    """``whisper-server`` of whisper.cpp (CPU), the managed service of
+    ``stt``. The model is the active Local model, not a field."""
+
+    bin: Path
+    port: int
+    log: Path
+    threads: int
+
+    @property
+    def repo(self) -> Path:
+        # ``<repo>/build/bin/whisper-server``: the checkout INSTALL clones.
+        return self.bin.parents[2]
+
+
+# Not ``exists``: voice is opt-in, a missing binary is not worth a warning
+# on every Instance that never ran INSTALL with voice.
+WHISPER_FIELDS: list[Field] = [
+    Field("bin", "RINTHEL_WHISPER_BIN", Path, "~/whisper.cpp/build/bin/whisper-server", group="general"),
+    Field("port", "RINTHEL_WHISPER_PORT", int, 8178, port=True, group="general"),
+    Field("log", "RINTHEL_WHISPER_LOG_PATH", Path, lambda i: str(i.logs_dir / "whisper-server.log"), group="general"),
+    Field("threads", "RINTHEL_WHISPER_THREADS", int, 4, positive=True, group="compute"),
+]
+
+
+@dataclass(frozen=True)
+class AudioCppConfig:
+    """``audiocpp_server`` of audio.cpp (CUDA), the managed service of
+    ``tts``. The model and its voice are the active Local model's."""
+
+    bin: Path
+    port: int
+    log: Path
+    threads: int
+
+    @property
+    def repo(self) -> Path:
+        # ``<repo>/build/rinthel/bin/audiocpp_server``: the checkout INSTALL clones.
+        return self.bin.parents[3]
+
+
+AUDIOCPP_FIELDS: list[Field] = [
+    Field("bin", "RINTHEL_AUDIOCPP_BIN", Path, "~/audio.cpp/build/rinthel/bin/audiocpp_server", group="general"),
+    Field("port", "RINTHEL_AUDIOCPP_PORT", int, 7860, port=True, group="general"),
+    Field("log", "RINTHEL_AUDIOCPP_LOG_PATH", Path, lambda i: str(i.logs_dir / "audiocpp-server.log"), group="general"),
+    Field("threads", "RINTHEL_AUDIOCPP_THREADS", int, 4, positive=True, group="compute"),
+]
+
+
+@dataclass(frozen=True)
 class Secrets:
     """Los secretos de la Instance que el daemon lee. Van aparte de
     ``_ENTRIES``: ``GET /config`` nunca los muestra. ``service`` es el que
@@ -406,6 +456,8 @@ _ENTRIES: list[tuple[str, list[Field]]] = [
     ("understory", UNDERSTORY_FIELDS),
     ("deck", DECK_FIELDS),
     ("install", INSTALL_FIELDS),
+    ("whisper", WHISPER_FIELDS),
+    ("audiocpp", AUDIOCPP_FIELDS),
 ]
 
 
@@ -422,6 +474,8 @@ class RinthelConfig:
     understory: UnderstoryConfig
     deck: DeckConfig
     install: InstallConfig
+    whisper: WhisperConfig
+    audiocpp: AudioCppConfig
     secrets: Secrets = Secrets("", "")
     identity: IdentityConfig = IdentityConfig()
     # Las variables legacy presentes al construir el cfg (shell o ``.env``).
@@ -432,10 +486,21 @@ class RinthelConfig:
     # ``model_warning`` dice por qué.
     local_model: LocalModel | None = None
     model_warning: str | None = None
+    # The active Local models of voice (Linux only), as their managed
+    # services run them; ``None`` is the Capability off. ``voice_warnings``
+    # says why an active key could not be used.
+    stt_model: LocalModel | None = None
+    tts_model: LocalModel | None = None
+    voice_warnings: tuple[str, ...] = ()
 
     @property
     def profile(self) -> ValidatedProfile:
         return VALIDATED_PROFILES[self.platform]
+
+    def model_of(self, capability: Capability) -> LocalModel | None:
+        """The Local model the Instance serves (or will serve on the next
+        boot) for ``capability``."""
+        return {"llm": self.local_model, "stt": self.stt_model, "tts": self.tts_model}[capability]
 
     def model_llama(self) -> LlamaConfig:
         """``llama`` con los overrides propios del Local model activo (solo
@@ -494,6 +559,7 @@ class RinthelConfig:
         warnings.extend(f"{name} ya no se usa: {_LEGACY_ENV[name]}" for name in self.legacy_env)
         if self.model_warning:
             warnings.append(self.model_warning)
+        warnings.extend(self.voice_warnings)
         warnings.extend(self._mtp_warnings())
         return warnings
 
@@ -595,9 +661,38 @@ def with_secret(cfg: RinthelConfig, env: str, value: str) -> RinthelConfig:
     return replace(cfg, secrets=replace(cfg.secrets, **{attr: value}))
 
 
+_MODEL_ATTR: dict[Capability, str] = {"llm": "local_model", "stt": "stt_model", "tts": "tts_model"}
+
+
 def with_local_model(cfg: RinthelConfig, model: LocalModel) -> RinthelConfig:
-    """``cfg`` con ``model`` como Local model activo de ``llm``."""
-    return replace(cfg, local_model=model, model_warning=None)
+    """``cfg`` con ``model`` como Local model activo de su Capability."""
+    if model.capability == "llm":
+        return replace(cfg, local_model=model, model_warning=None)
+    return replace(cfg, **{_MODEL_ATTR[model.capability]: model})
+
+
+def without_model(cfg: RinthelConfig, capability: Capability) -> RinthelConfig:
+    """``cfg`` with ``capability`` off: no active model, its service does not start."""
+    return replace(cfg, **{_MODEL_ATTR[capability]: None})
+
+
+def with_voice_from_instance(cfg: RinthelConfig) -> RinthelConfig:
+    """``cfg`` with the active voice models re-read from the catalog and
+    ``instance.toml`` (after INSTALL with voice wrote them). Voice is Linux
+    only: on Windows it stays off whatever the files say. A missing key is
+    the Capability off, without a warning: voice is opt-in."""
+    if cfg.platform != "linux":
+        return replace(cfg, stt_model=None, tts_model=None, voice_warnings=())
+    catalog = JsonCatalog(cfg.instance.models_catalog_path)
+    active_ids = TomlActiveModels(cfg.instance.instance_toml_path)
+    models: dict[str, LocalModel | None] = {}
+    warnings: list[str] = []
+    for capability in VOICE:
+        active = resolve(catalog, active_ids, capability) if active_ids.get(capability) else None
+        models[_MODEL_ATTR[capability]] = active.model if active else None
+        if active is not None and active.warning:
+            warnings.append(active.warning)
+    return replace(cfg, **models, voice_warnings=tuple(warnings))
 
 
 def default_config(instance: Instance | None = None, *, platform: Platform | None = None) -> RinthelConfig:
@@ -611,17 +706,19 @@ def default_config(instance: Instance | None = None, *, platform: Platform | Non
     file_env = {k: v for k, v in dotenv_values(instance.env_path).items() if v is not None}
     env = {**file_env, **os.environ}
     active = resolve(JsonCatalog(instance.models_catalog_path), TomlActiveModels(instance.instance_toml_path), "llm")
-    return RinthelConfig(
+    return with_voice_from_instance(RinthelConfig(
         instance=instance,
         llama=_load(LlamaConfig, LLAMA_FIELDS, env, instance, defaults=VALIDATED_PROFILES[platform].llama),
         moe=_load(MoeConfig, MOE_FIELDS, env, instance),
         understory=_load(UnderstoryConfig, UNDERSTORY_FIELDS, env, instance),
         install=_load(InstallConfig, INSTALL_FIELDS, env, instance),
         deck=_load(DeckConfig, DECK_FIELDS, env, instance, defaults=_DECK_DEFAULTS[platform]),
+        whisper=_load(WhisperConfig, WHISPER_FIELDS, env, instance),
+        audiocpp=_load(AudioCppConfig, AUDIOCPP_FIELDS, env, instance),
         secrets=Secrets(**{attr: _str_env(name, "", env) for attr, name in SECRET_ENVS.items()}),
         identity=_load(IdentityConfig, IDENTITY_FIELDS, env, instance),
         legacy_env=tuple(name for name in _LEGACY_ENV if name in env),
         platform=platform,
         local_model=active.model,
         model_warning=active.warning,
-    )
+    ))

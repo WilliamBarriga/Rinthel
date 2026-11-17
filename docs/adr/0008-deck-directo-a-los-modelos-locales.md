@@ -26,7 +26,7 @@ Pesó que un passthrough en el daemon obligaba a un Audit de modelos que quedó 
 ## Consecuencias
 
 - El daemon no tiene `SessionSlots`, `SlotStore`, passthrough ni `DELETE /model-provider/sessions/:id/slot`.
-- La voz (`stt`, `tts`) sigue el mismo camino cuando llegue: ruta del daemon, llamada directa desde Deck al managed service (whisper, audio.cpp).
+- La voz (`stt`, `tts`, solo Linux) sigue el mismo camino: ruta del daemon, llamada directa desde Deck al managed service (`whisper-server`, `audiocpp-server`). El cambio y el apagado (`POST /models/off`) usan el mismo lock global.
 - Las pruebas del server de Deck corren el proxy contra un `llama-server` falso por HTTP real y un daemon falso; la del cliente de pi, contra los mismos (`deck/tests/session-proxy.test.mts`, `deck/tests/chat.test.mts`).
 
 ## Opciones descartadas
