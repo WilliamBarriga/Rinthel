@@ -206,6 +206,7 @@ export class SessionManager extends EventEmitter {
         hostExec: this.deps.hostExec && !isClosed(profile)
           ? { ...this.deps.hostExec, adminNow: () => ownerIsAdminNow(owner, this.deps.identity) }
           : undefined,
+        subagents: isClosed(profile) ? undefined : { adminNow: () => ownerIsAdminNow(owner, this.deps.identity) },
         thinkingLevel: session.thinking_level || undefined,
         browser: this.browserFor(sessionId, owner, profile),
       });
