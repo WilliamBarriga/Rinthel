@@ -12,6 +12,10 @@ import type { ModelAccess } from "../session-proxy.js";
 import { isClosed, type ToolProfile } from "../tool-profile.js";
 import type { Canvases } from "../canvases.js";
 import { CanvasTools } from "./canvas-tools.js";
+import type { BrowserDriver } from "../browser-driver.js";
+import type { SessionBrowserState } from "../session-browser.js";
+import { sessionBrowserTools } from "./session-browser-tools.js";
+import { BROWSER_READING_RULE, BROWSER_SCREENSHOT_RULE } from "./browser-snapshot.js";
 
 /**
  * The Agent's own files: SOUL.md is who it is, PrimaryUser.md and MEMORY.md its owner's notes. Read
@@ -77,6 +81,16 @@ export interface SdkLaunch {
   canvases?: Canvases;
   /** The Instance SOUL a member's Session loads in place of a SOUL.md of its home (set for a closed profile only). */
   instanceSoulFile?: string;
+  /**
+   * The Instance browser, for a Session that may have it (an admin's): the driver behind its browser
+   * tools and the gate read at each call. Ignored for a closed profile.
+   */
+  browser?: SessionBrowserLaunch;
+}
+
+export interface SessionBrowserLaunch {
+  driver: BrowserDriver;
+  now: () => Promise<SessionBrowserState>;
 }
 
 /**
@@ -114,20 +128,42 @@ export class SdkPiClient extends EventEmitter implements PiClient {
     let liveSession: any;
     const allowedTools: Set<string> | undefined = isClosed(profile) ? new Set(profile.tools) : undefined;
     const guard = guardReporter();
+    // The Instance browser's tools, filled as they register: the only browser tools the Guard lets
+    // through, and an untrusted source for the taint. A closed profile never gets them.
+    const browser = closed ? undefined : opts.browser;
+    const ownBrowserTools = new Set<string>();
     // Tainted until the Guard rebuilds it at session_start, from the stored mark and pi's file.
-    const taint = new SessionTaint(opts.sessionId, opts.taintMarks);
-    const factories: { name: string; factory: (pi: any) => void }[] = [
+    const taint = new SessionTaint(opts.sessionId, opts.taintMarks, { browserTools: ownBrowserTools });
+    const factories: { name: string; factory: (pi: any) => void | Promise<void> }[] = [
       // Every Session, unconditionally: any Session can read something untrusted.
-      { name: "guard", factory: guardExtension({ sessionId: opts.sessionId, report: guard.report, allowedTools, taint }) },
+      {
+        name: "guard",
+        factory: guardExtension({
+          sessionId: opts.sessionId,
+          report: guard.report,
+          allowedTools,
+          taint,
+          browser: browser ? { owned: ownBrowserTools, now: browser.now } : undefined,
+        }),
+      },
       { name: "rinthel-provider", factory: rinthelProviderExtension(opts.modelAccess, (model) => liveSession.setModel(model)) },
     ];
     const canvasTools = opts.canvases ? new CanvasTools(opts.sessionId, opts.canvases) : undefined;
     if (canvasTools) factories.push({ name: "canvases", factory: canvasTools.extension });
+    if (browser) {
+      factories.push({
+        name: "session-browser",
+        factory: sessionBrowserTools(browser.driver, browser.now, {
+          owned: ownBrowserTools,
+          onError: (e) => console.error(`[browser] the Instance browser's tools are unavailable: ${e.message}`),
+        }),
+      });
+    }
     const context = {
       agentsFilesOverride: (base: { agentsFiles: any[] }) => ({
         agentsFiles: [...base.agentsFiles, ...extraContextFiles(opts.cwd, opts.instanceSoulFile).map((f) => ({ path: f.path, content: f.content }))],
       }),
-      appendSystemPrompt: framing(opts.cwd, opts.instanceSoulFile),
+      appendSystemPrompt: [...framing(opts.cwd, opts.instanceSoulFile), ...(browser ? [BROWSER_READING_RULE, BROWSER_SCREENSHOT_RULE] : [])],
     };
     const resourceLoader = new pi.DefaultResourceLoader({
       cwd: opts.cwd,

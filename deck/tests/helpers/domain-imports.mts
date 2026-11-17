@@ -25,6 +25,8 @@ export const ADAPTERS = [
   'session-proxy.ts', 'pi/sdk-client.ts', 'session-slots/llama-slot-store.ts', 'session-roots-fs.ts', 'workspaces-fs.ts',
   // The Instance SOUL is a file on Deck's volume.
   'instance-soul-fs.ts',
+  // The Instance browser: docker over its socket, a local Chrome, the MCP driver's processes, and its proxied view.
+  'extensions/', 'browser-proxy.ts',
 ];
 
 /** A daemon adapter is named `daemon-*.ts`: the port lives in the file without the prefix. */

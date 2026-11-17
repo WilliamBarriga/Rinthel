@@ -17,6 +17,13 @@ import { LlamaSlotStore } from "./session-slots/llama-slot-store.js";
 import { SessionSlots } from "./session-slots/session-slots.js";
 import { ensureDir, gracefulShutdown, loadTls, serve } from "./startup.js";
 import { openStore } from "./store/index.js";
+import { browserSettings } from "./browser-settings.js";
+import { attachBrowserUpgrade } from "./browser-proxy.js";
+import { createBrowserRuntime } from "./extensions/browser-runtime.js";
+import { dockerOverSocket } from "./extensions/docker.js";
+import { CHROME_CANDIDATES, LocalChrome } from "./extensions/browser-local.js";
+import { watchBrowserFrames } from "./extensions/browser-frames.js";
+import { McpStdioBrowserDriver } from "./extensions/mcp-stdio-browser-driver.js";
 
 /**
  * The server, composed: what the environment says (`config.ts`), the adapters it picks, and the
@@ -41,6 +48,36 @@ const canvases = createCanvases(store);
 const canvasActions = createCanvasActions({ canvases, notes: storedSessionNotes(store) });
 const instanceSoul = new FsInstanceSoul(config.instanceSoulFile);
 
+// The Instance browser: one per Instance, installed, started and stopped by an admin, never stopped
+// for being idle. Every admin Session that may drive it shares it over its fixed CDP endpoint.
+const browserConfig = config.browser;
+const browserStore = browserSettings(store.settings, browserConfig.defaults);
+const browserRuntime = createBrowserRuntime({
+  external: browserConfig.external,
+  cdpUrl: browserConfig.cdpUrl,
+  docker: dockerOverSocket(browserConfig.dockerSocket),
+  local: new LocalChrome({
+    candidates: [...(browserConfig.binary ? [browserConfig.binary] : []), ...CHROME_CANDIDATES],
+    profileDir: browserConfig.localProfileDir,
+    display: process.env.DISPLAY,
+    searchPath: process.env.PATH,
+  }),
+  volume: browserConfig.volume,
+  timezone: process.env.TZ,
+});
+// The Agent's browser tools: Playwright's MCP server over the CDP endpoint, one process for every Session.
+const [mcpCommand, ...mcpArgs] = browserConfig.mcpCommand;
+const browserDriver = new McpStdioBrowserDriver({
+  command: mcpCommand,
+  // Snapshots on demand: a whole page is not repeated after every click or keystroke.
+  args: (endpoint) => [...mcpArgs, "--cdp-endpoint", endpoint, "--snapshot-mode", "none"],
+  // The catalogue is listed by a throwaway server with no browser behind it.
+  probeArgs: () => [...mcpArgs, "--snapshot-mode", "none"],
+  callTimeoutMs: 120_000,
+});
+// Keeps the browser rendering when nobody has its view open.
+const browserViewers = watchBrowserFrames(browserRuntime, browserConfig.streamPort);
+
 let sessions: SessionManager;
 const proxy = new SessionProxy({
   routing,
@@ -49,7 +86,16 @@ const proxy = new SessionProxy({
   onProgress: (sessionId, prefill) => sessions.reportPrefill(sessionId, prefill),
   onRoute: (sessionId, route) => sessions.reportRoute(sessionId, route),
 });
-sessions = new SessionManager({ store, identity, proxy, roots, canvases, instanceSoulFile: instanceSoul.path, launch: (opts) => SdkPiClient.create(opts) });
+sessions = new SessionManager({
+  store,
+  identity,
+  proxy,
+  roots,
+  canvases,
+  instanceSoulFile: instanceSoul.path,
+  launch: (opts) => SdkPiClient.create(opts),
+  browser: { driver: browserDriver, cdpEndpoint: browserConfig.cdpUrl, allowlist: () => browserStore.allowlist() },
+});
 
 const app = createDeckApp({
   store,
@@ -64,6 +110,7 @@ const app = createDeckApp({
   canvasActions,
   instanceSoul,
   webDist: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web/dist"),
+  browser: { settings: browserStore, runtime: browserRuntime, cdpUrl: browserConfig.cdpUrl, uiHost: browserConfig.uiHost, viewers: browserViewers },
 });
 
 ensureDir(config.binDir);
@@ -81,11 +128,16 @@ const server = serve(app, { port: config.port, tls }, () => {
   console.log(`  workspaces: ${config.workspaceRoot}`);
   console.log(`  slots:      ${config.slotsDir}`);
   console.log(`  auth:       panel token`);
+  console.log(`  browser:    ${browserConfig.external ? "external" : "docker or local"} at ${browserConfig.cdpUrl}`);
 });
+// The Instance browser's view streams over a websocket: the upgrade needs the server, not the app.
+attachBrowserUpgrade(server, { settings: browserStore, identity, host: browserConfig.uiHost, viewers: browserViewers });
 
 const shutdown = gracefulShutdown({
   stop: async () => {
     await sessions.shutdown();
+    browserViewers.stop();
+    browserDriver.close();
     proxy.stop();
     await store.close();
   },

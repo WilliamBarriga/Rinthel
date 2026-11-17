@@ -26,3 +26,17 @@ test("Sessions, workspaces and llama-server's saved slots live on the data volum
   assert.equal(tuned.slotsMaxBytes, 2 * 1024 ** 3);
   assert.throws(() => deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's', DECK_SLOTS_MAX_GB: '0' }), /DECK_SLOTS_MAX_GB/);
 });
+
+test('the Instance browser: a fixed CDP endpoint, docker unless BROWSER_EXTERNAL, its profile on the data volume for a local Chrome', () => {
+  const config = deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's', DATA_DIR: '/data' });
+  assert.equal(config.browser.cdpUrl, 'http://127.0.0.1:9222');
+  assert.equal(config.browser.external, false);
+  assert.equal(config.browser.dockerSocket, '/var/run/docker.sock');
+  assert.equal(config.browser.volume, 'deck_browser-profile');
+  assert.equal(config.browser.localProfileDir, path.resolve('/data/browser-profile'));
+  assert.deepEqual(config.browser.mcpCommand, ['npx', '-y', '@playwright/mcp@0.0.79']);
+  const external = deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's', BROWSER_EXTERNAL: 'true', BROWSER_CDP_URL: 'http://127.0.0.1:9333', BROWSER_MCP_COMMAND: '/opt/mcp/bin/playwright-mcp --headless' });
+  assert.equal(external.browser.external, true);
+  assert.equal(external.browser.cdpUrl, 'http://127.0.0.1:9333');
+  assert.deepEqual(external.browser.mcpCommand, ['/opt/mcp/bin/playwright-mcp', '--headless']);
+});

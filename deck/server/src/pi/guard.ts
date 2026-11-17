@@ -2,6 +2,9 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import type { GuardNotice } from "@deck/contract";
 import { SUBAGENT_TOOLS, type SessionTaint } from "./session-taint.js";
+import type { SessionBrowserState } from "../session-browser.js";
+import { inlineBrowserScreenshot } from "./browser-screenshot.js";
+import { cleanBrowserSnapshot, isBrowserSnapshot } from "./browser-snapshot-format.js";
 
 /**
  * A blast-radius limiter for prompt injection.
@@ -155,6 +158,110 @@ export async function untrustedPrompt(message: string, blocks: readonly string[]
   return [message, ...wrapped].join("\n\n");
 }
 
+/**
+ * Playwright's own ref shape: frame then element, `f1e17`, or bare `e17`. Distinctive enough to tell
+ * a ref from an attribute selector: nobody writes `[e17]` meaning an element with an `e17` attribute.
+ */
+const REF_TOKEN = /^(?:f\d+)?e\d+$/;
+
+/**
+ * A snapshot prints refs as `[ref=f1e17]`, and pasting that in whole is the obvious thing to do;
+ * Playwright then reads it as a CSS attribute selector and matches nothing. The decoration is peeled
+ * off when a ref is what is underneath; anything else (`[disabled]`, `a[href="..."]`, `#id`) is
+ * returned exactly as it arrived.
+ */
+function bareRef(value: string): string {
+  const stripped = value
+    .trim()
+    .replace(/^\[|\]$/g, "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .trim()
+    .replace(/^(?:aria-)?ref\s*=\s*/i, "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .trim();
+  return REF_TOKEN.test(stripped) ? stripped : value;
+}
+
+/**
+ * Playwright's element argument, whatever shape it arrives in: `target` is current, `ref` its old
+ * name, a one-element array a misreading of the snapshot. Mutated in place: that is how pi takes an
+ * argument change.
+ */
+function normaliseTarget(input: unknown): void {
+  if (!input || typeof input !== "object") return;
+  const o = input as Record<string, unknown>;
+  if (Array.isArray(o.target) && o.target.length === 1 && typeof o.target[0] === "string") o.target = o.target[0];
+  if (typeof o.target === "string") o.target = bareRef(o.target);
+  else if (typeof o.ref === "string") o.target = bareRef(o.ref);
+  // fill_form carries one of these per field.
+  if (Array.isArray(o.fields)) for (const field of o.fields) normaliseTarget(field);
+}
+
+/**
+ * Driving a browser, in either shape an MCP adapter offers: a tool named for its server, or the proxy
+ * tool carrying it as an argument. Matched anywhere in the name, not anchored: a server prefix puts
+ * the telling part in the middle (`playwright_browser_navigate`).
+ */
+function browserCall(toolName: string, input: Record<string, unknown>): { isBrowser: boolean; url?: string } {
+  const direct = /(^|[_.])browser[_.]/i.test(toolName);
+  const viaProxy =
+    toolName === "mcp" &&
+    ["server", "connect", "tool", "describe"].some((k) => (typeof input[k] === "string" ? /browser/i.test(input[k] as string) : false));
+  if (!direct && !viaProxy) return { isBrowser: false };
+  const args = (input.args ?? input) as Record<string, unknown>;
+  return { isBrowser: true, url: typeof args?.url === "string" ? args.url : undefined };
+}
+
+/** Does a host match one of the allowlist globs? `*.example.com` covers a sub. Empty allows all. */
+function hostAllowed(url: string, allow: string[]): boolean {
+  if (!allow.length) return true;
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return allow.some((pattern) => {
+    const p = pattern.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (p.startsWith("*.")) {
+      const base = p.slice(2);
+      return host === base || host.endsWith(`.${base}`);
+    }
+    return host === p;
+  });
+}
+
+/** The Instance browser as a Session's Guard sees it. */
+export interface GuardBrowser {
+  /** The browser tools this Session registered itself (filled as they register): the only browser tools it may call. */
+  owned: ReadonlySet<string>;
+  /** The Session's gate, read at each call (`sessionBrowserNow`). */
+  now: () => Promise<SessionBrowserState>;
+}
+
+const NO_BROWSER: GuardBrowser = { owned: new Set(), now: async () => ({ allowed: false, allowlist: [] }) };
+
+/** Why a browser call is refused, or nothing when it may go on. */
+async function browserRefusal(tool: string, input: Record<string, unknown>, browser: GuardBrowser): Promise<string | undefined> {
+  const asBrowser = browserCall(tool, input);
+  if (!asBrowser.isBrowser) return undefined;
+  inlineBrowserScreenshot(tool, input);
+  normaliseTarget(input);
+  if (!browser.owned.has(tool)) {
+    return "Refused: the only browser this Session may drive is the Instance browser, through its own browser tools. Say so rather than looking for another way to reach the page.";
+  }
+  const state = await browser.now();
+  if (!state.allowed) {
+    return "Refused: this Session cannot drive the browser. It is enabled per Session, for an admin's Session only, and it is not enabled here. Say so rather than looking for another way to reach the page.";
+  }
+  if (asBrowser.url && !hostAllowed(asBrowser.url, state.allowlist)) {
+    return `Refused: ${asBrowser.url} is not on the browser allowlist. Tell whoever asked which domain you needed; do not try a different route to the same place.`;
+  }
+  return undefined;
+}
+
 export interface GuardOptions {
   /** The Deck Session, for the log line of a refusal. */
   sessionId: string;
@@ -164,19 +271,31 @@ export interface GuardOptions {
   allowedTools?: ReadonlySet<string>;
   /** This Session's taint, rebuilt here at `session_start`; shared with whoever hands it untrusted words. */
   taint: SessionTaint;
+  /**
+   * The Instance browser, when this Session may have it (an admin's). Without it every browser call is
+   * refused: no browser is ever reached around the Session's own tools and its gate.
+   */
+  browser?: GuardBrowser;
 }
 
 /** An ExtensionFactory (pi's inline extension), one instance per Session. */
-export function guardExtension({ sessionId, report = () => {}, allowedTools, taint }: GuardOptions) {
+export function guardExtension({ sessionId, report = () => {}, allowedTools, taint, browser = NO_BROWSER }: GuardOptions) {
   return (pi: any): void => {
     pi.on("session_start", async (_event: any, ctx: any) => {
       await taint.restore(ctx?.sessionManager?.getEntries?.() ?? []);
     });
 
     pi.on("tool_result", async (event: any) => {
-      if (!(await taint.observe(event))) return undefined;
+      // A page snapshot in compact notation: every node, label, state, URL and ref kept.
+      const compact = !event.isError && isBrowserSnapshot(String(event.toolName), event.input ?? {});
+      const formatted = compact
+        ? (Array.isArray(event.content) ? event.content : []).map((part: any) =>
+            part?.type === "text" && typeof part.text === "string" ? { ...part, text: cleanBrowserSnapshot(part.text) } : part,
+          )
+        : event.content;
+      if (!(await taint.observe(event))) return compact ? { content: formatted } : undefined;
       const { open, close } = envelope(randomBytes(8).toString("hex"));
-      const content = (Array.isArray(event.content) ? event.content : []).map((part: any) =>
+      const content = (Array.isArray(formatted) ? formatted : []).map((part: any) =>
         part?.type === "text" && typeof part.text === "string" ? { ...part, text: deface(part.text) } : part,
       );
       return { content: [{ type: "text", text: open }, ...content, { type: "text", text: close }] };
@@ -190,6 +309,11 @@ export function guardExtension({ sessionId, report = () => {}, allowedTools, tai
           : "this Session has no tools";
         report({ tool, verdict: "deny", reason });
         return { block: true, reason: `Refused: ${reason}.` };
+      }
+      const browserRefused = await browserRefusal(tool, event.input ?? {}, browser);
+      if (browserRefused) {
+        report({ tool, verdict: "deny", reason: browserRefused });
+        return { block: true, reason: browserRefused };
       }
       if (taint.isTainted() && TAINT_REVOKED_TOOLS.has(tool)) {
         const reason = `${tool}: not available once the Session has read untrusted content`;
