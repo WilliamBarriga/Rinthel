@@ -19,7 +19,7 @@ from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle import specs
 from rinthel_tui.lifecycle.domain.types import UnitOutcome
 from rinthel_tui.lifecycle.executor import Broadcast, Execute
-from rinthel_tui.lifecycle.managed_service import LocalProcessService
+from rinthel_tui.lifecycle.service_defs import LocalProcessService
 
 
 class LifecycleBusy(Exception):

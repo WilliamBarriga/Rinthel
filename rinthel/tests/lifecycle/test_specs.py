@@ -8,7 +8,7 @@ import pytest
 
 from rinthel_tui.config import with_local_model
 from rinthel_tui.lifecycle import services, specs
-from rinthel_tui.lifecycle.domain.phases import data_dir, managed_service
+from rinthel_tui.lifecycle.domain.phases import data_dir, service_phases
 from rinthel_tui.models.domain.types import LocalModel
 
 
@@ -163,7 +163,7 @@ def test_install_with_voice_on_windows_skips_it_with_a_notice(cfg):
     plan = specs.install_plan(dataclasses.replace(cfg, platform="windows"), voice=True)
 
     (voice,) = [unit for batch in plan.batches for unit in batch.units if unit.service == "voz"]
-    assert [phase.fn for phase in voice.phases] == [managed_service.phase_notice]
+    assert [phase.fn for phase in voice.phases] == [service_phases.phase_notice]
 
 
 @pytest.mark.parametrize("service", ["llama-server", "whisper-server", "audiocpp-server"])
@@ -176,11 +176,11 @@ def test_a_model_switch_restarts_only_its_service_and_every_step_is_required(cfg
     (unit,) = restart.batches[0].units
     assert unit.service == service
     assert [phase.fn for phase in unit.phases] == [
-        managed_service.phase_kill, managed_service.phase_spawn, managed_service.phase_wait_ready,
+        service_phases.phase_kill, service_phases.phase_spawn, service_phases.phase_wait_ready,
     ]
     assert unit.phases[0].kwargs["required"] and unit.phases[2].kwargs["required"]
     ((stopping,),) = [batch.units for batch in stop.batches]
-    assert [(p.fn, p.kwargs["required"]) for p in stopping.phases] == [(managed_service.phase_kill, True)]
+    assert [(p.fn, p.kwargs["required"]) for p in stopping.phases] == [(service_phases.phase_kill, True)]
 
 
 def _deck_data_phase(plan: specs.Plan) -> specs.PhaseSpec:

@@ -29,7 +29,7 @@ from rinthel_tui.lifecycle import install_tasks, services
 from rinthel_tui.lifecycle.domain.errors import PhaseError
 from rinthel_tui.lifecycle.domain.host import Host
 from rinthel_tui.lifecycle.domain.outcome import PhaseReport, require_ok
-from rinthel_tui.lifecycle.domain.phases import managed_service
+from rinthel_tui.lifecycle.domain.phases import service_phases
 from rinthel_tui.lifecycle.domain.phases.docker import phase_check_docker
 from rinthel_tui.lifecycle.install_tasks import (
     IdentitySetup,
@@ -507,9 +507,9 @@ async def phase_install_voice_start(host: Host, report: PhaseReport, *, task: Vo
             report.warn(f"{service.display_name}: sin Local model activo usable — no arranca")
             continue
         spec = service.spec(cfg)
-        await managed_service.phase_kill(host, report, service=spec, required=True)
-        await managed_service.phase_spawn(host, report, service=spec)
-        await managed_service.phase_wait_ready(host, report, service=spec, required=True)
+        await service_phases.phase_kill(host, report, service=spec, required=True)
+        await service_phases.phase_spawn(host, report, service=spec)
+        await service_phases.phase_wait_ready(host, report, service=spec, required=True)
 
 
 # ── unidades instalables — un servicio con enabled=False no aparece en

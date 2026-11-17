@@ -1,6 +1,6 @@
 """``domain/phases/docker.py``, lo que no encaja en el patrón de
-managed_service.py: el chequeo del daemon de Docker. El resto (spawn/wait/kill
-de servicios, up/down docker) se prueba en test_managed_service.py. Corre
+service_phases.py: el chequeo del daemon de Docker. El resto (spawn/wait/kill
+de servicios, up/down docker) se prueba en test_service_phases.py. Corre
 contra un ``Host`` de dobles."""
 
 import pytest

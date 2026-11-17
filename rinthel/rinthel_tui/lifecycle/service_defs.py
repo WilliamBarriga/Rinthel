@@ -7,7 +7,7 @@ sub-configs de ``config.py``.
 
 Una definición conoce a ``RinthelConfig`` y las phases no: ``spec(cfg)`` la
 convierte en el ``LocalProcessSpec``/``DockerComposeSpec`` ya armado que
-reciben las phases de ``lifecycle/domain/phases/managed_service.py``. Los
+reciben las phases de ``lifecycle/domain/phases/service_phases.py``. Los
 labels del menú (``menu_label``, ``wait_label``, ``kill_label``) alimentan los
 ``PhaseSpec`` de ``specs.py`` y no viajan al dominio.
 """

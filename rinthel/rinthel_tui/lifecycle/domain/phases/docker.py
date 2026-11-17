@@ -1,4 +1,4 @@
-"""Lo que no encaja en el patrón genérico de ``managed_service.py``: un
+"""Lo que no encaja en el patrón genérico de ``service_phases.py``: un
 chequeo de infra (el daemon de Docker) que no es ni un proceso local ni un
 stack docker compose en sí mismo."""
 

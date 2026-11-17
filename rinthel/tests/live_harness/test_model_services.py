@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from rinthel_tui.lifecycle.managed_service import LocalProcessService
+from rinthel_tui.lifecycle.service_defs import LocalProcessService
 from tests.live.model_services import running_model_services
 
 _SERVER = (

@@ -19,7 +19,7 @@ from rinthel_tui.clock import ManualClock
 from rinthel_tui.config import with_local_model
 from rinthel_tui.lifecycle import services
 from rinthel_tui.lifecycle.domain.errors import PhaseError
-from rinthel_tui.lifecycle.domain.phases import managed_service
+from rinthel_tui.lifecycle.domain.phases import service_phases
 from rinthel_tui.lifecycle.domain.types import ProcessHandle
 from rinthel_tui.models.domain.types import LocalModel
 from tests.lifecycle.fakes import FakeProcesses, FakeRegistry, fake_host
@@ -72,7 +72,7 @@ async def test_spawn_skips_when_the_port_is_already_taken(cfg, report, service):
     host, _ = fake_host()
     host.probe.script_port(service.port_of(cfg), True)
 
-    await managed_service.phase_spawn(host, report, service=service.spec(cfg))
+    await service_phases.phase_spawn(host, report, service=service.spec(cfg))
 
     assert host.processes.spawns == []
     assert len(report.warnings) == 1
@@ -82,7 +82,7 @@ async def test_spawn_skips_when_the_port_is_already_taken(cfg, report, service):
 async def test_spawn_leaves_the_service_running_with_its_own_argv_and_log(cfg, report, service):
     host, _ = fake_host()
 
-    await managed_service.phase_spawn(host, report, service=service.spec(cfg))
+    await service_phases.phase_spawn(host, report, service=service.spec(cfg))
 
     (spawn,) = host.processes.spawns
     assert host.processes.is_alive(spawn.handle)
@@ -97,7 +97,7 @@ async def test_spawn_fails_the_phase_when_the_process_dies_right_away(cfg, repor
     host.processes.script(service.build_argv(cfg), exits=True)
 
     with pytest.raises(PhaseError):
-        await managed_service.phase_spawn(host, report, service=service.spec(cfg))
+        await service_phases.phase_spawn(host, report, service=service.spec(cfg))
 
     assert len(report.errors) == 1
 
@@ -108,7 +108,7 @@ async def test_spawn_fails_the_phase_when_the_binary_does_not_start(cfg, report,
     host.processes.script(service.build_argv(cfg), missing=True)
 
     with pytest.raises(PhaseError):
-        await managed_service.phase_spawn(host, report, service=service.spec(cfg))
+        await service_phases.phase_spawn(host, report, service=service.spec(cfg))
 
     assert len(report.errors) == 1
 
@@ -117,7 +117,7 @@ async def test_spawn_gives_the_process_a_moment_to_crash_before_calling_it_launc
     host, _ = fake_host()
     started = host.clock.now()
 
-    await managed_service.phase_spawn(host, report, service=services.LLAMA_SERVICE.spec(cfg))
+    await service_phases.phase_spawn(host, report, service=services.LLAMA_SERVICE.spec(cfg))
 
     assert _elapsed(host.clock, started) > 0
 
@@ -126,7 +126,7 @@ async def test_spawn_hands_the_service_env_to_the_process(cfg, report):
     host, _ = fake_host()
     service = dataclasses.replace(services.LLAMA_SERVICE, env_of=lambda c: {"CUDA_VISIBLE_DEVICES": "0"})
 
-    await managed_service.phase_spawn(host, report, service=service.spec(cfg))
+    await service_phases.phase_spawn(host, report, service=service.spec(cfg))
 
     (spawn,) = host.processes.spawns
     assert spawn.env == {"CUDA_VISIBLE_DEVICES": "0"}
@@ -153,7 +153,7 @@ async def test_spawn_writes_the_files_and_dirs_the_service_reads_before_launchin
     )
     host, _ = fake_host(processes=_InspectingProcesses([config_file, slots]))
 
-    await managed_service.phase_spawn(host, report, service=service.spec(cfg))
+    await service_phases.phase_spawn(host, report, service=service.spec(cfg))
 
     assert host.processes.existed_at_launch == {config_file: True, slots: True}
 
@@ -167,7 +167,7 @@ async def test_spawn_rotates_an_oversized_log_keeping_one_backup(cfg, report, se
     backup = log.with_name(log.name + ".1")
     backup.write_bytes(b"old backup")
 
-    await managed_service.phase_spawn(host, report, service=service.spec(cfg))
+    await service_phases.phase_spawn(host, report, service=service.spec(cfg))
 
     assert backup.stat().st_size == MAX_LOG_BYTES + 1
     assert not log.exists() or log.stat().st_size == 0
@@ -179,7 +179,7 @@ async def test_spawn_keeps_a_small_log_as_it_is(cfg, report):
     log = service.log_of(cfg)
     log.write_bytes(b"x" * 100)
 
-    await managed_service.phase_spawn(host, report, service=service.spec(cfg))
+    await service_phases.phase_spawn(host, report, service=service.spec(cfg))
 
     assert log.read_bytes() == b"x" * 100
     assert not log.with_name(log.name + ".1").exists()
@@ -193,7 +193,7 @@ async def test_wait_ready_succeeds_when_the_service_answers(cfg, report, service
     host, _ = fake_host()
     host.probe.script_http(service.ready_url_of(cfg), True)
 
-    assert await managed_service.phase_wait_ready(host, report, service=service.spec(cfg)) is True
+    assert await service_phases.phase_wait_ready(host, report, service=service.spec(cfg)) is True
 
     assert len(report.successes) == 1 and report.warnings == []
 
@@ -202,7 +202,7 @@ async def test_wait_ready_succeeds_when_the_service_answers(cfg, report, service
 async def test_wait_ready_only_warns_when_the_service_never_answers(cfg, report, service):
     host, _ = fake_host()
 
-    assert await managed_service.phase_wait_ready(host, report, service=service.spec(cfg), timeout=0) is False
+    assert await service_phases.phase_wait_ready(host, report, service=service.spec(cfg), timeout=0) is False
 
     assert len(report.warnings) == 1 and report.errors == []
 
@@ -210,11 +210,11 @@ async def test_wait_ready_only_warns_when_the_service_never_answers(cfg, report,
 async def test_wait_ready_timeout_hint_only_fires_when_configured(cfg, report):
     host, _ = fake_host()
 
-    await managed_service.phase_wait_ready(host, report, service=services.LLAMA_SERVICE.spec(cfg), timeout=0)
+    await service_phases.phase_wait_ready(host, report, service=services.LLAMA_SERVICE.spec(cfg), timeout=0)
     assert len(report.infos) == 1
 
     quiet = type(report)()
-    await managed_service.phase_wait_ready(host, quiet, service=services.UNDERSTORY_SERVICE.spec(cfg), timeout=0)
+    await service_phases.phase_wait_ready(host, quiet, service=services.UNDERSTORY_SERVICE.spec(cfg), timeout=0)
     assert quiet.infos == []
 
 
@@ -222,7 +222,7 @@ async def test_wait_ready_is_a_noop_for_a_service_without_a_ready_url(cfg, repor
     host, log = fake_host()
     service = dataclasses.replace(services.UNDERSTORY_SERVICE, ready_url_of=None)
 
-    assert await managed_service.phase_wait_ready(host, report, service=service.spec(cfg)) is True
+    assert await service_phases.phase_wait_ready(host, report, service=service.spec(cfg)) is True
 
     assert (report.infos, report.successes, report.warnings, report.errors) == ([], [], [], []) and log == []
 
@@ -234,7 +234,7 @@ async def test_wait_ready_backoff_grows_and_caps(cfg, report):
     )
     started = host.clock.now()
 
-    await managed_service.phase_wait_ready(host, report, service=service.spec(cfg), timeout=20)
+    await service_phases.phase_wait_ready(host, report, service=service.spec(cfg), timeout=20)
 
     asked = host.probe.http_asked_at
     gaps = [(later - earlier) / timedelta(seconds=1) for earlier, later in pairwise(asked)]
@@ -250,7 +250,7 @@ async def test_wait_ready_never_waits_past_its_timeout(cfg, report):
     )
     started = host.clock.now()
 
-    await managed_service.phase_wait_ready(host, report, service=service.spec(cfg), timeout=5)
+    await service_phases.phase_wait_ready(host, report, service=service.spec(cfg), timeout=5)
 
     assert _elapsed(host.clock, started) == 5.0
     assert len(report.warnings) == 1
@@ -264,7 +264,7 @@ async def test_wait_ready_stops_polling_as_soon_as_the_service_answers(cfg, repo
     host.probe.script_http(service.ready_url_of(cfg), [False, False, True])
     started = host.clock.now()
 
-    assert await managed_service.phase_wait_ready(host, report, service=service.spec(cfg), timeout=30) is True
+    assert await service_phases.phase_wait_ready(host, report, service=service.spec(cfg), timeout=30) is True
 
     assert _elapsed(host.clock, started) == 3.0  # esperó 1 s y 2 s, y no más
 
@@ -273,7 +273,7 @@ async def test_a_required_wait_ready_fails_the_phase_on_timeout(cfg, report):
     host, _ = fake_host()
 
     with pytest.raises(PhaseError):
-        await managed_service.phase_wait_ready(
+        await service_phases.phase_wait_ready(
             host, report, service=services.LLAMA_SERVICE.spec(cfg), timeout=0, required=True
         )
 
@@ -287,7 +287,7 @@ async def test_a_required_wait_ready_fails_the_phase_on_timeout(cfg, report):
 async def test_kill_only_warns_when_the_service_was_not_running(cfg, report, service):
     host, _ = fake_host()
 
-    await managed_service.phase_kill(host, report, service=service.spec(cfg))
+    await service_phases.phase_kill(host, report, service=service.spec(cfg))
 
     assert len(report.warnings) == 1 and _signals(host) == []
 
@@ -298,7 +298,7 @@ async def test_kill_stops_the_service_with_a_term(cfg, report, service):
     host.probe.script_port(service.port_of(cfg), [True, False])
     host.processes.listen(service.port_of(cfg), ProcessHandle(4242))
 
-    await managed_service.phase_kill(host, report, service=service.spec(cfg))
+    await service_phases.phase_kill(host, report, service=service.spec(cfg))
 
     assert len(report.successes) == 1 and _signals(host) == ["TERM"]
     assert report.warnings == []
@@ -309,7 +309,7 @@ async def test_kill_warns_when_it_cannot_identify_the_listener_but_still_waits_a
     port = services.LLAMA_SERVICE.port_of(cfg)
     host.probe.script_port(port, [True, False])
 
-    await managed_service.phase_kill(host, report, service=services.LLAMA_SERVICE.spec(cfg))
+    await service_phases.phase_kill(host, report, service=services.LLAMA_SERVICE.spec(cfg))
 
     assert _signals(host) == ["TERM"]
     assert len(report.warnings) == 1 and len(report.successes) == 1
@@ -321,7 +321,7 @@ async def test_kill_falls_back_to_sigkill_after_ten_seconds_of_term(cfg, report)
     host.probe.script_port(port, [True] * 11 + [False])  # corriendo, TERM sin efecto, cae con el KILL
     started = host.clock.now()
 
-    await managed_service.phase_kill(host, report, service=services.LLAMA_SERVICE.spec(cfg))
+    await service_phases.phase_kill(host, report, service=services.LLAMA_SERVICE.spec(cfg))
 
     assert _signals(host) == ["TERM", "KILL"]
     assert _elapsed(host.clock, started) == 10
@@ -333,7 +333,7 @@ async def test_kill_warns_when_the_port_stays_busy_after_sigkill(cfg, report):
     host.probe.script_port(services.LLAMA_SERVICE.port_of(cfg), True)
     host.processes.listen(services.LLAMA_SERVICE.port_of(cfg), ProcessHandle(4242))
 
-    await managed_service.phase_kill(host, report, service=services.LLAMA_SERVICE.spec(cfg))
+    await service_phases.phase_kill(host, report, service=services.LLAMA_SERVICE.spec(cfg))
 
     assert _signals(host) == ["TERM", "KILL"]
     assert len(report.warnings) == 1 and report.errors == []
@@ -344,7 +344,7 @@ async def test_a_required_kill_fails_the_phase_when_the_port_stays_busy_after_si
     host.probe.script_port(services.LLAMA_SERVICE.port_of(cfg), True)
 
     with pytest.raises(PhaseError):
-        await managed_service.phase_kill(host, report, service=services.LLAMA_SERVICE.spec(cfg), required=True)
+        await service_phases.phase_kill(host, report, service=services.LLAMA_SERVICE.spec(cfg), required=True)
 
     assert len(report.errors) == 1
 
@@ -376,7 +376,7 @@ def test_enabled_of_custom_resolves_against_cfg(cfg):
 async def test_wait_port_free_succeeds_immediately_when_nobody_listens(cfg, report):
     host, _ = fake_host()
 
-    await managed_service.phase_wait_port_free(host, report, port=1234)
+    await service_phases.phase_wait_port_free(host, report, port=1234)
 
     assert len(report.successes) == 1 and report.warnings == []
 
@@ -386,7 +386,7 @@ async def test_wait_port_free_waits_until_the_port_is_released(cfg, report):
     host.probe.script_port(1234, [True, True, False])
     started = host.clock.now()
 
-    await managed_service.phase_wait_port_free(host, report, port=1234)
+    await service_phases.phase_wait_port_free(host, report, port=1234)
 
     assert _elapsed(host.clock, started) == 2
     assert len(report.successes) == 1
@@ -397,7 +397,7 @@ async def test_wait_port_free_warns_and_goes_on_after_the_timeout(cfg, report):
     host.probe.script_port(1234, True)
     started = host.clock.now()
 
-    await managed_service.phase_wait_port_free(host, report, port=1234, timeout=30)
+    await service_phases.phase_wait_port_free(host, report, port=1234, timeout=30)
 
     assert _elapsed(host.clock, started) == 30
     assert len(report.warnings) == 1 and report.errors == []
@@ -411,8 +411,8 @@ async def test_up_and_down_skip_when_the_stack_directory_is_missing(cfg, report,
     host, _ = fake_host()
     service = _with_dir(service, tmp_path / "no-existe")
 
-    await managed_service.phase_up(host, report, service=service.spec(cfg))
-    await managed_service.phase_down(host, report, service=service.spec(cfg))
+    await service_phases.phase_up(host, report, service=service.spec(cfg))
+    await service_phases.phase_down(host, report, service=service.spec(cfg))
 
     assert host.compose.calls == [] and len(report.warnings) == 2
 
@@ -422,7 +422,7 @@ async def test_up_brings_the_service_up(cfg, report, tmp_path, service):
     host, _ = fake_host()
     service = _with_dir(service, tmp_path)
 
-    await managed_service.phase_up(host, report, service=service.spec(cfg))
+    await service_phases.phase_up(host, report, service=service.spec(cfg))
 
     assert service.compose_service_name in host.compose.running
     assert len(report.successes) == 1 and report.errors == []
@@ -435,7 +435,7 @@ async def test_up_fails_the_phase_when_compose_up_fails(cfg, report, tmp_path, s
     host.compose.fail_rc("up", 1, "boom")
 
     with pytest.raises(PhaseError):
-        await managed_service.phase_up(host, report, service=service.spec(cfg))
+        await service_phases.phase_up(host, report, service=service.spec(cfg))
 
     assert service.compose_service_name not in host.compose.running
     assert len(report.errors) == 1
@@ -447,7 +447,7 @@ async def test_up_with_rebuild_builds_with_the_latest_npm_version(cfg, report, t
     host, _ = fake_host(registry=_npm({"@earendil-works/pi-coding-agent": "1.2.3"}))
     service = _with_dir(_PI_PORTAL, tmp_path)
 
-    await managed_service.phase_up(host, report, service=service.spec(cfg), rebuild=True)
+    await service_phases.phase_up(host, report, service=service.spec(cfg), rebuild=True)
 
     (up,) = [c for c in host.compose.calls if c[0] == "up"]
     assert up[1:3] == ("deck", {"PI_VERSION": "1.2.3"})
@@ -458,7 +458,7 @@ async def test_up_with_rebuild_still_builds_with_latest_when_the_registry_is_unr
     host, _ = fake_host(registry=_npm({}))
     service = _with_dir(_PI_PORTAL, tmp_path)
 
-    await managed_service.phase_up(host, report, service=service.spec(cfg), rebuild=True)
+    await service_phases.phase_up(host, report, service=service.spec(cfg), rebuild=True)
 
     (up,) = [c for c in host.compose.calls if c[0] == "up"]
     assert up[2] == {"PI_VERSION": "latest"}
@@ -469,7 +469,7 @@ async def test_up_with_rebuild_rebuilds_a_service_with_no_npm_build_args(cfg, re
     host, _ = fake_host()
     service = _with_dir(services.DECK_SERVICE, tmp_path)
 
-    await managed_service.phase_up(host, report, service=service.spec(cfg), rebuild=True)
+    await service_phases.phase_up(host, report, service=service.spec(cfg), rebuild=True)
 
     (up,) = [c for c in host.compose.calls if c[0] == "up"]
     assert up[2] == {}
@@ -479,7 +479,7 @@ async def test_up_with_rebuild_does_not_build_a_service_that_has_no_build(cfg, r
     host, _ = fake_host()
     service = _with_dir(services.UNDERSTORY_SERVICE, tmp_path)
 
-    await managed_service.phase_up(host, report, service=service.spec(cfg), rebuild=True)
+    await service_phases.phase_up(host, report, service=service.spec(cfg), rebuild=True)
 
     (up,) = [c for c in host.compose.calls if c[0] == "up"]
     assert up[2] is None
@@ -491,7 +491,7 @@ async def test_up_fails_the_phase_when_the_rebuild_fails(cfg, report, tmp_path):
     host.compose.fail_rc("up", 1, "build failed")
 
     with pytest.raises(PhaseError):
-        await managed_service.phase_up(host, report, service=service.spec(cfg), rebuild=True)
+        await service_phases.phase_up(host, report, service=service.spec(cfg), rebuild=True)
 
     assert "portal" not in host.compose.running and len(report.errors) == 1
 
@@ -502,7 +502,7 @@ async def test_down_takes_only_its_own_service_down(cfg, report, tmp_path, servi
     service = _with_dir(service, tmp_path)
     host.compose.running.update({service.compose_service_name, "neighbour"})
 
-    await managed_service.phase_down(host, report, service=service.spec(cfg))
+    await service_phases.phase_down(host, report, service=service.spec(cfg))
 
     assert host.compose.running == {"neighbour"}
     assert len(report.successes) == 1
@@ -515,6 +515,6 @@ async def test_down_fails_the_phase_when_compose_down_fails(cfg, report, tmp_pat
     host.compose.fail_rc("down", 1, "boom")
 
     with pytest.raises(PhaseError):
-        await managed_service.phase_down(host, report, service=service.spec(cfg))
+        await service_phases.phase_down(host, report, service=service.spec(cfg))
 
     assert len(report.errors) == 1

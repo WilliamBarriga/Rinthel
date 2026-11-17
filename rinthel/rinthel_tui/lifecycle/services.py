@@ -1,6 +1,6 @@
 """Instancias concretas de ``LocalProcessService``/``DockerComposeService``
 — un lugar único para agregar un servicio nuevo (llama-server local, o
-Understory y el portal vía docker compose) sin tocar ``managed_service.py``.
+Understory y el portal vía docker compose) sin tocar ``service_defs.py``.
 """
 
 import json
@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from rinthel_tui.config import RinthelConfig
-from rinthel_tui.lifecycle.managed_service import DockerComposeService, LocalProcessService
+from rinthel_tui.lifecycle.service_defs import DockerComposeService, LocalProcessService
 from rinthel_tui.models.domain.types import Capability
 
 # ── argv builders ─────────────────────────────────────────────────────────

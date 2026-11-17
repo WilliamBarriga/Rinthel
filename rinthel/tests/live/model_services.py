@@ -19,7 +19,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator, Sequence
 
-from rinthel_tui.lifecycle.managed_service import LocalProcessService
+from rinthel_tui.lifecycle.service_defs import LocalProcessService
 from rinthel_tui.lifecycle.services import LLAMA_SERVICE
 
 

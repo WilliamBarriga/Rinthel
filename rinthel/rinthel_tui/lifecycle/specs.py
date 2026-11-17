@@ -16,8 +16,8 @@ from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle import install, services
 from rinthel_tui.lifecycle.domain.host import Host
 from rinthel_tui.lifecycle.domain.outcome import PhaseReport
-from rinthel_tui.lifecycle.domain.phases import data_dir, docker, managed_service
-from rinthel_tui.lifecycle.managed_service import DockerComposeService, LocalProcessService
+from rinthel_tui.lifecycle.domain.phases import data_dir, docker, service_phases
+from rinthel_tui.lifecycle.service_defs import DockerComposeService, LocalProcessService
 
 PhaseFn = Callable[..., Coroutine[Any, Any, None]]
 
@@ -68,30 +68,30 @@ class Plan:
 
 
 def _spawn_spec(cfg: RinthelConfig, service: LocalProcessService) -> PhaseSpec:
-    return PhaseSpec(f"◈ {service.menu_label}", managed_service.phase_spawn, {"service": service.spec(cfg)})
+    return PhaseSpec(f"◈ {service.menu_label}", service_phases.phase_spawn, {"service": service.spec(cfg)})
 
 
 def _wait_spec(cfg: RinthelConfig, service: LocalProcessService | DockerComposeService) -> PhaseSpec:
     # Mismo phase_wait_ready para los dos tipos de servicio — ver
-    # managed_service._ServiceBase, de donde ambos heredan los campos de
+    # service_defs._ServiceBase, de donde ambos heredan los campos de
     # ready/poll.
-    return PhaseSpec(f"◈ ESPERANDO {service.wait_label}", managed_service.phase_wait_ready, {"service": service.spec(cfg)})
+    return PhaseSpec(f"◈ ESPERANDO {service.wait_label}", service_phases.phase_wait_ready, {"service": service.spec(cfg)})
 
 
 def _kill_spec(cfg: RinthelConfig, service: LocalProcessService) -> PhaseSpec:
-    return PhaseSpec(f"◈ {service.kill_label}", managed_service.phase_kill, {"service": service.spec(cfg)})
+    return PhaseSpec(f"◈ {service.kill_label}", service_phases.phase_kill, {"service": service.spec(cfg)})
 
 
 def _up_spec(cfg: RinthelConfig, service: DockerComposeService, *, rebuild: bool = False) -> PhaseSpec:
     return PhaseSpec(
         f"◈ {service.menu_label}",
-        managed_service.phase_up,
+        service_phases.phase_up,
         {"service": service.spec(cfg), "rebuild": rebuild},
     )
 
 
 def _down_spec(cfg: RinthelConfig, service: DockerComposeService) -> PhaseSpec:
-    return PhaseSpec(f"◈ {service.kill_label}", managed_service.phase_down, {"service": service.spec(cfg)})
+    return PhaseSpec(f"◈ {service.kill_label}", service_phases.phase_down, {"service": service.spec(cfg)})
 
 
 # ── INSTALL ───────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ def install_plan(cfg: RinthelConfig, *, voice: bool = False) -> Plan:
             units.append(Unit(unit.label.lower(), tuple(_install_spec(cfg, step) for step in unit.steps)))
         else:
             notice = PhaseSpec(
-                f"◈ {unit.label}  --  SOLO LINUX", managed_service.phase_notice,
+                f"◈ {unit.label}  --  SOLO LINUX", service_phases.phase_notice,
                 {"message": "la voz es solo de Linux: INSTALL la omite en esta Platform"},
             )
             units.append(Unit(unit.label.lower(), (notice,)))
@@ -152,7 +152,7 @@ def _local_unit(cfg: RinthelConfig, svc: LocalProcessService) -> Unit:
         # el resultado del boot y el resto de los servicios sigue.
         notice = PhaseSpec(
             f"◈ {svc.menu_label}  --  SIN LOCAL MODEL ACTIVO",
-            managed_service.phase_notice,
+            service_phases.phase_notice,
             {"message": cfg.model_warning or "sin Local model activo"},
         )
         return Unit(svc.display_name.lower(), (notice,))
@@ -165,9 +165,9 @@ def restart_phases(cfg: RinthelConfig, service: LocalProcessService) -> tuple[Ph
     puerto que no se libera o un modelo que no responde es un fallo."""
     spec = service.spec(cfg)
     return (
-        PhaseSpec(f"◈ {service.kill_label}", managed_service.phase_kill, {"service": spec, "required": True}),
+        PhaseSpec(f"◈ {service.kill_label}", service_phases.phase_kill, {"service": spec, "required": True}),
         _spawn_spec(cfg, service),
-        PhaseSpec(f"◈ ESPERANDO {service.wait_label}", managed_service.phase_wait_ready, {"service": spec, "required": True}),
+        PhaseSpec(f"◈ ESPERANDO {service.wait_label}", service_phases.phase_wait_ready, {"service": spec, "required": True}),
     )
 
 
@@ -181,7 +181,7 @@ def restart_plan(cfg: RinthelConfig, service: LocalProcessService) -> Plan:
 def stop_plan(cfg: RinthelConfig, service: LocalProcessService) -> Plan:
     """Apagar una Capability (``models off``): parar ``service`` por su
     puerto; un puerto que no se libera es un fallo."""
-    kill = PhaseSpec(f"◈ {service.kill_label}", managed_service.phase_kill, {"service": service.spec(cfg), "required": True})
+    kill = PhaseSpec(f"◈ {service.kill_label}", service_phases.phase_kill, {"service": service.spec(cfg), "required": True})
     return Plan(on_failure="stop", batches=(Batch(marker=None, units=(Unit(service.display_name.lower(), (kill,)),)),))
 
 
@@ -244,7 +244,7 @@ def reload_plan(cfg: RinthelConfig) -> Plan:
                 (
                     PhaseSpec(
                         f"◈ PUERTO {llama.wait_label} LIBRE",
-                        managed_service.phase_wait_port_free,
+                        service_phases.phase_wait_port_free,
                         {"port": llama.port_of(cfg)},
                     ),
                 ),
