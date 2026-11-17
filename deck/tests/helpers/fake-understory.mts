@@ -6,9 +6,7 @@
  * answers `tools/call` for its memory tools with a fixed text. No memory is read or written: every
  * call is recorded, so a test sees exactly what reached Understory and with which token.
  */
-import http from "node:http";
-import { once } from "node:events";
-import type { AddressInfo } from "node:net";
+import { listen, readJson, sendJson as json } from "./http-fake.mts";
 
 export interface MemoryCall { tool: string; arguments: Record<string, unknown> }
 
@@ -40,12 +38,9 @@ export async function fakeUnderstory(token = "understory-test-token"): Promise<F
     },
     delayMs: 0,
   };
-  const json = (res: http.ServerResponse, status: number, body: unknown) =>
-    void res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
-  const server = http.createServer(async (req, res) => {
+  const server = await listen(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://understory");
-    let raw = "";
-    for await (const c of req) raw += c;
+    const rpc = await readJson(req);
     state.requests.push(`${req.method} ${url.pathname}`);
     if (url.pathname !== "/mcp") return json(res, 404, { error: "not found" });
     if (req.headers.authorization !== `Bearer ${state.token}`) {
@@ -55,7 +50,6 @@ export async function fakeUnderstory(token = "understory-test-token"): Promise<F
     if (req.method !== "POST" || !accept.includes("application/json") || !accept.includes("text/event-stream")) {
       return json(res, 406, { jsonrpc: "2.0", error: { code: -32000, message: "Not Acceptable" }, id: null });
     }
-    const rpc = JSON.parse(raw || "{}");
     if (rpc.method !== "tools/call") {
       return json(res, 200, { jsonrpc: "2.0", id: rpc.id, error: { code: -32601, message: "Method not found" } });
     }
@@ -72,13 +66,5 @@ export async function fakeUnderstory(token = "understory-test-token"): Promise<F
       : { content: [{ type: "text", text: answer }] };
     json(res, 200, { jsonrpc: "2.0", id: rpc.id, result });
   });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  return Object.assign(state, {
-    url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
-    close: async () => {
-      server.closeAllConnections();
-      await new Promise<void>((r) => server.close(() => r()));
-    },
-  });
+  return Object.assign(state, { url: server.url, close: server.close });
 }

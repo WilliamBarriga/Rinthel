@@ -7,9 +7,7 @@
  * `log` keeps the order things happened in (`restore x`, `completion <model>`, `save x`), which is
  * what the slot lock is about. `hold()` keeps the next completions open until released.
  */
-import http from "node:http";
-import { once } from "node:events";
-import type { AddressInfo } from "node:net";
+import { listen, readJson } from "./http-fake.mts";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -43,11 +41,9 @@ export async function fakeLlama(slotDir: string, slotBytes = 64): Promise<FakeLl
     failWith: null as number | null,
   };
   let calls = 0;
-  const server = http.createServer(async (req, res) => {
+  const server = await listen(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://llama");
-    let raw = "";
-    for await (const c of req) raw += c;
-    const body = raw ? JSON.parse(raw) : {};
+    const body = await readJson(req);
     if (req.method === "POST" && url.pathname === "/slots/0") {
       const action = url.searchParams.get("action");
       const file = path.join(slotDir, String(body.filename));
@@ -99,10 +95,8 @@ export async function fakeLlama(slotDir: string, slotBytes = 64): Promise<FakeLl
     }
     res.writeHead(404).end();
   });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
   return {
-    url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    url: server.url,
     get log() { return state.log; },
     get bodies() { return state.bodies; },
     get answer() { return state.answer; },
@@ -116,9 +110,6 @@ export async function fakeLlama(slotDir: string, slotBytes = 64): Promise<FakeLl
       gate = new Promise<void>((r) => { release = r; });
       return () => { gate = null; release(); };
     },
-    close: async () => {
-      server.closeAllConnections();
-      await new Promise<void>((r) => server.close(() => r()));
-    },
+    close: server.close,
   };
 }

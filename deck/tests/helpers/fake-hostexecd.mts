@@ -4,9 +4,7 @@
  * `rinthel/hostexecd/daemon.py`. Nothing runs: `/exec` answers `result` and records the request, so a
  * test sees exactly what reached the host and with which token.
  */
-import http from "node:http";
-import { once } from "node:events";
-import type { AddressInfo } from "node:net";
+import { listen, readJson, sendJson as json } from "./http-fake.mts";
 
 export interface ExecRequest { command: string; cwd: string | null; timeout: number | null }
 
@@ -32,17 +30,13 @@ export async function fakeHostexecd(token = "hostexec-test-token"): Promise<Fake
     result: { exit_code: 0, stdout: "ok\n", stderr: "", duration_ms: 3, timed_out: false },
     history: [],
   };
-  const json = (res: http.ServerResponse, status: number, body: unknown) =>
-    void res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
-  const server = http.createServer(async (req, res) => {
+  const server = await listen(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://hostexecd");
-    let raw = "";
-    for await (const c of req) raw += c;
+    const body = await readJson(req);
     state.requests.push(`${req.method} ${url.pathname}`);
     if (url.pathname === "/health") return json(res, 200, { ok: true });
     if (req.headers["x-rinthel-token"] !== state.token) return json(res, 401, { detail: "invalid or missing token" });
     if (req.method === "POST" && url.pathname === "/exec") {
-      const body = JSON.parse(raw || "{}");
       state.execs.push({ command: body.command, cwd: body.cwd ?? null, timeout: body.timeout ?? null });
       return json(res, 200, state.result);
     }
@@ -52,13 +46,5 @@ export async function fakeHostexecd(token = "hostexec-test-token"): Promise<Fake
     }
     json(res, 404, { detail: "Not Found" });
   });
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  return Object.assign(state, {
-    url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
-    close: async () => {
-      server.closeAllConnections();
-      await new Promise<void>((r) => server.close(() => r()));
-    },
-  });
+  return Object.assign(state, { url: server.url, close: server.close });
 }

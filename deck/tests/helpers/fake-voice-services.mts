@@ -9,9 +9,7 @@
  *
  * `requests` keeps what each one got, parsed, so a test can say what Deck sent.
  */
-import http from "node:http";
-import { once } from "node:events";
-import type { AddressInfo } from "node:net";
+import { listen, readBody } from "./http-fake.mts";
 
 export interface FakeWhisper {
   url: string;
@@ -34,31 +32,12 @@ export interface FakeAudio {
   close(): Promise<void>;
 }
 
-async function listen(handler: http.RequestListener): Promise<{ url: string; close(): Promise<void> }> {
-  const server = http.createServer(handler);
-  server.listen(0, "127.0.0.1");
-  await once(server, "listening");
-  return {
-    url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
-    close: async () => {
-      server.closeAllConnections();
-      await new Promise<void>((r) => server.close(() => r()));
-    },
-  };
-}
-
-async function body(req: http.IncomingMessage): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks);
-}
-
 export async function fakeWhisper(transcript = " And so my fellow Americans. "): Promise<FakeWhisper> {
   const state = { transcript, failWith: null as number | null, requests: [] as FakeWhisper["requests"] };
   const server = await listen(async (req, res) => {
     if (req.method !== "POST" || req.url !== "/inference") { res.writeHead(404).end(); return; }
     // Parsed the way whisper-server does: a multipart form.
-    const form = await new Request("http://x", { method: "POST", headers: { "content-type": req.headers["content-type"] ?? "" }, body: await body(req) }).formData();
+    const form = await new Request("http://x", { method: "POST", headers: { "content-type": req.headers["content-type"] ?? "" }, body: await readBody(req) }).formData();
     const file = form.get("file");
     const bytes = file instanceof Blob ? Buffer.from(await file.arrayBuffer()) : Buffer.alloc(0);
     state.requests.push({ language: form.get("language") as string | null, responseFormat: form.get("response_format") as string | null, bytes: bytes.length, riff: bytes.subarray(0, 4).toString("ascii") === "RIFF" });
@@ -72,7 +51,7 @@ export async function fakeAudio(sampleRate = 24000): Promise<FakeAudio> {
   const state = { sampleRate, busyFor: 0, failWith: null as number | null, requests: [] as FakeAudio["requests"] };
   const server = await listen(async (req, res) => {
     if (req.method !== "POST" || req.url !== "/v1/audio/speech") { res.writeHead(404).end(); return; }
-    const json = JSON.parse((await body(req)).toString("utf8"));
+    const json = JSON.parse((await readBody(req)).toString("utf8"));
     state.requests.push({ model: json.model, input: json.input, stream: json.stream, responseFormat: json.response_format });
     if (state.busyFor > 0) {
       state.busyFor--;
