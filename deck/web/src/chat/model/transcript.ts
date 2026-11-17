@@ -77,6 +77,8 @@ export function foldEvent(state: Transcript, event: SessionEvent | StreamSignal)
     case "portal_notice":
       return { ...state, items: [...state.items, { kind: "notice", id: key, text: String(p.text ?? ""), error: Boolean(p.error) }] };
     case "portal_guard":
+      // Every call the Guard checked is in the log; only a refusal is a line of the conversation.
+      if (p.verdict !== "deny") return state;
       return { ...state, items: [...state.items, { kind: "guard", id: key, tool: String(p.tool ?? ""), reason: String(p.reason ?? "") }] };
     case "portal_prefill":
       return { ...state, prefill: { total: p.total, cache: p.cache, processed: p.processed, timeMs: p.timeMs } };

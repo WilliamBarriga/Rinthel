@@ -24,7 +24,7 @@ test("a new file is migrated to the version this code knows, with STRICT tables"
   const db = new Database(f, { readonly: true });
   try {
     const tables = db.prepare("SELECT name, strict FROM pragma_table_list WHERE schema = 'main' AND name NOT LIKE 'sqlite_%' ORDER BY name").all();
-    assert.deepEqual(tables, ["canvases", "events", "notes", "sessions", "settings"].map((name) => ({ name, strict: 1 })));
+    assert.deepEqual(tables, ["canvases", "events", "notes", "session_taint", "sessions", "settings"].map((name) => ({ name, strict: 1 })));
   } finally { db.close(); }
 });
 

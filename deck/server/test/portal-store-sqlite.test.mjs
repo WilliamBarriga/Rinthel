@@ -5,6 +5,7 @@ import { after } from "node:test";
 import { openSqliteStore } from "../dist/store/sqlite/index.js";
 import { canvasesContract } from "./contract/canvases.mjs";
 import { sessionsContract } from "./contract/sessions.mjs";
+import { sessionTaintContract } from "./contract/session-taint.mjs";
 import { settingsContract } from "./contract/settings.mjs";
 
 // The contract suites against `deck.db` on a temporary file: no docker, never skipped.
@@ -16,3 +17,4 @@ const open = async () => openSqliteStore(path.join(dir, `deck-${n++}.db`));
 settingsContract(open);
 sessionsContract(open);
 canvasesContract(open);
+sessionTaintContract(open);

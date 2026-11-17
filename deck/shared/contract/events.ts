@@ -47,7 +47,7 @@ export interface RouteEvent {
   context_window: number | null;
 }
 
-/** `portal_guard`: a call the Guard stopped. */
+/** `portal_guard`: a call the Guard checked, allowed or stopped (`reason` says why a refusal). */
 export interface GuardNotice {
   tool: string;
   verdict: "allow" | "deny";

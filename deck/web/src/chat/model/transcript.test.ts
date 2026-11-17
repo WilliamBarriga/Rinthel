@@ -70,6 +70,14 @@ it("tools, the Guard's refusals, notices and a failed turn reach the transcript"
   expect(state.items[2]).toMatchObject({ text: "No hay un Local model activo", error: true });
 });
 
+it("a call the Guard allowed stays in the log without a line of its own: the tool already shows", () => {
+  const state = fold([
+    stored("portal_guard", { tool: "bash", verdict: "allow", reason: "" }),
+    stored("portal_guard", { tool: "bash", verdict: "deny", reason: "publish: pushing" }),
+  ]);
+  expect(state.items).toMatchObject([{ kind: "guard", tool: "bash", reason: "publish: pushing" }]);
+});
+
 it("an extension's dialog waits until answered or cancelled", () => {
   const asked = fold([live("extension_ui_request", { id: "d1", method: "confirm", title: "¿Seguro?", message: "borrar" })]);
   expect(asked.dialogs).toEqual([{ id: "d1", method: "confirm", title: "¿Seguro?", message: "borrar", options: undefined }]);

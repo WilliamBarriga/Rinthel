@@ -1,6 +1,7 @@
 import type { PortalStore } from "../port.js";
 import { memoryCanvases } from "./canvases.js";
 import { memorySessions } from "./sessions.js";
+import { memorySessionTaint } from "./session-taint.js";
 import { memorySettings } from "./settings.js";
 import { newState } from "./state.js";
 
@@ -15,6 +16,7 @@ export function createMemoryStore(options: { now?: () => Date } = {}): PortalSto
     canvases: memoryCanvases(state),
     sessions: memorySessions(state, options.now),
     settings: memorySettings(),
+    sessionTaint: memorySessionTaint(state),
     async close() {},
   };
 }

@@ -74,6 +74,13 @@ export const MIGRATIONS: readonly string[] = [
   ) STRICT;
   CREATE INDEX idx_canvases_session ON canvases (session_id);
   `,
+  `
+  -- A Session that read something untrusted (the Guard's taint): a row is the mark, kept for good.
+  CREATE TABLE session_taint (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+    tainted_at TEXT NOT NULL DEFAULT ${NOW}
+  ) STRICT;
+  `,
 ];
 
 /** The version a file is at once every migration this code knows has run. */

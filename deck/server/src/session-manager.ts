@@ -175,6 +175,7 @@ export class SessionManager extends EventEmitter {
         modelAccess,
         profile,
         sessionId,
+        taintMarks: this.store.sessionTaint,
         thinkingLevel: session.thinking_level || undefined,
       });
     } catch (error) {

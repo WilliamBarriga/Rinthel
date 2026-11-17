@@ -74,11 +74,16 @@ model {
       status: text
       updated_at: text
     }
+    tabla portal-session-taint "session_taint" "The Guard's taint mark: a row means the Session read untrusted content, for good" {
+      session_id: text pk fk "CASCADE"
+      tainted_at: text
+    }
   }
 
   rinthel-db.refresh-tokens#user_id "0..*" -> "1" rinthel-db.users#id
   deck-db.portal-events#session_id "0..*" -> "1" deck-db.portal-sessions#id
   deck-db.portal-notes#session_id "0..*" -> "1" deck-db.portal-sessions#id
   deck-db.portal-canvases#session_id "0..*" -> "1" deck-db.portal-sessions#id
+  deck-db.portal-session-taint#session_id "0..1" -> "1" deck-db.portal-sessions#id
   deck-db.portal-sessions#owner_user_id "0..*" -> "0..1" rinthel-db.users#id "no FK on purpose"
 }
