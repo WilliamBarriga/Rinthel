@@ -115,7 +115,7 @@ fn resolve(theme_idx: usize, list: &JackInOptionList) -> (ratatui::style::Style,
     ctx.enter(&panel_node);
 
     let badge_online = ServiceBadge { label: "understory", online: true };
-    let badge_offline = ServiceBadge { label: "pithagoras", online: false };
+    let badge_offline = ServiceBadge { label: "deck", online: false };
 
     let online_computed = ctx.enter(&badge_online.node());
     ctx.leave();
@@ -132,7 +132,7 @@ fn resolve(theme_idx: usize, list: &JackInOptionList) -> (ratatui::style::Style,
 fn draw(f: &mut Frame, theme_idx: usize, list: &JackInOptionList) {
     let (online_style, offline_style, list_style) = resolve(theme_idx, list);
     let badge_online = ServiceBadge { label: "understory", online: true };
-    let badge_offline = ServiceBadge { label: "pithagoras", online: false };
+    let badge_offline = ServiceBadge { label: "deck", online: false };
 
     // Verificación explícita del criterio de éxito: los dos widgets bajo la
     // regla compartida deben resolver EXACTAMENTE el mismo color, y moverse

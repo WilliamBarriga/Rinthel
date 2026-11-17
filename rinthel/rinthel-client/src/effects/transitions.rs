@@ -20,7 +20,7 @@ use crate::app::Colors;
 
 /// Banda de interferencia horizontal que se desplaza hacia abajo — usada
 /// antes de toda transición de menú que dispara un comando (BOOT/RELOAD/
-/// TERMINATE/CAPTURE/INSTALL).
+/// TERMINATE/INSTALL).
 pub struct SignalNoiseEffect {
     duration: Duration,
     band_height: usize,

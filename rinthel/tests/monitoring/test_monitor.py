@@ -11,7 +11,7 @@ from rinthel_tui.monitoring.adapters.memory import (
     InMemoryGpu,
     InMemoryHost,
     InMemoryLog,
-    InMemoryReadiness,
+    InMemoryModels,
 )
 from rinthel_tui.monitoring.domain.envelope import MessageType
 from rinthel_tui.monitoring.domain.monitor import (
@@ -21,7 +21,14 @@ from rinthel_tui.monitoring.domain.monitor import (
     every,
     streams,
 )
-from rinthel_tui.monitoring.domain.types import CpuRamSample, DockerContainer, GpuSample
+from rinthel_tui.monitoring.domain.types import (
+    CapabilityStatus,
+    CpuRamSample,
+    DockerContainer,
+    GpuSample,
+    ModelsStatus,
+    ServiceStatus,
+)
 
 
 def once(*samples: dict):
@@ -36,7 +43,7 @@ def once(*samples: dict):
 def memory_sources() -> TelemetrySources:
     return TelemetrySources(
         gpu=InMemoryGpu(), host=InMemoryHost(), containers=InMemoryContainers(), log=InMemoryLog(),
-        llama=InMemoryReadiness(),
+        models=InMemoryModels(),
     )
 
 
@@ -108,20 +115,26 @@ def test_streams_has_the_five_telemetry_streams():
         "cpu_ram_sample",
         "docker_status",
         "gpu_sample",
-        "llama_status",
         "log_line",
+        "models_status",
     ]
 
 
-async def test_the_llama_stream_says_whether_llama_server_answers_now():
+async def test_the_models_stream_carries_each_capability_and_service():
     sources = memory_sources()
-    sources.llama.is_ready = True
+    sources.models.status = ModelsStatus(
+        capabilities=[CapabilityStatus("llm", "qwen", "down", "sin respuesta")],
+        services=[ServiceStatus("Understory", "ready")],
+    )
     clock = ManualClock()
-    monitor = Monitor([s for s in streams(sources, clock=clock) if s.type is MessageType.LLAMA_STATUS], clock=clock)
+    monitor = Monitor([s for s in streams(sources, clock=clock) if s.type is MessageType.MODELS_STATUS], clock=clock)
 
     [message] = await asyncio.wait_for(take(monitor, 1), timeout=1)
 
-    assert message == {"type": "llama_status", "data": {"ready": True}}
+    assert message == {"type": "models_status", "data": {
+        "capabilities": [{"capability": "llm", "model": "qwen", "state": "down", "error": "sin respuesta"}],
+        "services": [{"name": "Understory", "state": "ready"}],
+    }}
 
 
 async def test_a_client_that_stops_reading_holds_the_sources_back():
@@ -170,7 +183,7 @@ async def test_each_stream_carries_the_reading_of_its_source():
     sources.containers.running = [DockerContainer("understory-1", "running", "3800->3800", "Up 1m")]
     sources.log.write("srv listo")
     clock = ManualClock()
-    monitor = Monitor([s for s in streams(sources, clock=clock) if s.type is not MessageType.LLAMA_STATUS], clock=clock)
+    monitor = Monitor([s for s in streams(sources, clock=clock) if s.type is not MessageType.MODELS_STATUS], clock=clock)
 
     messages = {m["type"]: m["data"] for m in await asyncio.wait_for(take(monitor, 4), timeout=1)}
 

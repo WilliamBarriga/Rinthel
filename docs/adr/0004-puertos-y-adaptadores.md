@@ -26,7 +26,7 @@ No hay puerto de base de datos en el `Host`: la migración de `rinthel.db` es de
 
 ## `monitoring`: un puerto por fuente
 
-El Monitor mezcla los Telemetry streams de `/ws/monitor` (`docker_status`, `gpu_sample`, `cpu_ram_sample`, `log_line`, `llama_status`). Cada fuente es un puerto (`GpuSensor`, `HostSensor`, `ContainerStatus`, `ServiceLog`, `ServiceReadiness`) con su adapter real y uno en memoria.
+El Monitor mezcla los Telemetry streams de `/ws/monitor` (`docker_status`, `gpu_sample`, `cpu_ram_sample`, `log_line`, `models_status`). Cada fuente es un puerto (`GpuSensor`, `HostSensor`, `ContainerStatus`, `ServiceLog`, `ModelsSensor`) con su adapter real y uno en memoria. `models_status` reporta solo lo que la Instance corre en su Platform: el adapter real decide qué Capability y qué managed service se omiten, y el cliente no suma filas propias.
 
 ## La capa HTTP: composición por área
 

@@ -1,5 +1,5 @@
-//! Screen de monitor — el helper `badge` de acá abajo solo lo usa esta
-//! screen.
+//! Screen de monitor: los servicios y los Local models tal como los reporta
+//! `models_status`, la telemetría del host, los contenedores y el log.
 
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::Style;
@@ -9,7 +9,7 @@ use ratatui::Frame;
 use ratatui_sci_fi::{EnergyGauge, Theme as SciFiTheme};
 
 use crate::app::{App, Colors};
-use crate::protocol::DockerContainer;
+use crate::protocol::{CapabilityStatus, ServiceState, ServiceStatus};
 use crate::widgets::log_tail;
 
 fn online_badge(online: bool, colors: &Colors) -> Span<'static> {
@@ -20,11 +20,34 @@ fn online_badge(online: bool, colors: &Colors) -> Span<'static> {
     }
 }
 
-fn badge(containers: &[DockerContainer], name_contains: &str, colors: &Colors) -> Span<'static> {
-    let running = containers
-        .iter()
-        .any(|c| c.name.contains(name_contains) && c.state == "running");
-    online_badge(running, colors)
+/// Una línea de `models_status`: `<Capability> · <Local model o —> ·
+/// <estado>`, más el error si el activo no puede correr.
+fn capability_row(line: &CapabilityStatus, colors: &Colors) -> Line<'static> {
+    let (state, color) = match line.state {
+        ServiceState::Ready => ("listo", colors.success),
+        ServiceState::Down => ("no responde", colors.hot),
+        ServiceState::Off => ("apagado", colors.dim),
+    };
+    let mut spans = vec![
+        Span::raw(format!(" {} · {} · ", line.capability, line.model.as_deref().unwrap_or("—"))),
+        Span::styled(state, Style::default().fg(color)),
+    ];
+    if let Some(error) = &line.error {
+        spans.push(Span::styled(format!(" — {error}"), Style::default().fg(colors.hot)));
+    }
+    Line::from(spans)
+}
+
+/// Una fila por managed service que el daemon reporta, ordenadas por nombre:
+/// el cliente no suma ni saca servicios.
+fn service_badges(services: &[ServiceStatus], colors: &Colors) -> Line<'static> {
+    let mut sorted: Vec<&ServiceStatus> = services.iter().collect();
+    sorted.sort_by(|a, b| a.name.cmp(&b.name));
+    let spans = sorted
+        .into_iter()
+        .flat_map(|s| [Span::raw(format!("   {}", s.name)), online_badge(s.state == ServiceState::Ready, colors)])
+        .collect::<Vec<_>>();
+    Line::from(spans)
 }
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -33,6 +56,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),  // service badges
+            Constraint::Length(app.models_status.capabilities.len() as u16 + 2), // models_status
             Constraint::Length(3),  // ratatui-sci-fi EnergyGauge experiment
             Constraint::Length(9),  // sparklines
             Constraint::Min(6),     // docker table + log
@@ -40,16 +64,15 @@ pub fn draw(f: &mut Frame, app: &App) {
         ])
         .split(area);
 
-    let badges = Paragraph::new(Line::from(vec![
-        Span::raw(" llama-server "),
-        online_badge(app.llama_ready, &app.colors),
-        Span::raw("   understory "),
-        badge(&app.containers, "understory", &app.colors),
-        Span::raw("   pithagoras "),
-        badge(&app.containers, "pithagoras", &app.colors),
-    ]))
-    .block(Block::default().borders(Borders::ALL).title(" services "));
+    let badges = Paragraph::new(service_badges(&app.models_status.services, &app.colors))
+        .block(Block::default().borders(Borders::ALL).title(" services "));
     f.render_widget(badges, rows[0]);
+
+    let models: Vec<Line> = app.models_status.capabilities.iter().map(|l| capability_row(l, &app.colors)).collect();
+    f.render_widget(
+        Paragraph::new(models).block(Block::default().borders(Borders::ALL).title(" local models ")),
+        rows[1],
+    );
 
     // ratatui-sci-fi EnergyGauge: trae su propia cascada CSS interna, solo
     // hace falta elegir el Theme, no hay que tocar ratatui_style a mano.
@@ -58,7 +81,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     let gauge_cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Ratio(1, 3); 3])
-        .split(rows[1]);
+        .split(rows[2]);
     f.render_widget(
         EnergyGauge::new(app.cpu_ram.cpu_percent / 100.0).label("CPU").theme(SciFiTheme::Cyberpunk),
         gauge_cols[0],
@@ -75,7 +98,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     let spark_cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Ratio(1, 3); 3])
-        .split(rows[2]);
+        .split(rows[3]);
 
     let cpu_data: Vec<u64> = app.cpu_hist.iter().copied().collect();
     f.render_widget(
@@ -122,7 +145,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     let mid_cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-        .split(rows[3]);
+        .split(rows[4]);
 
     let table_rows: Vec<Row> = app
         .containers
@@ -146,5 +169,5 @@ pub fn draw(f: &mut Frame, app: &App) {
         app.log_scroll_x,
     );
 
-    f.render_widget(Paragraph::new(super::status_line(app)).block(Block::default().borders(Borders::ALL)), rows[4]);
+    f.render_widget(Paragraph::new(super::status_line(app)).block(Block::default().borders(Borders::ALL)), rows[5]);
 }

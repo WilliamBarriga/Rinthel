@@ -3,7 +3,8 @@
 la composición real de ``create_app`` — sin reemplazar el Monitor. Las
 fuentes del host se imitan con ejecutables falsos (``nvidia-smi``,
 ``docker``) al frente del ``PATH`` y un ``llama.log`` en la Instance del
-test; la readiness de llama-server, con el ``Probe`` de dobles del ``Host``.
+test; ``models_status``, con el catálogo en memoria y el ``Probe`` de dobles
+del ``Host``.
 Cada mensaje tiene que ser igual a su fixture de ``tests/protocol_fixtures/``
 (CPU/RAM, que no se puede fijar, en forma y tipos)."""
 
@@ -16,9 +17,10 @@ from fastapi.testclient import TestClient
 
 from rinthel_tui.api import create_app
 from rinthel_tui.api.adapters import real_telemetry
+from rinthel_tui.models.domain.types import CatalogEntry
 
 FIXTURES = Path(__file__).parent.parent / "protocol_fixtures"
-TELEMETRY = {"docker_status", "gpu_sample", "cpu_ram_sample", "log_line", "llama_status"}
+TELEMETRY = {"docker_status", "gpu_sample", "cpu_ram_sample", "log_line", "models_status"}
 
 
 def _fixture(name: str) -> dict:
@@ -47,8 +49,17 @@ def test_every_telemetry_message_keeps_the_envelope_the_clients_read(
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     daemon_cfg.llama.log.write_text(_fixture("log_line")["data"]["line"] + "\n")
     host.probe.script_http(f"http://127.0.0.1:{daemon_cfg.llama.port}/v1/models", True)
-    telemetry = real_telemetry(lambda: app.state.cfg, host)
-    app = create_app(daemon_cfg, adapters=dataclasses.replace(adapters, telemetry=telemetry))
+    host.probe.script_http(f"http://127.0.0.1:{daemon_cfg.understory.port}/", True)
+    adapters.models.catalog.set_entries([CatalogEntry(daemon_cfg.local_model.id, daemon_cfg.local_model)])
+    adapters.models.active.set("llm", daemon_cfg.local_model.id)
+    # Only Understory among the managed services, as in the shared fixture: both portals off.
+    cfg = dataclasses.replace(
+        daemon_cfg,
+        pithagoras=dataclasses.replace(daemon_cfg.pithagoras, enabled=False),
+        deck=dataclasses.replace(daemon_cfg.deck, enabled=False),
+    )
+    telemetry = real_telemetry(lambda: app.state.cfg, host, adapters.models)
+    app = create_app(cfg, adapters=dataclasses.replace(adapters, telemetry=telemetry))
     token = service_headers["x-rinthel-service-secret"]
 
     first: dict[str, dict] = {}

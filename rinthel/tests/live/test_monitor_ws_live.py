@@ -1,5 +1,6 @@
-"""The Monitor over the real WS: the Telemetry streams arrive. ``llama_status``
-reports a real llama-server (that test needs ``--start-llm``)."""
+"""The Monitor over the real WS: the Telemetry streams arrive. The ``llm``
+line of ``models_status`` reports a real llama-server (that test needs
+``--start-llm``)."""
 
 import json
 import time
@@ -7,7 +8,7 @@ import time
 import pytest
 from websockets.sync.client import connect
 
-STREAMS = {"docker_status", "gpu_sample", "cpu_ram_sample", "log_line", "llama_status"}
+STREAMS = {"docker_status", "gpu_sample", "cpu_ram_sample", "log_line", "models_status"}
 WINDOW_S = 15
 
 
@@ -46,12 +47,16 @@ def test_every_telemetry_stream_arrives_and_a_llama_log_line_comes_back(daemon, 
     assert line in lines
 
 
-def test_llama_status_turns_ready_with_a_real_llama_server(spawn_daemon, real_llama, base_model):
+def _llm_state(data: dict) -> str:
+    return next(c for c in data["capabilities"] if c["capability"] == "llm")["state"]
+
+
+def test_the_llm_line_turns_ready_with_a_real_llama_server(spawn_daemon, real_llama, base_model):
     daemon = spawn_daemon(models=(base_model,))
     with connect(daemon.ws_monitor_url) as ws:
-        assert next(d for k, d in _envelopes(ws, WINDOW_S) if k == "llama_status") == {"ready": False}
+        assert _llm_state(next(d for k, d in _envelopes(ws, WINDOW_S) if k == "models_status")) == "down"
         real_llama(daemon)
 
-        ready = [d["ready"] for k, d in _envelopes(ws, WINDOW_S) if k == "llama_status"]
+        states = [_llm_state(d) for k, d in _envelopes(ws, WINDOW_S) if k == "models_status"]
 
-    assert ready[-1] is True, ready
+    assert states[-1] == "ready", states

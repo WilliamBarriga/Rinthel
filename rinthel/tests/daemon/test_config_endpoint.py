@@ -7,6 +7,9 @@ harness vive sobre una Instance en `tmp_path`)."""
 import dataclasses
 
 import pytest
+from fastapi.testclient import TestClient
+
+from rinthel_tui.api import create_app
 
 
 @pytest.fixture
@@ -58,6 +61,31 @@ def test_get_config_field_carries_kind_group_and_stringified_value(get_config):
     assert llama_fields["port"]["value"] == "8080"
     assert llama_fields["temperature"]["group"] == "sampling"
     assert llama_fields["fit_to_memory"]["kind"] == "bool"
+
+
+def test_the_local_model_fields_are_not_in_configurar(get_config):
+    # Speculative decoding belongs to the Local model (its overrides), not to the .env.
+    assert {"spec_type", "spec_draft_n_max"}.isdisjoint(_llama_fields(get_config()))
+
+
+def test_a_hardware_field_carries_the_validated_profile_value(get_config):
+    fields = _llama_fields(get_config())
+    assert (fields["n_cpu_moe"]["value"], fields["n_cpu_moe"]["profile"]) == ("60", "60")
+    assert fields["cache_type_k"]["profile"] == "f16"
+
+
+def test_a_field_outside_the_validated_profile_has_no_profile_value(get_config):
+    fields = _llama_fields(get_config())
+    assert fields["temperature"]["profile"] is None
+    assert fields["port"]["profile"] is None
+
+
+def test_the_profile_value_is_the_one_of_the_platform(daemon_cfg, adapters, service_headers):
+    # The .env keeps the Linux value on a Windows Instance: an override.
+    app = create_app(dataclasses.replace(daemon_cfg, platform="windows"), adapters=adapters)
+    fields = _llama_fields(TestClient(app).get("/config", headers=service_headers).json())
+
+    assert (fields["n_cpu_moe"]["value"], fields["n_cpu_moe"]["profile"]) == ("60", "34")
 
 
 def test_post_config_writes_nothing_and_reports_zero_when_no_real_change(post_config, daemon_cfg):

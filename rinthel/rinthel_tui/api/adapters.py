@@ -16,11 +16,11 @@ from rinthel_tui.identity.adapters.sqlite import SqliteIdentity
 from rinthel_tui.identity.domain.ports import DeckSessions, Identity
 from rinthel_tui.lifecycle.composition import real_host
 from rinthel_tui.lifecycle.domain.host import Host
-from rinthel_tui.lifecycle.services import LLAMA_SERVICE
 from rinthel_tui.models.composition import ModelAdapters
+from rinthel_tui.models.domain import models as local_models
 from rinthel_tui.monitoring.adapters.docker_compose import DockerComposeContainers
-from rinthel_tui.monitoring.adapters.http_readiness import HttpReadiness
 from rinthel_tui.monitoring.adapters.log_file import FileLog
+from rinthel_tui.monitoring.adapters.managed_services import ManagedServicesSensor
 from rinthel_tui.monitoring.adapters.nvidia_smi import NvidiaSmiGpu
 from rinthel_tui.monitoring.adapters.psutil_host import PsutilHost
 from rinthel_tui.monitoring.domain.monitor import TelemetrySources
@@ -50,12 +50,13 @@ class Adapters:
         ``create_app`` cuando no le pasan otros."""
         host = real_host()
         cfg = cfg_of()
+        models = ModelAdapters.real(cfg_of)
         return cls(
-            telemetry=real_telemetry(cfg_of, host),
+            telemetry=real_telemetry(cfg_of, host, models),
             lifecycle_host=host,
             identity=SqliteIdentity(cfg.instance.database_path, clock=host.clock),
             deck_sessions=real_deck_sessions(cfg),
-            models=ModelAdapters.real(cfg_of),
+            models=models,
             clock=host.clock,
         )
 
@@ -72,20 +73,20 @@ def real_deck_sessions(cfg: RinthelConfig) -> DeckSessions | None:
     return HttpDeckSessions(client, service_secret=cfg.secrets.service)
 
 
-def real_telemetry(cfg_of: Callable[[], RinthelConfig], host: Host) -> TelemetrySources:
+def real_telemetry(cfg_of: Callable[[], RinthelConfig], host: Host, models: ModelAdapters) -> TelemetrySources:
     """Las fuentes de telemetría del host. ``cfg_of`` es el ``cfg`` vivo:
     un ``POST /config`` reemplaza ``app.state.cfg`` y la próxima muestra (o
-    la próxima conexión, para el log) ya lo ve."""
+    la próxima conexión, para el log) ya lo ve. ``models`` da el catálogo y
+    los ids activos que ``models_status`` resuelve en cada muestra."""
+
+    def resolve(capability: str) -> tuple[str | None, str | None]:
+        active = local_models.resolve(models.catalog, models.active, capability)  # type: ignore[arg-type]
+        return active.id, active.warning
+
     return TelemetrySources(
         gpu=NvidiaSmiGpu(),
         host=PsutilHost(),
         containers=DockerComposeContainers(cfg_of),
         log=FileLog(cfg_of),
-        llama=HttpReadiness(lambda: _llama_ready_url(cfg_of()), host.probe.http_ok),
+        models=ManagedServicesSensor(cfg_of, resolve, host.probe.http_ok),
     )
-
-
-def _llama_ready_url(cfg: RinthelConfig) -> str:
-    url = LLAMA_SERVICE.spec(cfg).ready_url
-    assert url is not None, "llama-server always declares its ready_url"
-    return url

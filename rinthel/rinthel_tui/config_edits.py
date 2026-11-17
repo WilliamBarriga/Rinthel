@@ -22,6 +22,22 @@ _DISPLAY_NAMES = {
 }
 
 
+# The Local model's fields: speculative decoding is tuned per Local model
+# (its ``overrides`` whitelist), so ``[N] CONFIGURAR`` does not offer it.
+_LOCAL_MODEL_FIELDS = frozenset({("llama", "spec_type"), ("llama", "spec_draft_n_max")})
+
+# The ``llama`` groups the Validated profile covers: hardware and cache. A
+# field of these groups carries the profile's value so the client can mark an
+# override that differs from it.
+_PROFILE_GROUPS = frozenset({"compute", "cache"})
+
+
+def _profile_value(cfg: RinthelConfig, attr: str, f: config.Field) -> str | None:
+    if attr != "llama" or f.group not in _PROFILE_GROUPS:
+        return None
+    return config.stringify(cfg.profile.llama.get(f.attr, f.default))
+
+
 def config_payload(cfg: RinthelConfig) -> dict:
     """Shape genérico de ``GET /config``. Itera ``config._ENTRIES`` en vez de
     listar sub-configs a mano, así que sumar un ``Field``/sub-config nuevo en
@@ -48,9 +64,11 @@ def config_payload(cfg: RinthelConfig) -> dict:
                         "kind": config.KIND_NAMES[f.kind],
                         "group": f.group,
                         "value": config.stringify(getattr(sub, f.attr)),
+                        "profile": _profile_value(cfg, attr, f),
                     }
                     for f in fields
-                    if f.attr != "enabled"  # ya sale en el "enabled" de arriba
+                    # ``enabled`` ya sale arriba; los del Local model no se configuran acá.
+                    if f.attr != "enabled" and (attr, f.attr) not in _LOCAL_MODEL_FIELDS
                 ],
             }
         )

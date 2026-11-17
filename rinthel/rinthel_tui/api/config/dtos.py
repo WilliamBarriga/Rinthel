@@ -45,6 +45,9 @@ class ConfigField(BaseModel):
     kind: str
     group: str
     value: str
+    # The Validated profile's value for a hardware/cache field; ``None`` for
+    # fields the profile does not cover.
+    profile: str | None = None
 
 
 # ── ConfigService: sub-config + toggle + campos en GET /config ───────────────

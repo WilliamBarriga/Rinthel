@@ -25,7 +25,7 @@ from rinthel_tui.monitoring.adapters.memory import (
     InMemoryGpu,
     InMemoryHost,
     InMemoryLog,
-    InMemoryReadiness,
+    InMemoryModels,
 )
 from rinthel_tui.monitoring.domain.monitor import TelemetrySources
 from tests.lifecycle.fakes import fake_host
@@ -48,7 +48,7 @@ def telemetry() -> TelemetrySources:
     log = InMemoryLog()
     log.write("arranque")
     return TelemetrySources(
-        gpu=InMemoryGpu(), host=InMemoryHost(), containers=InMemoryContainers(), log=log, llama=InMemoryReadiness()
+        gpu=InMemoryGpu(), host=InMemoryHost(), containers=InMemoryContainers(), log=log, models=InMemoryModels()
     )
 
 

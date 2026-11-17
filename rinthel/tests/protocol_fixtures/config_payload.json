@@ -6,11 +6,11 @@
       "enabled": true,
       "enabled_env": "RINTHEL_LLAMA_ENABLED",
       "fields": [
-        {"attr": "port", "env": "RINTHEL_LLAMA_PORT", "kind": "int", "group": "general", "value": "8080"},
-        {"attr": "temperature", "env": "RINTHEL_TEMPERATURE", "kind": "float", "group": "sampling", "value": "0.7"},
-        {"attr": "cache_reuse", "env": "RINTHEL_CACHE_REUSE", "kind": "int", "group": "cache", "value": "256"},
-        {"attr": "fit_to_memory", "env": "RINTHEL_FIT_TO_MEMORY", "kind": "bool", "group": "compute", "value": "false"},
-        {"attr": "spec_type", "env": "RINTHEL_SPEC_TYPE", "kind": "str", "group": "speculative", "value": "draft-mtp"}
+        {"attr": "port", "env": "RINTHEL_LLAMA_PORT", "kind": "int", "group": "general", "value": "8080", "profile": null},
+        {"attr": "temperature", "env": "RINTHEL_TEMPERATURE", "kind": "float", "group": "sampling", "value": "0.7", "profile": null},
+        {"attr": "cache_reuse", "env": "RINTHEL_CACHE_REUSE", "kind": "int", "group": "cache", "value": "256", "profile": "256"},
+        {"attr": "fit_to_memory", "env": "RINTHEL_FIT_TO_MEMORY", "kind": "bool", "group": "compute", "value": "false", "profile": "false"},
+        {"attr": "n_cpu_moe", "env": "RINTHEL_N_CPU_MOE", "kind": "int", "group": "compute", "value": "40", "profile": "60"}
       ]
     },
     {
@@ -19,7 +19,7 @@
       "enabled": null,
       "enabled_env": null,
       "fields": [
-        {"attr": "cache_mib", "env": "RINTHEL_MOE_CACHE_MIB", "kind": "int", "group": "", "value": "0"}
+        {"attr": "cache_mib", "env": "RINTHEL_MOE_CACHE_MIB", "kind": "int", "group": "", "value": "0", "profile": null}
       ]
     },
     {
@@ -28,7 +28,7 @@
       "enabled": true,
       "enabled_env": "RINTHEL_UNDERSTORY_ENABLED",
       "fields": [
-        {"attr": "port", "env": "RINTHEL_UNDERSTORY_PORT", "kind": "int", "group": "", "value": "3800"}
+        {"attr": "port", "env": "RINTHEL_UNDERSTORY_PORT", "kind": "int", "group": "", "value": "3800", "profile": null}
       ]
     }
   ]

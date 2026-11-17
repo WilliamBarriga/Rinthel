@@ -85,11 +85,11 @@ if it is missing and export it to the client. Without it the daemon answers
 401 (the WebSocket closes with 4401).
 
 ```
-MONITOR     -- Services/Docker/GPU/CPU status (live via /ws/monitor)
+MONITOR     -- Local models per Capability, managed services, Docker/GPU/CPU (live via /ws/monitor)
 BOOT        -- Bring everything up               (POST /boot)
 RELOAD      -- Full shutdown + restart            (POST /reload)
 TERMINATE   -- Full shutdown                      (POST /terminate)
-CONFIGURAR  -- Active services and parameters     (GET/POST /config)
+CONFIGURAR  -- Active services, parameters, secret rotation (GET/POST /config, POST /secrets/rotate)
 LOGS        -- Watch llama-server live
 INSTALL     -- Initial setup (CUDA/model/Pithagoras/Understory) (POST /install)
 SALIR       -- exit prompt ("¿apagar también el daemon?") → farewell
@@ -157,7 +157,7 @@ rinthel-client/               # TUI (Ratatui) — the only UI, talks HTTP+WS to 
 │   │                                  settings, exit_prompt, farewell
 │   ├── widgets/                      # checklist, log_tail
 │   └── effects/                       # flicker (glitch reveal), tagline, transitions
-└── tests/                     # e2e_smoke.rs, protocol_fixtures.rs
+└── tests/                     # protocol_fixtures.rs
 ```
 
 ## Ecosystem — shared palette
@@ -193,6 +193,7 @@ mocks) — that's intentional, it lives in `scripts/`, not `tests/`. It talks
 to `lifecycle/` directly, bypassing both the daemon's HTTP layer and the
 Rust client.
 
-For the client/daemon pair itself: `rinthel-client/tests/e2e_smoke.rs` (real
-daemon subprocess) and `protocol_fixtures.rs` (JSON shape checks) on the
-Rust side; `tests/daemon/` on the Python side.
+For the client/daemon pair itself: `rinthel-client/tests/protocol_fixtures.rs`
+and the screen tests in `rinthel-client/src/` on the Rust side;
+`tests/daemon/` (including `test_protocol_fixtures_http.py`, over the same
+golden JSON files) on the Python side.

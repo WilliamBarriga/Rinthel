@@ -6,7 +6,13 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 from rinthel_tui.clock import Clock, SystemClock
-from rinthel_tui.monitoring.domain.types import CpuRamSample, DockerContainer, GpuSample
+from rinthel_tui.monitoring.domain.types import (
+    CapabilityStatus,
+    CpuRamSample,
+    DockerContainer,
+    GpuSample,
+    ModelsStatus,
+)
 
 
 class InMemoryGpu:
@@ -68,11 +74,11 @@ class InMemoryLog:
             await self._clock.sleep(self._poll)
 
 
-class InMemoryReadiness:
-    """``is_ready`` es si el servicio responde; el test lo cambia."""
+class InMemoryModels:
+    """``status`` is what the Instance reports; the test changes it."""
 
-    def __init__(self, is_ready: bool = False) -> None:
-        self.is_ready = is_ready
+    def __init__(self, status: ModelsStatus | None = None) -> None:
+        self.status = status or ModelsStatus(capabilities=[CapabilityStatus("llm", None, "off")], services=[])
 
-    async def ready(self) -> bool:
-        return self.is_ready
+    async def read(self) -> ModelsStatus:
+        return self.status
