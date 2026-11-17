@@ -14,15 +14,15 @@ Cada módulo con regla en `rinthel/tests/import_table.py` (`lifecycle`, `monitor
 `lifecycle/domain/host.py` define el `Host`, una dataclass congelada con los ocho puertos del host. Toda phase lo recibe primero: `fn(host, report, **kwargs)`.
 
 - `Runner`: comando → rc y salida. Un comando que no existe es rc 127, no una excepción.
-- `Processes`: lanzar procesos de larga vida (devuelve un `ProcessHandle` opaco), pararlos, y `stop_listeners(port, force=)`, que para a quien escuche en un puerto lo haya lanzado o no este proceso (así matan las phases: por puerto, no por PID guardado). El adapter POSIX usa psutil, sin depender de `fuser`.
+- `Processes`: lanzar procesos de larga vida (devuelve un `ProcessHandle` opaco), pararlos, y `stop_listeners(port, force=)`, que para a quien escuche en un puerto lo haya lanzado o no este proceso (así matan las phases: por puerto, no por PID guardado). El adapter POSIX usa psutil, sin depender de `fuser`. El adapter Windows (`WindowsProcesses`, y `WindowsRunner` para `Runner`) cambia solo el aislamiento (`creationflags` en vez de una sesión POSIX) y para el árbol de procesos con psutil.
 - `Compose`: intenciones sobre un servicio de `docker compose`; el argv vive en un solo adapter.
-- `Probe`: puerto abierto, URL que responde 2xx.
+- `Probe`: puerto abierto, URL que responde 2xx. `SocketProbe` sirve a las dos Platform: no hay un adapter Windows.
 - `Clock`: el reloj neutral de `rinthel_tui/clock.py` (`SystemClock`, `ManualClock`).
-- `HostInfo`: `platform()` (`linux` o `windows`, ver **Platform**), `which`, `find_nvcc`, `cpu_count`, `sha256`.
+- `HostInfo`: `platform()` (`linux` o `windows`, ver **Platform**), `which`, `find_nvcc`, `cpu_count`, `find_llama_server(build_dir)`, `sha256`. El descubrimiento validado de Windows (CMake de Visual Studio, `CUDA_PATH`, `Release`, `llama-server.exe`) vive en `WindowsHostInfo`; la phase INSTALL del dominio es la misma en las dos Platform.
 - `PackageRegistry`: la última versión publicada de un paquete npm.
 - `DataDirs`: crea un directorio de datos para `uid`:`gid` y devuelve su dueño (un bind mount que Docker autocrea es de `root`).
 
-No hay puerto de base de datos en el `Host`: la migración de `rinthel.db` es del arranque del daemon. No hay puerto de filesystem general: clonar, compilar y descargar son comandos sobre `Runner`, y las pruebas usan `tmp_path` real. Las phases de dominio (`domain/phases/`) reciben un `LocalProcessSpec` o un `DockerComposeSpec` ya armados y no conocen `RinthelConfig`; las definiciones de `lifecycle/services.py` los arman con `spec(cfg)` al construir el plan. Las phases de INSTALL (`lifecycle/install.py`) quedan fuera de la guardia: reciben una tarea (`install_tasks.py`), pero tocan el `.env` de la Instance. `lifecycle/composition.py::real_host()` es el único lugar que elige los adapters reales.
+No hay puerto de base de datos en el `Host`: la migración de `rinthel.db` es del arranque del daemon. No hay puerto de filesystem general: clonar, compilar y descargar son comandos sobre `Runner`, y las pruebas usan `tmp_path` real. Las phases de dominio (`domain/phases/`) reciben un `LocalProcessSpec` o un `DockerComposeSpec` ya armados y no conocen `RinthelConfig`; las definiciones de `lifecycle/services.py` los arman con `spec(cfg)` al construir el plan. Las phases de INSTALL (`lifecycle/install.py`) quedan fuera de la guardia: reciben una tarea (`install_tasks.py`), pero tocan el `.env` de la Instance. `lifecycle/composition.py::real_host()` es el único lugar que elige los adapters reales, y el único del lifecycle que mira el sistema operativo (`os.name`).
 
 ## `monitoring`: un puerto por fuente
 

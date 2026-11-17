@@ -85,6 +85,11 @@ async def test_install_writes_a_catalog_example_that_reads_as_a_catalog(instance
 
 async def test_on_windows_the_entry_carries_the_measured_window(instance_cfg):
     cfg = dataclasses.replace(instance_cfg, platform="windows")
+    # A Windows build leaves llama-server in the multi-config Release directory.
+    linux_binary = cfg.install.llamacpp_repo_dir / "build-cuda" / "bin" / "llama-server"
+    windows_binary = linux_binary.parent / "Release" / "llama-server.exe"
+    windows_binary.parent.mkdir()
+    linux_binary.rename(windows_binary)
     await _install_llama(cfg, platform="windows")
 
     (entry,) = JsonCatalog(cfg.instance.models_catalog_path).entries()

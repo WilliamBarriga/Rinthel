@@ -1,7 +1,10 @@
 """Lo que solo el ``AsyncioRunner`` real puede garantizar y un doble no imita:
 el directorio de trabajo y cómo se mezcla el entorno."""
 
+import pytest
+
 from rinthel_tui.lifecycle.adapters.asyncio_runner import AsyncioRunner
+from rinthel_tui.lifecycle.adapters.windows_processes import WindowsRunner
 
 
 async def test_the_command_runs_in_the_given_directory(tmp_path):
@@ -20,17 +23,16 @@ async def test_env_is_a_delta_over_the_base_environment(monkeypatch):
     assert result.output == "base delta"
 
 
-async def test_cancelling_a_command_reaps_its_process(tmp_path):
+@pytest.mark.parametrize("runner", [AsyncioRunner(), WindowsRunner(creationflags=0)], ids=["posix", "windows"])
+async def test_cancelling_a_command_reaps_its_process(tmp_path, runner):
     import asyncio
     import os
     import signal
     import sys
 
-    import pytest
-
     pidfile = tmp_path / "pid"
     script = "import os,pathlib,time; pathlib.Path(__import__('sys').argv[1]).write_text(str(os.getpid())); time.sleep(30)"
-    command = asyncio.create_task(AsyncioRunner().run([sys.executable, "-c", script, str(pidfile)]))
+    command = asyncio.create_task(runner.run([sys.executable, "-c", script, str(pidfile)]))
     try:
         async with asyncio.timeout(5):
             while not pidfile.exists():

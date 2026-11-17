@@ -19,6 +19,20 @@ from rinthel_tui.instance import Instance
 from rinthel_tui.models.domain.types import LocalModel
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--start-llm",
+        action="store_true",
+        help="live suite: allow it to start a real llama-server (it never does on its own)",
+    )
+    parser.addoption(
+        "--sweep-leftovers",
+        action="store_true",
+        help="live suite: delete, before starting, what dead runs left (/tmp/rinthel-live-* and "
+        "rinthel-live-* containers); only when nobody else is running the suite",
+    )
+
+
 class FakeReport:
     """PhaseReport de prueba: junta los mensajes en listas en vez de imprimir,
     para poder assertear contra ellos."""

@@ -232,6 +232,11 @@ class FakeHostInfo(_Double):
         self._enter("cpu_count")
         return self.cpus
 
+    def find_llama_server(self, build_dir: Path) -> Path | None:
+        self._enter("find_llama_server", build_dir)
+        names = ("bin/Release/llama-server.exe", "bin/llama-server.exe") if self.os == "windows" else ("bin/llama-server",)
+        return next((build_dir / n for n in names if (build_dir / n).exists()), None)
+
     async def sha256(self, path: Path) -> str:
         self._enter("sha256", path)
         return hashlib.sha256(path.read_bytes()).hexdigest()

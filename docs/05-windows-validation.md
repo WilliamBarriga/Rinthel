@@ -48,6 +48,13 @@ sigue siendo idéntico al validado y lo fija
 `rinthel/tests/models/test_validated_profile.py`; por eso este cambio no pide
 un benchmark nuevo. Cualquier cambio de ese argv sí lo pide.
 
+El ciclo de vida usa adapters propios de Windows (`WindowsRunner`,
+`WindowsProcesses`, `WindowsHostInfo`: `creationflags`, parada del árbol con
+psutil, descubrimiento de CMake de Visual Studio, `CUDA_PATH` y `Release`). Se
+ejercen en Linux con las mismas suites de contrato que los de POSIX, con
+`creationflags=0`; el comportamiento real sobre Windows sigue pendiente de
+verificación manual en la máquina de referencia.
+
 ## Problemas resueltos
 
 1. Rechazo temprano de PowerShell x86 y detección robusta de Python 3.13.
