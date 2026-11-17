@@ -6,6 +6,7 @@ import { useIsAdmin } from "../auth/use-is-admin";
 import { ModelPicker } from "../models/ModelPicker";
 import { useActiveModel } from "../models/use-local-model";
 import { CanvasPanel } from "../canvas/CanvasPanel";
+import { SessionBrowser } from "./SessionBrowser";
 import { useChat } from "./use-chat";
 import { windowLabel, type TranscriptItem, type UiDialog } from "./model/transcript";
 
@@ -15,7 +16,8 @@ export function ChatPage() {
   const [canvasOpen, setCanvasOpen] = useState(false);
   const navigate = useNavigate();
   const isAdmin = useIsAdmin();
-  const chat = useChat(id, { onFailure: useReportExpired() });
+  const reportExpired = useReportExpired();
+  const chat = useChat(id, { onFailure: reportExpired });
   const active = useActiveModel();
   const model = chat.transcript.route?.model ?? active.model;
   const contextWindow = chat.window ?? active.contextWindow;
@@ -40,6 +42,8 @@ export function ChatPage() {
       </header>
       <CanvasPanel sessionId={id} open={canvasOpen} setOpen={setCanvasOpen} />
 
+      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <section aria-label="Transcripción" className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
         {chat.transcript.items.length === 0 && <p className="text-sm text-fg-subtle">Escribe para empezar.</p>}
         {chat.transcript.items.map((item) => <Item key={`${item.kind}-${item.id}`} item={item} />)}
@@ -78,6 +82,9 @@ export function ChatPage() {
           </div>
         </div>
       </form>
+      </div>
+      {isAdmin && <SessionBrowser key={id} sessionId={id} onFailure={reportExpired} />}
+      </div>
     </div>
   );
 }

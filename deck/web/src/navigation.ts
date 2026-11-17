@@ -1,5 +1,5 @@
 import type { IconType } from "react-icons";
-import { LuMessagesSquare, LuPalette, LuSettings, LuSparkles, LuUsers } from "react-icons/lu";
+import { LuGlobe, LuMessagesSquare, LuPalette, LuSettings, LuSparkles, LuUsers } from "react-icons/lu";
 import { matchPath } from "react-router-dom";
 
 export type Role = "usuario" | "admin";
@@ -23,6 +23,7 @@ export const NAVIGATION: readonly NavigationEntry[] = [
   { id: "chat", path: "/sessions/:id", label: "Chat", icon: LuMessagesSquare, group: "principal", audience: "todos", hidden: true },
   { id: "soul", path: "/soul", label: "SOUL de la Instance", icon: LuSparkles, group: "principal", audience: "todos" },
   { id: "appearance", path: "/appearance", label: "Apariencia", icon: LuPalette, group: "principal", audience: "todos" },
+  { id: "browser", path: "/browser", label: "Instance browser", icon: LuGlobe, group: "administración", audience: "admin" },
   { id: "users", path: "/users", label: "Usuarios", icon: LuUsers, group: "administración", audience: "admin" },
   { id: "settings", path: "/settings", label: "Ajustes", icon: LuSettings, group: "administración", audience: "admin" },
 ];

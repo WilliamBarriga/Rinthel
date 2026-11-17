@@ -9,9 +9,11 @@ import type { Canvases } from "./canvases.js";
 import type { SessionIdentity } from "./session-identity.js";
 import { workspaceOf, type SessionRoots } from "./session-roots.js";
 import { LiveEvents } from "./live-events.js";
-import { isClosed, ownerIsAdminNow, sameProfile, toolProfileFor, type ToolProfile } from "./tool-profile.js";
+import { instanceBrowserFor, isClosed, ownerIsAdminNow, sameProfile, toolProfileFor, type ToolProfile } from "./tool-profile.js";
 import type { HostExecAccess } from "./pi/host-exec/host-exec-tools.js";
 import type { MemoriaAccess } from "./pi/memoria/memoria-tools.js";
+import type { BrowserDriver } from "./browser-driver.js";
+import { sessionBrowserNow } from "./session-browser.js";
 
 /**
  * Events delivered to whoever watches and never stored: extension dialogs (a stored one would reopen
@@ -42,6 +44,15 @@ export interface SessionManagerDeps {
   memoria?: MemoriaAccess;
   /** Starts a Session's pi; the SDK in production, a double in the tests. */
   launch: (opts: SdkLaunch) => Promise<PiClient>;
+  /** The Instance browser an admin's Session may drive; without it no Session has browser tools. */
+  browser?: InstanceBrowserAccess;
+}
+
+/** The Instance browser as the Sessions reach it: one driver over one fixed CDP endpoint, shared with no lease. */
+export interface InstanceBrowserAccess {
+  driver: BrowserDriver;
+  cdpEndpoint: string;
+  allowlist: () => Promise<string[]>;
 }
 
 export interface PromptOptions {
@@ -203,6 +214,7 @@ export class SessionManager extends EventEmitter {
           ? { ...this.deps.memoria, adminNow: () => ownerIsAdminNow(owner, this.deps.identity) }
           : undefined,
         thinkingLevel: session.thinking_level || undefined,
+        browser: this.browserFor(sessionId, owner, profile),
       });
     } catch (error) {
       this.deps.proxy.close(sessionId);
@@ -246,6 +258,25 @@ export class SessionManager extends EventEmitter {
     this.live.set(sessionId, { client, profile });
     if (historyLost) this.record(sessionId, "portal_notice", { text: SESSION_FILE_GONE });
     return client;
+  }
+
+  /**
+   * The Instance browser for a Session whose profile may have it (an admin's): its tools are
+   * registered at launch, and its gate reads the toggle and the owner's role anew at each call.
+   */
+  private browserFor(sessionId: string, owner: number, profile: ToolProfile): SdkLaunch["browser"] {
+    const browser = this.deps.browser;
+    if (!browser || !instanceBrowserFor(profile)) return undefined;
+    return {
+      driver: browser.driver,
+      now: sessionBrowserNow({
+        owner,
+        identity: this.deps.identity,
+        on: async () => (await this.store.sessions.get(sessionId))?.browser === 1,
+        allowlist: browser.allowlist,
+        cdpEndpoint: browser.cdpEndpoint,
+      }),
+    };
   }
 
   private forgetLive(sessionId: string): void {

@@ -11,4 +11,5 @@ export type * from "./models.js";
 export type * from "./events.js";
 export type * from "./canvases.js";
 export type * from "./instance-soul.js";
+export type * from "./browser.js";
 export type { Preferences, Personalization, Branding, Appearance } from "../appearance.mjs";

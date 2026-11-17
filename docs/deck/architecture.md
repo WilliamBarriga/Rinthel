@@ -78,6 +78,33 @@ one with an image type's name replaces it, and Deck logs the replacement
 when an admin's Session starts. Files are read again on every call. A
 project's `.pi/agents` is never read.
 
+## Instance browser
+
+What the browser is and who uses it is in [configuration](configuration.md#instance-browser);
+these are the seams it hangs from.
+
+- `BrowserDriver` (`deck/server/src/browser-driver.ts`) is what the Agent's
+  browser tools need: the catalogue of tools and a call on a CDP endpoint. Its
+  adapter, `McpStdioBrowserDriver`, keeps one Playwright MCP process per
+  endpoint over stdio; the Instance has one endpoint, so every Session shares
+  it. Contract: `server/test/contract/browser-driver.mjs`, run against the
+  adapter (over a stand-in MCP server) and the double.
+- `BrowserRuntime` (`deck/server/src/instance-browser.ts`) is the browser's own
+  lifecycle: status, install, start, stop, remove, forget the profile. Its
+  adapter (`extensions/browser-runtime.ts`) picks external, docker (Docker
+  Engine API over the socket, `extensions/docker.ts`) or a local Chrome
+  (`extensions/browser-local.ts`). Contract: `server/test/contract/browser-runtime.mjs`,
+  run against the adapter over a fake Docker and the in-memory double.
+- `sessionBrowserNow` (`deck/server/src/session-browser.ts`) is the gate the
+  Guard and the tools read on every call: the Session's toggle and its owner's
+  role now (`ownerIsAdminNow`), shut on any failure. The tools themselves
+  (`pi/session-browser-tools.ts`) are an inline factory that `SdkPiClient`
+  loads only for the general profile; the names they register are the only
+  browser tools the Guard lets through, and the source the taint reads.
+- The view (`browser-proxy.ts`) is mounted outside `/api`, before the web UI,
+  and judges its caller itself; the frame keeper (`extensions/frame-keeper.ts`)
+  watches the container's stream only while nobody else does.
+
 ## Memoria
 
 The Memoria is what the Instance remembers between Sessions, kept in
