@@ -1,6 +1,8 @@
 {"type": "models_status", "data": {
   "capabilities": [
-    {"capability": "llm", "model": "test-model", "state": "ready", "error": null}
+    {"capability": "llm", "model": "test-model", "state": "ready", "error": null},
+    {"capability": "stt", "model": "whisper-base", "state": "ready", "error": null},
+    {"capability": "tts", "model": "pocket-tts-es", "state": "down", "error": null}
   ],
   "services": [
     {"name": "Understory", "state": "ready"}

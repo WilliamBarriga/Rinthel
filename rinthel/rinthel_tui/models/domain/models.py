@@ -69,22 +69,46 @@ class ModelSwitch:
 
     async def activate(self, model_id: str) -> Switched:
         model = activable(self._catalog, model_id)
-        service = self._services.get(model.capability)
-        if service is None:
-            raise NotActivable(f"la Capability {model.capability} todavía no tiene managed service")
-        if await self._turns.in_flight():
+        capability = model.capability
+        service = self._service(capability)
+        # Only llama-server reports turns: a voice switch does not wait for them.
+        if capability == "llm" and await self._turns.in_flight():
             raise TurnsInFlight()
-        previous = resolve(self._catalog, self._active, model.capability).model
+        previous = resolve(self._catalog, self._active, capability).model
         run = await service.restart(model)
         if run.ok:
-            self._active.set(model.capability, model.id)
-            return Switched(ok=True, active=model.id, rolled_back=None, runs=(run,), model=model)
+            self._active.set(capability, model.id)
+            return Switched(ok=True, active=model.id, rolled_back=None, runs=(run,), model=model, capability=capability)
         if previous is None:
-            return Switched(ok=False, active=self._active.get(model.capability), rolled_back=None, runs=(run,))
+            return Switched(
+                ok=False, active=self._active.get(capability), rolled_back=None, runs=(run,), capability=capability,
+            )
         restored = await service.restart(previous)
         return Switched(
             ok=False, active=previous.id, rolled_back=restored.ok, runs=(run, restored), model=previous,
+            capability=capability,
         )
+
+    async def deactivate(self, capability: Capability) -> Switched:
+        """Turns ``capability`` off (``models off``): stops its service and
+        drops its key. If the service does not stop, the key stays."""
+        service = self._service(capability)
+        run = await service.stop()
+        if run.ok:
+            self._active.clear(capability)
+            return Switched(ok=True, active=None, rolled_back=None, runs=(run,), capability=capability)
+        return Switched(
+            ok=False, active=self._active.get(capability), rolled_back=None, runs=(run,), capability=capability,
+        )
+
+    def _service(self, capability: Capability) -> ModelService:
+        service = self._services.get(capability)
+        if service is None:
+            raise NotActivable(f"la Capability {capability} no tiene managed service")
+        reason = service.unavailable()
+        if reason is not None:
+            raise NotActivable(reason)
+        return service
 
 
 def _find(entries: list[CatalogEntry], model_id: str) -> CatalogEntry | None:

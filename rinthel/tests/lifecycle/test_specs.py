@@ -6,8 +6,10 @@ import dataclasses
 
 import pytest
 
-from rinthel_tui.lifecycle import specs
-from rinthel_tui.lifecycle.domain.phases import data_dir
+from rinthel_tui.config import with_local_model
+from rinthel_tui.lifecycle import services, specs
+from rinthel_tui.lifecycle.domain.phases import data_dir, managed_service
+from rinthel_tui.models.domain.types import LocalModel
 
 
 def _disable(cfg, attr):
@@ -126,6 +128,59 @@ def test_install_plan_preflight_first_then_every_unit_and_stops_on_failure(cfg):
         (None, "deck", ["◈ DECK — SOUL de la Instance"]),
         (None, "understory", ["◈ UNDERSTORY — token + bundle"]),
     ]
+
+
+def _voiced(cfg, tmp_path):
+    cfg = with_local_model(cfg, LocalModel("w", "W", "stt", tmp_path / "ggml.bin", 0))
+    return with_local_model(cfg, LocalModel("p", "P", "tts", tmp_path / "p.gguf", 0))
+
+
+def test_an_active_voice_key_boots_and_terminates_its_service_and_none_without_it(cfg, tmp_path):
+    voiced = _voiced(cfg, tmp_path)
+
+    assert _shape(specs.boot_plan(voiced))[1:4] == [
+        (None, "llama-server", ["◈ LLAMA-SERVER", "◈ ESPERANDO LLAMA-SERVER"]),
+        (None, "whisper-server", ["◈ WHISPER-SERVER  --  STT", "◈ ESPERANDO WHISPER-SERVER"]),
+        (None, "audiocpp-server", ["◈ AUDIOCPP-SERVER  --  TTS", "◈ ESPERANDO AUDIOCPP-SERVER"]),
+    ]
+    assert {"whisper-server", "audiocpp-server"} <= set(_services(specs.terminate_plan(voiced)))
+    for build in (specs.boot_plan, specs.terminate_plan, specs.reload_plan):
+        assert not {"whisper-server", "audiocpp-server"} & set(_services(build(cfg)))
+
+
+def test_install_with_voice_adds_the_voice_unit_last(cfg):
+    plan = specs.install_plan(cfg, voice=True)
+
+    assert _shape(plan)[:-1] == _shape(specs.install_plan(cfg))
+    assert _shape(plan)[-1] == (None, "voz", [
+        "◈ WHISPER.CPP — clone + build CPU", "◈ WHISPER — modelo ggml-base",
+        "◈ AUDIO.CPP — clone + build CUDA", "◈ POCKET-TTS — GGUF español",
+        "◈ VOZ — catálogo y Local models activos", "◈ VOZ — arrancar stt/tts",
+    ])
+
+
+def test_install_with_voice_on_windows_skips_it_with_a_notice(cfg):
+    plan = specs.install_plan(dataclasses.replace(cfg, platform="windows"), voice=True)
+
+    (voice,) = [unit for batch in plan.batches for unit in batch.units if unit.service == "voz"]
+    assert [phase.fn for phase in voice.phases] == [managed_service.phase_notice]
+
+
+@pytest.mark.parametrize("service", ["llama-server", "whisper-server", "audiocpp-server"])
+def test_a_model_switch_restarts_only_its_service_and_every_step_is_required(cfg, tmp_path, service):
+    definition = next(s for s in services.MODEL_SERVICES.values() if s.display_name == service)
+
+    restart = specs.restart_plan(_voiced(cfg, tmp_path), definition)
+    stop = specs.stop_plan(_voiced(cfg, tmp_path), definition)
+
+    (unit,) = restart.batches[0].units
+    assert unit.service == service
+    assert [phase.fn for phase in unit.phases] == [
+        managed_service.phase_kill, managed_service.phase_spawn, managed_service.phase_wait_ready,
+    ]
+    assert unit.phases[0].kwargs["required"] and unit.phases[2].kwargs["required"]
+    ((stopping,),) = [batch.units for batch in stop.batches]
+    assert [(p.fn, p.kwargs["required"]) for p in stopping.phases] == [(managed_service.phase_kill, True)]
 
 
 def _deck_data_phase(plan: specs.Plan) -> specs.PhaseSpec:

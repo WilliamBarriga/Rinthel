@@ -16,16 +16,25 @@ from pathlib import Path
 import pytest
 
 from rinthel_tui.clock import ManualClock
+from rinthel_tui.config import with_local_model
 from rinthel_tui.lifecycle import services
 from rinthel_tui.lifecycle.domain.errors import PhaseError
 from rinthel_tui.lifecycle.domain.phases import managed_service
 from rinthel_tui.lifecycle.domain.types import ProcessHandle
+from rinthel_tui.models.domain.types import LocalModel
 from tests.lifecycle.fakes import FakeProcesses, FakeRegistry, fake_host
 
 LOCAL_SERVICES = services.LOCAL_SERVICES
 DOCKER_SERVICES = services.DOCKER_SERVICES
 
 MAX_LOG_BYTES = 10 * 1024 * 1024  # el tope que documenta ``phase_spawn``
+
+
+@pytest.fixture
+def cfg(cfg, tmp_path):
+    """Every local service enabled: voice with its Local models active."""
+    cfg = with_local_model(cfg, LocalModel("stt", "Stt", "stt", tmp_path / "ggml.bin", 0))
+    return with_local_model(cfg, LocalModel("tts", "Tts", "tts", tmp_path / "tts.gguf", 0))
 
 
 def _ids(services_list):

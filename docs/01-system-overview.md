@@ -99,13 +99,18 @@ Rinthel Daemon (FastAPI, persistent)
        ├── INSTALL    ──▶ preflight → llama.cpp + Local model → Instance (.env secrets,
        │                  host-exec token, PUID/PGID/DOCKER_GID) → identity (rinthel.db,
        │                  first admin) → Deck (Instance SOUL) → Understory (token, bundle)
-       ├── BOOT       ──▶ docker → llama-server → hostexecd (Linux) → understory → deck
+       │                  [→ voice: whisper.cpp, audio.cpp, models, stt/tts active and started]
+       ├── BOOT       ──▶ docker → llama-server [→ whisper-server → audiocpp-server] → hostexecd (Linux) → understory → deck
        ├── RELOAD     ──▶ 3 batches (phase_batch over WS): shutdown → boot → rebuild
        └── TERMINATE  ──▶ full shutdown (keeps going if a unit fails)
 ```
 
 INSTALL configures, it never boots, and every phase is idempotent: a rerun
-never replaces a secret or a file that is already there. The first admin's
+never replaces a secret or a file that is already there. The one exception
+is the opt-in voice unit (`python -m rinthel_tui.install --voice`, Linux
+only): it ends by restarting `stt`/`tts`, so an Instance that is already
+running keeps them up; voice services boot only while their Capability has an
+active model ([local-models.md](local-models.md#voice)). The first admin's
 password is shown once; `python -m rinthel_tui.identity reset-admin` is the
 recovery. After BOOT, log in to Deck on `http://127.0.0.1:4100` with it.
 

@@ -5,7 +5,7 @@ Rinthel administra una infraestructura local de IA como un conjunto coordinado d
 ## Language
 
 **Managed service**:
-Una capacidad de infraestructura que Rinthel controla como una sola unidad de ciclo de vida: Llama, hostexecd, Understory o Deck.
+Una capacidad de infraestructura que Rinthel controla como una sola unidad de ciclo de vida: Llama, whisper-server, audiocpp-server, hostexecd, Understory o Deck.
 _Avoid_: Proceso, contenedor; son mecanismos de ejecución, no la capacidad administrada.
 
 **Install**:
@@ -52,11 +52,11 @@ El sistema anfitrión en el que corre la Instance: Linux o Windows. Decide qué 
 _Avoid_: Perfil (es Validated profile), entorno, OS.
 
 **Capability**:
-Tipo de trabajo que la Instance sirve con un modelo: generar texto, transcribir voz o sintetizar voz. Cada Capability tiene a lo sumo un modelo activo a la vez.
+Tipo de trabajo que la Instance sirve con un modelo: generar texto, transcribir voz o sintetizar voz. Cada Capability tiene a lo sumo un modelo activo a la vez. La voz (transcribir y sintetizar) es opcional y solo de Linux: sin modelo activo, esa Capability está apagada y su managed service no arranca.
 _Avoid_: Tarea, rol, proveedor.
 
 **Local model**:
-Modelo declarado en el catálogo de la Instance que puede servir una Capability. El admin elige cuál está activo, y ese modelo lo comparten todas las Sesiones. Una entrada inválida del catálogo (archivo ausente, cabecera mala) queda listada pero no activable.
+Modelo declarado en el catálogo de la Instance que puede servir una Capability. El admin elige cuál está activo, y ese modelo lo comparten todas las Sesiones. Una entrada inválida del catálogo (archivo ausente, cabecera mala) queda listada pero no activable. Un Local model de síntesis de voz habla siempre con la misma voz, la que fija su entrada.
 _Avoid_: Perfil (es Validated profile), proveedor.
 
 **Instance browser**:

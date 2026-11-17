@@ -25,6 +25,16 @@ def test_set_is_read_back_per_capability(active):
     assert (active.get("llm"), active.get("tts"), active.get("stt")) == ("otro", "voz", None)
 
 
+def test_clear_turns_only_that_capability_off(active):
+    active.set("llm", "qwen")
+    active.set("stt", "oido")
+
+    active.clear("stt")
+    active.clear("tts")
+
+    assert (active.get("llm"), active.get("stt"), active.get("tts")) == ("qwen", None, None)
+
+
 # ── el archivo ───────────────────────────────────────────────────────────
 
 

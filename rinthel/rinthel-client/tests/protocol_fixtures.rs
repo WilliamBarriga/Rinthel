@@ -66,6 +66,9 @@ fn models_status_shape() {
     assert_eq!(status.capabilities[0].capability, "llm");
     assert_eq!(status.capabilities[0].state, ServiceState::Ready);
     assert!(status.capabilities[0].error.is_none());
+    // Voice, when active, is one more Capability line.
+    let voice: Vec<_> = status.capabilities[1..].iter().map(|c| (c.capability.as_str(), c.state)).collect();
+    assert_eq!(voice, [("stt", ServiceState::Ready), ("tts", ServiceState::Down)]);
     assert!(!status.services.is_empty());
 }
 

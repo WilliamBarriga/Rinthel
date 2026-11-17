@@ -10,6 +10,8 @@ from typing import Literal
 
 Capability = Literal["llm", "stt", "tts"]
 CAPABILITIES: tuple[Capability, ...] = ("llm", "stt", "tts")
+# Opt-in and Linux only: without an active key the service does not start.
+VOICE: tuple[Capability, ...] = ("stt", "tts")
 
 # The closed list of reasoning formats Deck knows how to drive against a local
 # llama-server (pi's ``thinkingFormat`` values that apply to a chat template).
@@ -26,6 +28,10 @@ OVERRIDABLE: frozenset[str] = frozenset({
 
 @dataclass(frozen=True)
 class LocalModel:
+    """``gguf`` is the model file: a GGUF for ``llm`` and ``tts``, the
+    whisper.cpp ``ggml`` file for ``stt``. A voice entry has no context
+    window (``0``)."""
+
     id: str
     name: str
     capability: Capability
@@ -36,6 +42,8 @@ class LocalModel:
     reasoning_format: str = DEFAULT_REASONING_FORMAT
     # LlamaConfig attribute -> value, only keys of ``OVERRIDABLE``.
     overrides: dict[str, str | int | float] = field(default_factory=dict)
+    # ``tts`` only: the reference WAV of the fixed voice it speaks with.
+    voice: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -87,10 +95,13 @@ class ServiceRun:
 class Switched:
     """The result of a switch. ``ok`` with the new id active, or not ``ok``
     with the previous one kept; ``rolled_back`` says whether the previous
-    model came back up (``None`` when there was nothing to restore)."""
+    model came back up (``None`` when there was nothing to restore). Turning
+    a Capability off is ``ok`` with ``active`` ``None``."""
 
     ok: bool
     active: str | None
     rolled_back: bool | None
     runs: tuple[ServiceRun, ...]
     model: LocalModel | None = None
+    # The Capability the switch (or ``off``) was about.
+    capability: Capability = "llm"

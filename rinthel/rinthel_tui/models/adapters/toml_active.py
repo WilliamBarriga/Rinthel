@@ -31,3 +31,11 @@ class TomlActiveModels:
             return {**data, _TABLE: {**(table if isinstance(table, dict) else {}), capability: model_id}}
 
         instance_toml.update(self._path, change)
+
+    def clear(self, capability: Capability) -> None:
+        def change(data: dict[str, Any]) -> dict[str, Any]:
+            table = data.get(_TABLE)
+            rest = {k: v for k, v in (table if isinstance(table, dict) else {}).items() if k != capability}
+            return {**data, _TABLE: rest}
+
+        instance_toml.update(self._path, change)
