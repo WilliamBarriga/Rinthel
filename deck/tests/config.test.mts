@@ -35,3 +35,9 @@ test('hostexecd comes from what the daemon hands Deck, and only with a token', (
     { url: 'http://127.0.0.1:8766', token: 'tok' },
   );
 });
+
+test("Memoria's token is Understory's, and a blank one is none", () => {
+  assert.equal(deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's' }).understoryToken, undefined);
+  assert.equal(deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's', UNDERSTORY_TOKEN: '  ' }).understoryToken, undefined);
+  assert.equal(deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's', UNDERSTORY_TOKEN: 'tok' }).understoryToken, 'tok');
+});

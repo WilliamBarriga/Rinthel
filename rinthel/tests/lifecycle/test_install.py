@@ -44,7 +44,8 @@ async def test_setup_understory_generates_one_token_in_the_root_env_and_the_bund
 
     env = dotenv_values(cfg.instance.env_path)
     assert len(env["UNDERSTORY_TOKEN"]) >= 48
-    assert env["AUTH_TOKEN"] == env["UNDERSTORY_TOKEN"]
+    # The root compose hands it to Understory as its AUTH_TOKEN: one source.
+    assert "AUTH_TOKEN" not in env
     bundle = cfg.instance.data_dir / "understory"
     assert task.bundle_dir == bundle
     assert (bundle / "agents" / "index.md").exists()
@@ -53,24 +54,15 @@ async def test_setup_understory_generates_one_token_in_the_root_env_and_the_bund
     assert stat.S_IMODE(cfg.instance.env_path.stat().st_mode) == 0o600
 
 
-async def test_setup_understory_keeps_an_existing_token_and_fills_its_pair(host, report, cfg):
-    cfg.instance.env_path.write_text("AUTH_TOKEN=keep-me\n")
+async def test_setup_understory_keeps_an_existing_token(host, report, cfg):
+    cfg.instance.env_path.write_text("UNDERSTORY_TOKEN=keep-me\n")
 
     await install.phase_install_setup_understory(host, report, task=_understory(cfg))
     await install.phase_install_setup_understory(host, report, task=_understory(cfg))
 
     env = dotenv_values(cfg.instance.env_path)
-    assert (env["AUTH_TOKEN"], env["UNDERSTORY_TOKEN"]) == ("keep-me", "keep-me")
-
-
-async def test_setup_understory_rejects_two_different_tokens(host, report, cfg):
-    cfg.instance.env_path.write_text("AUTH_TOKEN=one\nUNDERSTORY_TOKEN=two\n")
-
-    with pytest.raises(PhaseError):
-        await install.phase_install_setup_understory(host, report, task=_understory(cfg))
-
-    env = dotenv_values(cfg.instance.env_path)
-    assert (env["AUTH_TOKEN"], env["UNDERSTORY_TOKEN"]) == ("one", "two")
+    assert env["UNDERSTORY_TOKEN"] == "keep-me"
+    assert "AUTH_TOKEN" not in env
 
 
 async def test_setup_understory_never_overwrites_the_bundle(host, report, cfg):

@@ -64,18 +64,41 @@ def test_routing_hands_deck_the_active_model_at_the_deck_host_address(app, clien
     response = client.get("/model-provider/routing", headers=service_headers)
 
     assert response.status_code == 200
-    assert response.json() == {"capabilities": {"llm": {
+    assert response.json()["capabilities"] == {"llm": {
         "url": "http://host.docker.internal:8080",
         "model": "test-model",
         "context_window": 112000,
         "reasoning_format": "qwen-chat-template",
-    }}}
+    }}
 
 
 def test_routing_has_no_llm_route_without_an_active_model(app, client, service_headers, daemon_cfg):
     app.state.cfg = dataclasses.replace(daemon_cfg, local_model=None)
 
-    assert client.get("/model-provider/routing", headers=service_headers).json() == {"capabilities": {}}
+    assert client.get("/model-provider/routing", headers=service_headers).json()["capabilities"] == {}
+
+
+def test_routing_hands_deck_understory_on_the_host_loopback_on_linux(app, client, service_headers, daemon_cfg):
+    app.state.cfg = dataclasses.replace(
+        daemon_cfg, platform="linux", understory=dataclasses.replace(daemon_cfg.understory, port=3811)
+    )
+
+    assert client.get("/model-provider/routing", headers=service_headers).json()["understory_url"] == "http://127.0.0.1:3811"
+
+
+def test_routing_hands_deck_understory_by_its_service_name_on_windows(app, client, service_headers, daemon_cfg):
+    # The shared network of Deck and Understory: the container's own port, whatever the host publishes.
+    app.state.cfg = dataclasses.replace(
+        daemon_cfg, platform="windows", understory=dataclasses.replace(daemon_cfg.understory, port=3811)
+    )
+
+    assert client.get("/model-provider/routing", headers=service_headers).json()["understory_url"] == "http://understory:3800"
+
+
+def test_routing_has_no_understory_url_when_understory_is_off(app, client, service_headers, daemon_cfg):
+    app.state.cfg = dataclasses.replace(daemon_cfg, understory=dataclasses.replace(daemon_cfg.understory, enabled=False))
+
+    assert client.get("/model-provider/routing", headers=service_headers).json()["understory_url"] is None
 
 
 def test_routing_is_for_the_service_only(client):

@@ -11,6 +11,7 @@ import { workspaceOf, type SessionRoots } from "./session-roots.js";
 import { LiveEvents } from "./live-events.js";
 import { isClosed, ownerIsAdminNow, sameProfile, toolProfileFor, type ToolProfile } from "./tool-profile.js";
 import type { HostExecAccess } from "./pi/host-exec/host-exec-tools.js";
+import type { MemoriaAccess } from "./pi/memoria/memoria-tools.js";
 
 /**
  * Events delivered to whoever watches and never stored: extension dialogs (a stored one would reopen
@@ -37,6 +38,8 @@ export interface SessionManagerDeps {
   instanceSoulFile?: string;
   /** hostexecd, when the daemon handed Deck a token: an admin's Sessions get the host exec tools. */
   hostExec?: HostExecAccess;
+  /** Understory, when Deck has its token: an admin's Sessions get Memoria. */
+  memoria?: MemoriaAccess;
   /** Starts a Session's pi; the SDK in production, a double in the tests. */
   launch: (opts: SdkLaunch) => Promise<PiClient>;
 }
@@ -196,6 +199,9 @@ export class SessionManager extends EventEmitter {
           ? { ...this.deps.hostExec, adminNow: () => ownerIsAdminNow(owner, this.deps.identity) }
           : undefined,
         subagents: isClosed(profile) ? undefined : { adminNow: () => ownerIsAdminNow(owner, this.deps.identity) },
+        memoria: this.deps.memoria && !isClosed(profile)
+          ? { ...this.deps.memoria, adminNow: () => ownerIsAdminNow(owner, this.deps.identity) }
+          : undefined,
         thinkingLevel: session.thinking_level || undefined,
       });
     } catch (error) {

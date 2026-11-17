@@ -2,7 +2,9 @@
 
 - ``GET /model-provider/routing`` (``service``): where Deck sends each
   Capability, straight to the managed service, built with
-  ``deck.host_address``. It describes what runs: the live ``cfg``.
+  ``deck.host_address``, and where Understory is for Memoria
+  (``understory_url``, per Platform). It describes what runs: the live
+  ``cfg``.
 - ``GET /models`` and ``POST /models/activate`` (``admin``): the
   catalog and the switch (kill, spawn, ready, rollback) under the global
   lifecycle lock; 409 ``lifecycle_busy`` or ``turns_in_flight`` (``llm``
@@ -24,7 +26,7 @@ from rinthel_tui.api.models.dtos import ActivateRequest, ActivateResult, ModelLi
 from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle.commands import LifecycleBusy, LifecycleLock
 from rinthel_tui.lifecycle.domain.types import UnitOutcome
-from rinthel_tui.lifecycle.services import MODEL_SERVICES
+from rinthel_tui.lifecycle.services import MODEL_SERVICES, understory_url
 from rinthel_tui.models.domain.errors import CatalogUnavailable, NotActivable, TurnsInFlight, UnknownModel
 from rinthel_tui.models.domain.models import route
 from rinthel_tui.models.domain.types import CAPABILITIES, Switched
@@ -46,7 +48,7 @@ def routing(cfg: RinthelConfig = Depends(_cfg)):
             capabilities[capability] = asdict(
                 route(model, host_address=cfg.deck.host_address, port=managed.port_of(cfg))
             )
-    return {"capabilities": capabilities}
+    return {"capabilities": capabilities, "understory_url": understory_url(cfg)}
 
 
 @router.get("/models", response_model=ModelListing, dependencies=[Depends(admin)])

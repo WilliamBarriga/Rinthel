@@ -13,6 +13,15 @@ services:
     extends:
       file: understory/docker-compose.yml
       service: understory
+    # The host loopback only: Deck reaches it there on Linux (host network);
+    # no LAN, no tailscale. `!override` replaces the subtree's list, which
+    # publishes on every interface.
+    ports: !override
+      - "127.0.0.1:${RINTHEL_UNDERSTORY_PORT:-3800}:3800"
+    environment:
+      # One token, the one Deck presents. The subtree reads AUTH_TOKEN, and an
+      # empty one is Understory without auth, so an unset one fails here.
+      AUTH_TOKEN: ${UNDERSTORY_TOKEN:?UNDERSTORY_TOKEN is not set in the root .env; run INSTALL}
     networks:
       - understory-net
     # The subtree says "host.docker.internal:host-gateway", which Docker

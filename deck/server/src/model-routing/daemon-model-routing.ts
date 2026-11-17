@@ -9,7 +9,7 @@ import type { CapabilityRoute, Routing } from "@deck/contract";
 export class DaemonModelRouting implements ModelRouting {
   constructor(private readonly daemon: DaemonClient) {}
 
-  async read(capability: Capability): Promise<Route | null> {
+  private async routing(): Promise<Routing> {
     let res: Response;
     try {
       res = await this.daemon.asService().fetch("/model-provider/routing");
@@ -17,7 +17,16 @@ export class DaemonModelRouting implements ModelRouting {
       throw new Error(`routing unavailable: ${(e as Error).message}`);
     }
     if (!res.ok) throw new Error(`routing unavailable: the daemon answered ${res.status}`);
-    const route: CapabilityRoute | undefined = ((await res.json()) as Routing).capabilities?.[capability];
+    return (await res.json()) as Routing;
+  }
+
+  /** Where Understory is for Memoria, as the daemon says now; `null` when it is off. */
+  async understoryUrl(): Promise<string | null> {
+    return (await this.routing()).understory_url ?? null;
+  }
+
+  async read(capability: Capability): Promise<Route | null> {
+    const route: CapabilityRoute | undefined = (await this.routing()).capabilities?.[capability];
     if (!route) return null;
     return {
       url: route.url.replace(/\/+$/, ""),

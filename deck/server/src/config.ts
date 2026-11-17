@@ -31,6 +31,11 @@ export interface DeckConfig {
    * with a token. Without one, no Session has the host exec tools; the URL is checked when they register.
    */
   hostExec: HostExecAccess | undefined;
+  /**
+   * Understory's token (`UNDERSTORY_TOKEN`, the root `.env`'s): set, an admin's Sessions get Memoria;
+   * unset or blank, no Session has it. The URL is the daemon's, read on each call.
+   */
+  understoryToken: string | undefined;
 }
 
 export function deckConfigFromEnv(env: NodeJS.ProcessEnv): DeckConfig {
@@ -42,6 +47,7 @@ export function deckConfigFromEnv(env: NodeJS.ProcessEnv): DeckConfig {
     throw new Error("RINTHEL_PANEL_SECRET is not set: Deck cannot validate Panel tokens. Run INSTALL on the daemon, which generates it in the root .env.");
   }
   const hostExecToken = (env.RINTHEL_HOSTEXECD_TOKEN || "").trim();
+  const understoryToken = (env.UNDERSTORY_TOKEN || "").trim();
   const slotsGb = Number(env.DECK_SLOTS_MAX_GB || 20);
   if (!Number.isFinite(slotsGb) || slotsGb <= 0) throw new Error(`DECK_SLOTS_MAX_GB must be a positive number, got "${env.DECK_SLOTS_MAX_GB}"`);
   return {
@@ -58,5 +64,6 @@ export function deckConfigFromEnv(env: NodeJS.ProcessEnv): DeckConfig {
     slotsDir: path.resolve(env.DECK_SLOTS_DIR || path.join(dataDir, "llama-slots")),
     slotsMaxBytes: Math.floor(slotsGb * 1024 ** 3),
     hostExec: hostExecToken ? { url: (env.RINTHEL_HOSTEXECD_URL || "").trim(), token: hostExecToken } : undefined,
+    understoryToken: understoryToken || undefined,
   };
 }
