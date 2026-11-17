@@ -20,6 +20,12 @@ Deck is the Instance's web portal. It runs as a managed service from the root co
 | `PORTAL_TLS_CERT`, `PORTAL_TLS_KEY` | empty | Serve Deck over HTTPS when both are set and exist. |
 | `PUID`, `PGID` | `1000` | The container user, so what Deck writes under `data/deck` stays the host user's. INSTALL writes the host user's ids on Linux. |
 | `DOCKER_GID` | the user's group | The host's docker group, so Deck may use the Docker socket mounted for the Instance browser. INSTALL writes it on Linux. |
+| `VOICE_PIPELINE_MODE` | `parallel` | `sequential` reads a whole reply before it speaks (a baseline to compare against); `parallel` synthesizes the next phrase while the last one plays. |
+| `VOICE_SENTENCE_CHUNKS`, `VOICE_TTS_PREFETCH` | `false` | In `sequential` mode, speak sentence by sentence, and prepare the next one ahead. |
+| `VOICE_STATUS_SPEECH` | `true` | Short spoken notices while the Agent thinks or compacts. |
+| `VOICE_COMPARISON` | `false` | Labels the voice stage with the pipeline in use, for side-by-side comparisons. |
+| `VOICE_RESPONSE_INSTRUCTIONS` | `true` | `false` leaves out the speaking rules and the `[Audio mode]` marker of a voice Turn. |
+| `VOICE_SKIP_FIRST_THINKING` | `true` | The first model call of a voice Turn runs without thinking, so the first words come sooner. |
 | `BROWSER_CDP_URL` | `http://127.0.0.1:9222` | The Instance browser's fixed CDP endpoint, which every admin Session that may drive it shares. |
 | `BROWSER_EXTERNAL` | `false` | `true` for a browser started and stopped outside Deck: Deck only finds it over CDP and refuses to install, start or stop it. |
 | `BROWSER_MCP_COMMAND` | `npx -y @playwright/mcp@0.0.79` | The Playwright MCP server that drives the browser (pinned); Deck adds `--cdp-endpoint` and `--snapshot-mode none`. |
@@ -61,6 +67,16 @@ One browser per Instance, signed into the Agent's accounts and kept that way by 
 Only an admin sees and administers it, from the Instance browser screen: install (refused in docker mode until it has a password; a random one can be suggested), start, stop, remove (the logins stay; forgetting the profile is separate), the allowlist of domains (globs such as `*.example.com`; empty means no restriction), the Sessions that may drive it, and its live view. The view is the browser's KasmVNC page, proxied by Deck at `/browser-ui` (HTTP and websocket) with the browser's password added by Deck; a member, or a demoted or disabled admin, is refused. While nobody watches the view, Deck keeps the stream open at a low frame rate so the page keeps rendering and clicks keep working. Nothing stops the browser for being idle: it runs until an admin stops it.
 
 The Agent drives it with Playwright's tools, registered inline in the Session (no `mcp.json`) and run by the pinned Playwright MCP server over the fixed CDP endpoint. Every Session shares that one process and its tabs, with no lease. Only an admin's Session gets the tools, and each call goes through two gates: the Session's toggle (`sessions.browser`, set by an admin from the chat's browser panel or the API) and the owner's role, read from the daemon on every call; an owner that is not an admin now, or a role that cannot be read, is a refusal. A member's Session never has the tools, whatever its toggle says. The Guard refuses any other browser tool (another MCP's, or the adapter's proxy), the tools that run arbitrary code or read Deck's files (`browser_run_code_unsafe`, `browser_file_upload`, `browser_drop`) are never registered, and what the browser returns taints the Session.
+
+## Voice
+
+Any user talks with the Agent by voice in their own Sessions, hands-free: the browser detects when they speak (Silero VAD, run in the page), Deck transcribes each turn with the Instance's `stt` Local model (whisper-server), sends it as a voice Turn, and reads the reply aloud with the `tts` Local model (audiocpp-server), phrase by phrase while it streams. Speaking over the reply interrupts it. While the person talks, a live transcription previews what was heard. The stage also shows the prompt's reading and a compaction in course, the Agent's tool calls, a latency profiler and cue sounds; mute keeps the reply playing.
+
+Voice appears only when the reader turned it on (Voz screen) and the Instance has both `stt` and `tts` active (`[models] stt`, `tts` in `instance.toml`; INSTALL `--voice` adds them, Linux only). Without them the microphone button is not there: no error. Each user keeps their own settings in `deck.db` (`voice:user:<id>`): whether voice shows in their Sessions, the input language (or auto-detection) and the speech detection (end-of-turn silence, thresholds, minimum speech, audio kept before speech).
+
+Deck goes straight to the services on the daemon's route (`GET /model-provider/routing`, read on every call), with no voice route in the daemon (ADR 0008). The TTS speaks in its Local model's fixed voice (`voice` of the catalog entry). Only the Session's owner reaches `/api/sessions/:id/voice/*`: someone else, an admin too, gets a `403`. A voice Turn carries the `[Audio mode]` marker and one fixed system rule tells the Agent to answer in short plain speech and put long content in a Canvas.
+
+The browser needs the microphone over HTTPS or on localhost. The VAD's model and its WebAssembly runtime are copied from `node_modules` into `web/public/voice-assets/` (ignored by git) before every `dev` and `build`.
 
 ## Surfaces
 

@@ -27,6 +27,7 @@ model {
   // Deck -> daemon (the daemon owns identity and the model route)
   deck.deck-server.srv-auth -> deck.deck-server.srv-daemon
   deck.deck-server.srv-routing -> deck.deck-server.srv-daemon "model route"
+  deck.deck-server.srv-voz -> deck.deck-server.srv-routing "stt and tts routes on every call"
   deck.deck-server.srv-daemon -> daemon.api "REST; service credential"
   deck.deck-server.srv-auth -> daemon.api.api-identity "login, session-principal"
   deck.deck-server.srv-routing -> daemon.api.api-models "GET /model-provider/routing"

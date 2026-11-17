@@ -10,7 +10,9 @@ model {
       modulo web-sesiones "sessions / terminal" "Sessions, transcript, terminal"
       modulo web-chat "chat" "Transcript and prompt box"
       modulo web-canvas "canvas" "Canvases: markdown and ui (local actions and askAgent)"
-      modulo web-voz "voice" "VAD, STT/TTS, hands-free (opt-in)"
+      modulo web-voz "voice" "Hands-free voice: Silero VAD, live transcription, barge-in, spoken replies, latency profiler; Voz screen with each user's settings" {
+        source { path "deck/web/src/voice" }
+      }
       modulo web-usuarios "users" "Users screen (admin only)"
       modulo web-ajustes "settings / appearance" "Local model, Appearance and Personalization, Instance SOUL"
       modulo web-browser "browser" "Instance browser screen (admin): install, start, stop, password, allowlist, live view; a Session's browser panel" {
@@ -45,7 +47,9 @@ model {
         source { path "deck/server/src/instance-soul.ts" }
       }
       modulo srv-apariencia "appearance" "Appearance and brand over the settings of deck.db"
-      modulo srv-voz "voice" "STT/TTS direct to whisper-server and audiocpp-server (DirectVoiceSpeech)"
+      modulo srv-voz "voice" "VoiceSpeech port: DirectVoiceSpeech (STT/TTS straight to whisper-server and audiocpp-server on the route) and FakeVoiceSpeech; each user's voice settings; owner only" {
+        source { path "deck/server/src/voice" }
+      }
       modulo srv-browser "browser" "Instance browser: docker, local Chrome or external; fixed CDP endpoint shared between Sessions with no lease; per-call gate (toggle + admin role, fails closed); /browser-ui proxy and frame keeper; never stopped for idleness" {
         source { path "deck/server/src/session-browser.ts" }
         source { path "deck/server/src/browser-proxy.ts" }

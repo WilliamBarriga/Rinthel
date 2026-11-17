@@ -105,6 +105,34 @@ these are the seams it hangs from.
   and judges its caller itself; the frame keeper (`extensions/frame-keeper.ts`)
   watches the container's stream only while nobody else does.
 
+## Voice
+
+What voice does for the person is in [configuration](configuration.md#voice); these
+are its seams.
+
+- `VoiceSpeech` (`deck/server/src/voice/voice-speech.ts`) is what the voice
+  routes (`api/voice.ts`) need: whether `stt` and `tts` are active, a
+  transcription and a speech stream. Its adapter, `DirectVoiceSpeech`, reads the
+  route of each Capability on every call (`ModelRouting`) and calls
+  whisper-server (`POST /inference`) and audiocpp-server (`POST
+  /v1/audio/speech`, streamed PCM; a `409` while it is busy is asked again up to
+  15 s). `FakeVoiceSpeech` is its double. Contract:
+  `tests/voice-speech.contract.test.mts`, run against both, the adapter over a
+  fake whisper and a fake audio.cpp on real HTTP.
+- Each user's settings (`voice/voice-config.ts`) are keys of the `settings`
+  repo of `PortalStore`; no table of their own.
+- A voice Turn is `prompt` with `voice: true`. `SdkPiClient` adds the marker
+  and arms the `voice-first` inline factory (`pi/voice-first.ts`), which turns
+  thinking off for the first model call of the Turn.
+- In the web, the `VoiceSpeech` port (`ports/voice-speech.ts`) is the only way
+  to speech; `HandsFreeVoice` (`voice/hands-free.ts`) is the turn engine,
+  independent of React and of timing, over `SpeechPipeline` (one synthesis and
+  one playback in phrase order) and `LiveTranscription` (speculative requests
+  during the closing silence). Its pure transitions are in `voice/model/`.
+- `deck/tests/live/live-transcription.live.mts` runs the live transcription
+  against a real whisper-server; it is opt-in (`RINTHEL_LIVE_WHISPER_URL`, `npm
+  run test:live-transcription`) and never part of `npm test`.
+
 ## Memoria
 
 The Memoria is what the Instance remembers between Sessions, kept in

@@ -104,7 +104,9 @@ cannot be activated, and the routing and the Monitor leave them out.
   Ports, binaries and threads are `RINTHEL_WHISPER_*` and `RINTHEL_AUDIOCPP_*`.
 - **GPU.** No leases: the TTS model stays loaded while `tts` is active. If it
   does not fit next to the LLM, turn `tts` off.
-- **INSTALL with voice.** `rinthel/.venv/bin/python -m rinthel_tui.install --voice`
+- **INSTALL with voice.** `rinthel/install.sh --voice` bootstraps as usual,
+  brings the daemon up if it is not running (`rinthel-boot.sh --daemon-only`)
+  and runs `rinthel/.venv/bin/python -m rinthel_tui.install --voice`, which
   asks the running daemon for INSTALL plus a voice unit: whisper.cpp and
   audio.cpp at fixed commits, `ggml-base.bin` and the Spanish Pocket-TTS
   GGUF (checked by sha256) in `RINTHEL_MODELS_DIR`, the entries
