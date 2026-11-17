@@ -12,7 +12,6 @@ import httpx
 import pytest
 
 from rinthel_tui.config import with_local_model
-from rinthel_tui.install.portal_model import PORTAL_MODEL_ID, PORTAL_PROVIDER
 from rinthel_tui.lifecycle.services import _llama_argv
 from rinthel_tui.models.domain.types import CatalogEntry, LocalModel
 
@@ -116,14 +115,6 @@ def test_a_switch_kills_spawns_the_new_model_and_makes_it_active(
     route = client.get("/model-provider/routing", headers=service_headers).json()["capabilities"]["llm"]
     assert (route["model"], route["context_window"], route["reasoning_format"]) == ("nuevo", 32768, "deepseek")
     assert app.state.cfg.local_model.id == "nuevo"
-
-
-def test_a_switch_points_the_legacy_portal_at_the_new_model(client, admin_headers, daemon_cfg):
-    _activate(client, admin_headers, "nuevo")
-
-    portal = daemon_cfg.instance.portal_data_dir / "home" / ".pi" / "agent" / "models.json"
-    provider = json.loads(portal.read_text())["providers"][PORTAL_PROVIDER]
-    assert provider["models"] == [{"id": PORTAL_MODEL_ID, "name": "Nuevo", "contextWindow": 32768}]
 
 
 def test_a_model_that_does_not_come_up_is_rolled_back(app, client, admin_headers, host, daemon_cfg, new_model,

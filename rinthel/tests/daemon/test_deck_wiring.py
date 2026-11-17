@@ -47,10 +47,9 @@ def _admin_bearer(client) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_deck_defaults_to_its_own_port_next_to_the_legacy_portal(daemon_cfg):
+def test_deck_is_enabled_by_default_on_the_portal_port(daemon_cfg):
     assert daemon_cfg.deck.enabled is True
-    assert daemon_cfg.deck.port == 4200
-    assert daemon_cfg.deck.port != daemon_cfg.pithagoras.port
+    assert daemon_cfg.deck.port == 4100
 
 
 def test_deleting_a_user_asks_the_configured_deck_to_retire_their_sessions(

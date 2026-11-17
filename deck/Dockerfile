@@ -39,10 +39,10 @@ COPY --from=build /app/web/dist web/dist
 # with its SDK (node_modules/.bin/pi), for installing packages into the agentDir.
 ENV PATH=/data/bin:/app/node_modules/.bin:$PATH
 ENV NODE_ENV=production \
-    PORT=4200 \
+    PORT=4100 \
     DATA_DIR=/data \
     HOME=/data/home
 RUN mkdir -p /data/home /data/bin && chmod 777 /data /data/home /data/bin
-EXPOSE 4200
+EXPOSE 4100
 VOLUME /data
 CMD ["node", "server/dist/index.js"]

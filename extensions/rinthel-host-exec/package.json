@@ -1,7 +1,7 @@
 {
   "name": "rinthel-host-exec",
   "version": "0.1.0",
-  "description": "Tools para que Rinthel ejecute comandos de shell en el host real (fuera del contenedor Pithagoras), vía el daemon hostexecd",
+  "description": "Tools para que Rinthel ejecute comandos de shell en el host real (fuera del contenedor del portal), vía el daemon hostexecd",
   "type": "module",
   "main": "./index.ts",
   "types": "./index.ts",

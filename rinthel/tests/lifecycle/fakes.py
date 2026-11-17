@@ -200,8 +200,9 @@ class FakeProbe(_Double):
 
 class FakeHostInfo(_Double):
     """El host que le toca al test: herramientas instaladas (``install``), un
-    toolkit de CUDA (``install_cuda``), cuántas CPU tiene (``cpus``) y su
-    Platform (``os``), que el test cambia."""
+    toolkit de CUDA (``install_cuda``), cuántas CPU tiene (``cpus``), su
+    Platform (``os``), el uid/gid de quien corre la Instance (``ids``) y los
+    grupos del host (``groups``), que el test cambia."""
 
     def __init__(self, *, cpus: int = 4, os: Platform = "linux", log: list[tuple] | None = None) -> None:
         super().__init__(log)
@@ -209,6 +210,8 @@ class FakeHostInfo(_Double):
         self._tools: dict[str, str] = {}
         self._cuda: str | None = None
         self.cpus = cpus
+        self.ids: tuple[int, int] = (1000, 1000)
+        self.groups: dict[str, int] = {}
 
     def install(self, name: str, path: str) -> None:
         self._tools[name] = path
@@ -236,6 +239,14 @@ class FakeHostInfo(_Double):
         self._enter("find_llama_server", build_dir)
         names = ("bin/Release/llama-server.exe", "bin/llama-server.exe") if self.os == "windows" else ("bin/llama-server",)
         return next((build_dir / n for n in names if (build_dir / n).exists()), None)
+
+    def user_ids(self) -> tuple[int, int] | None:
+        self._enter("user_ids")
+        return None if self.os == "windows" else self.ids
+
+    def group_id(self, name: str) -> int | None:
+        self._enter("group_id", name)
+        return None if self.os == "windows" else self.groups.get(name)
 
     async def sha256(self, path: Path) -> str:
         self._enter("sha256", path)

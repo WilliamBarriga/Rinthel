@@ -1,15 +1,13 @@
 /**
  * Rinthel Host Exec — ejecutar comandos de shell en el host real
  *
- * A diferencia de la tool `bash` (que corre dentro del contenedor
- * Pithagoras), esta extensión le habla a `hostexecd`, un daemon FastAPI
- * chico que corre en la máquina host (fuera de Docker) bindeado a
- * 127.0.0.1. Gracias a `network_mode: host` en
- * pithagoras/docker-compose.yml, 127.0.0.1 dentro del contenedor ya es el
- * loopback del host — no hace falta mount ni túnel para llegar a él.
+ * A diferencia de la tool `bash` (que corre dentro del contenedor del
+ * portal), esta extensión le habla a `hostexecd`, un daemon FastAPI chico
+ * que corre en la máquina host (fuera de Docker) bindeado a 127.0.0.1. Con
+ * `network_mode: host` en el compose del portal, 127.0.0.1 dentro del
+ * contenedor ya es el loopback del host — no hace falta mount ni túnel.
  *
- * Ver plans/rinthel-host-exec.md para el diseño completo (grillado con
- * Tarkark, decisiones ya cerradas). Puntos clave:
+ * Ver docs/07-host-exec.md. Puntos clave:
  * - Sin allowlist de comandos: mismo nivel de libertad que `bash`, la
  *   restricción real es que el daemon corre como el usuario `tarkark`, sin
  *   sudo — cualquier cosa que necesite privilegios de root falla sola, a
@@ -17,7 +15,7 @@
  * - Bloqueante, sin gestión de procesos de fondo: `POST /exec` espera a
  *   que el comando termine (con timeout) y devuelve stdout/stderr/exit
  *   code de una sola vez.
- * - `pithagoras/server/src/pi/guard.ts` bloquea el tool `rinthel_host_exec`
+ * - El Guard del portal bloquea el tool `rinthel_host_exec`
  *   por completo (sin excepciones de forma, a diferencia de las reglas
  *   puntuales que aplican a `bash`) cuando la sesión está "tainted" —
  *   leyó contenido no confiable.
@@ -38,7 +36,7 @@ import { Type } from "typebox";
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 // Siguiente puerto libre tras 8765 (rinthel_tui)/3800 (Understory)/4100
-// (Pithagoras) — mismo default que hostexecd/daemon.py::main().
+// (Deck) — mismo default que hostexecd/daemon.py::main().
 const DEFAULT_PORT = 8766;
 const TOKEN_HEADER = "X-Rinthel-Token";
 
@@ -82,7 +80,7 @@ function unreachableText(err: unknown): string {
 	const detail = err instanceof Error ? err.message : String(err);
 	return (
 		`No se pudo contactar a hostexecd en ${daemonBaseUrl()} (${detail}). El daemon se ` +
-		"autostartea desde rinthel-boot.sh en el host — si Pithagoras se levantó sin pasar por " +
+		"autostartea desde rinthel-boot.sh en el host — si el portal se levantó sin pasar por " +
 		"ese script (o el daemon se cayó), no va a estar arriba. Decile a Tarkark en vez de " +
 		"reintentar en loop."
 	);
@@ -106,7 +104,7 @@ export default function (pi: ExtensionAPI) {
 		name: "rinthel_host_exec",
 		label: "Rinthel Host Exec",
 		description:
-			"Corre un comando de shell en la máquina host real (fuera del contenedor Pithagoras), " +
+			"Corre un comando de shell en la máquina host real (fuera del contenedor del portal), " +
 			"como el usuario tarkark, sin sudo. Bloqueante: espera a que el comando termine (con " +
 			"timeout) y devuelve stdout/stderr/exit code. Sin allowlist de comandos — mismo nivel " +
 			"de libertad que bash, pero corriendo en el host en vez del contenedor. Cualquier cosa " +

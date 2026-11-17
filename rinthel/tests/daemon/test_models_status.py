@@ -42,12 +42,8 @@ def _models_status(cfg, adapters, host, service_headers) -> dict:
 
 
 def _without_portal(cfg):
-    """Only Understory among the managed services, as in the shared fixture: both portals off."""
-    return dataclasses.replace(
-        cfg,
-        pithagoras=dataclasses.replace(cfg.pithagoras, enabled=False),
-        deck=dataclasses.replace(cfg.deck, enabled=False),
-    )
+    """Only Understory among the managed services, as in the shared fixture: Deck off."""
+    return dataclasses.replace(cfg, deck=dataclasses.replace(cfg.deck, enabled=False))
 
 
 def test_the_active_llm_model_that_answers_is_ready(daemon_cfg, adapters, host, catalog, service_headers):
@@ -121,9 +117,7 @@ def test_each_enabled_managed_service_is_a_row_with_its_state(daemon_cfg, adapte
 def test_deck_is_a_row_when_enabled(daemon_cfg, adapters, host, catalog, service_headers):
     host.probe.script_http(f"http://127.0.0.1:{daemon_cfg.understory.port}/", True)
     host.probe.script_http(f"http://127.0.0.1:{daemon_cfg.deck.port}/api/auth/status", True)
-    cfg = dataclasses.replace(daemon_cfg, pithagoras=dataclasses.replace(daemon_cfg.pithagoras, enabled=False))
-
-    services = _models_status(cfg, adapters, host, service_headers)["services"]
+    services = _models_status(daemon_cfg, adapters, host, service_headers)["services"]
 
     assert services == [{"name": "Understory", "state": "ready"}, {"name": "Deck", "state": "ready"}]
 

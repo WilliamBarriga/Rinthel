@@ -11,30 +11,30 @@ from rinthel_tui.env_file import update_env_file
 
 def test_update_env_file_overrides_keys_and_keeps_rest(tmp_path):
     target = tmp_path / ".env"
-    target.write_text("# comentario\nPORTAL_PASSWORD=changeme\nWORKSPACES_DIR=/tmp\nUNTOUCHED=stays\n")
+    target.write_text("# comentario\nRINTHEL_PANEL_SECRET=changeme\nRINTHEL_MODELS_DIR=/tmp\nUNTOUCHED=stays\n")
 
     update_env_file(
         target,
-        overrides={"PORTAL_PASSWORD": "s3cr3t", "PI_AGENT_DIR": "/home/x/.pi/agent"},
+        overrides={"RINTHEL_PANEL_SECRET": "s3cr3t", "UNDERSTORY_TOKEN": "tok"},
     )
 
     lines = target.read_text().splitlines()
     assert "# comentario" in lines
-    assert "PORTAL_PASSWORD=s3cr3t" in lines
-    assert "WORKSPACES_DIR=/tmp" in lines
+    assert "RINTHEL_PANEL_SECRET=s3cr3t" in lines
+    assert "RINTHEL_MODELS_DIR=/tmp" in lines
     assert "UNTOUCHED=stays" in lines
-    assert "PI_AGENT_DIR=/home/x/.pi/agent" in lines
+    assert "UNDERSTORY_TOKEN=tok" in lines
 
 
 def test_update_env_file_does_not_touch_comment_lines_with_equals(tmp_path):
     target = tmp_path / ".env"
-    target.write_text("# PORTAL_PASSWORD=example-in-a-comment\n")
+    target.write_text("# RINTHEL_PANEL_SECRET=example-in-a-comment\n")
 
-    update_env_file(target, overrides={"PORTAL_PASSWORD": "real-value"})
+    update_env_file(target, overrides={"RINTHEL_PANEL_SECRET": "real-value"})
 
     lines = target.read_text().splitlines()
-    assert "# PORTAL_PASSWORD=example-in-a-comment" in lines
-    assert "PORTAL_PASSWORD=real-value" in lines
+    assert "# RINTHEL_PANEL_SECRET=example-in-a-comment" in lines
+    assert "RINTHEL_PANEL_SECRET=real-value" in lines
 
 
 def test_update_env_file_seeds_from_example_when_path_does_not_exist(tmp_path):
@@ -78,13 +78,13 @@ def test_update_env_file_preserves_the_original_file_mode(tmp_path):
 @pytest.mark.skipif(os.geteuid() == 0, reason="root escribe en un directorio de solo lectura")
 def test_update_env_file_leaves_original_untouched_and_cleans_up_tmp_on_write_failure(tmp_path):
     target = tmp_path / ".env"
-    original_content = "PORTAL_PASSWORD=changeme\n"
+    original_content = "RINTHEL_PANEL_SECRET=changeme\n"
     target.write_text(original_content)
 
     tmp_path.chmod(0o500)  # el directorio no deja crear el temporal: un fallo real del filesystem
     try:
         with pytest.raises(OSError):
-            update_env_file(target, overrides={"PORTAL_PASSWORD": "s3cr3t"})
+            update_env_file(target, overrides={"RINTHEL_PANEL_SECRET": "s3cr3t"})
     finally:
         tmp_path.chmod(0o700)
 

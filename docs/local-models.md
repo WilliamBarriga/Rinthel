@@ -100,13 +100,3 @@ in `data/deck/llama-slots`: `llama-server` starts with that
 Deck (composer and Ajustes); Deck itself answers 409 `turns_in_flight` while
 one of its Sessions is generating, and a live Session moves to the new model on
 its next call (`wrong_model`).
-
-## The legacy portal
-
-Until Deck replaces it, the portal chats against the active model through
-the pi provider `local-llm`. INSTALL sets `PI_PROVIDER`, `PI_MODEL` and
-`LLAMA_BASE_URL` in the portal `.env`; BOOT and every switch rewrite that
-provider in the portal's `models.json` (other providers are kept). The
-provider has a single model with a fixed id, so a switch never leaves a portal
-Session naming a model pi does not know; its name and context window follow
-the active model. The portal's model selector stays gone.

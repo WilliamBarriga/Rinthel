@@ -126,7 +126,7 @@ fi
 build_client
 
 # Provision before either daemon reads .env; reruns preserve existing secrets.
-"$PYTHON" -m rinthel_tui.install.host_exec "$ROOT" "$ROOT/pithagoras"
+"$PYTHON" -m rinthel_tui.install.host_exec "$ROOT"
 
 # Mismo secreto que valida la access policy `service` del daemon: la TUI lo
 # manda en cada request (`X-Rinthel-Service-Secret`). Se genera acá si falta,

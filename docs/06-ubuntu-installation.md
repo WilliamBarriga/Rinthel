@@ -43,7 +43,7 @@ docker compose version
 ```
 
 El grupo Docker permite administrar contenedores con privilegios sobre el
-host. El portal necesita el socket Docker para sus complementos gestionados.
+host. INSTALL escribe su GID como `DOCKER_GID` en el `.env` raíz.
 No mezcles los paquetes `docker.io` de Ubuntu con Docker CE. Si prefieres CE,
 usa exclusivamente la [guía oficial de Docker](https://docs.docker.com/engine/install/ubuntu/).
 
@@ -100,11 +100,15 @@ El script instala Rust si falta, crea `.venv`, instala el daemon y compila
 el cliente. No descarga el modelo ni inicia los contenedores en este paso.
 
 Linux usa el compose raíz único (ya no hay un perfil Ubuntu aparte ni
-`COMPOSE_FILE`), datos en `data/` y secretos generados localmente. No
-reutilices un `.venv` o rutas absolutas de Windows. Los archivos `.env`,
-`data/` y `models.local.json` están ignorados por Git.
+`COMPOSE_FILE`), datos en `data/` y secretos generados localmente en el
+`.env` raíz. No reutilices un `.venv` o rutas absolutas de Windows. Los
+archivos `.env`, `data/` y `models.local.json` están ignorados por Git.
 
-El portal usa la red del host, por lo que alcanza al modelo en
+Una instalación anterior con otro layout no se migra: el layout actual no
+lee el `.env` ni los datos de otro portal. Haz un INSTALL limpio y borra a
+mano lo que ya no uses en `data/` (INSTALL nunca borra nada).
+
+Deck usa la red del host, por lo que alcanza al daemon y al modelo en
 `127.0.0.1:8080` (`deck.host_address`) sin reglas iptables especiales. Los
 servidores web escuchan en las interfaces del host; limita con tu firewall el
 acceso desde otras máquinas si solo quieres uso local.
@@ -121,22 +125,24 @@ En la interfaz:
 1. **INSTALL**: valida dependencias, compila llama.cpp upstream (ggml-org, rama `master`) con CUDA, descarga el GGUF
    del Local model por defecto (aproximadamente 22 GB) y escribe el catálogo
    inicial `models.local.json` con ese modelo activo
-   ([`local-models.md`](local-models.md)).
-2. **BOOT**: carga el modelo y construye/inicia Understory y Pithagoras.
-3. **MONITOR**: confirma que los tres servicios estén disponibles.
-4. Abre <http://127.0.0.1:4100>. La contraseña está en `PORTAL_PASSWORD` del
-   `.env` local. Understory queda en <http://127.0.0.1:3800>.
+   ([`local-models.md`](local-models.md)). Genera en el `.env` raíz los
+   secretos de la Instance, el token de host exec, `PUID`/`PGID` (tu
+   usuario, con el que corre Deck) y `DOCKER_GID`, y el token de Understory
+   (`AUTH_TOKEN` = `UNDERSTORY_TOKEN`) con su bundle en `data/understory`.
+   Crea `rinthel.db` y el primer admin: copia la contraseña que muestra,
+   no se vuelve a mostrar.
+2. **BOOT**: carga el modelo y construye/inicia Understory y Deck.
+3. **MONITOR**: confirma que los servicios estén disponibles.
+4. Abre Deck en <http://127.0.0.1:4100> y entra como `admin` con esa
+   contraseña. Si la perdiste: `python -m rinthel_tui.identity reset-admin`.
+   Understory queda en <http://127.0.0.1:3800>.
 
 Linux arranca con su Validated profile (`VALIDATED_PROFILES["linux"]` en
 `rinthel_tui/config.py`). Cierra juegos u otras aplicaciones que consuman
 mucha RAM/VRAM durante la primera prueba.
 
-En Pithagoras, para conectar las herramientas de memoria, abre **Settings →
-MCP**, instala `pi-mcp-adapter` si el portal lo solicita, y añade un servidor
-HTTP con URL `http://127.0.0.1:3800/mcp` y `bearerTokenEnv` igual a
-`UNDERSTORY_TOKEN`. Inicia una sesión nueva después de configurarlo. Los
-paquetes se instalan en el volumen persistente del portal: no se requieren
-carpetas Pi preexistentes en el host.
+Deck guarda su estado (`deck.db`, el home de pi, Sesiones) en `data/deck`;
+no se requieren carpetas Pi preexistentes en el host.
 
 ## 4. Uso diario y diagnóstico
 
@@ -151,28 +157,28 @@ no detiene automáticamente los contenedores ni el modelo.
 ```bash
 curl -f http://127.0.0.1:8080/v1/models
 docker compose ps
-docker compose logs --tail 60 portal understory
+docker compose logs --tail 60 deck understory
 tail -n 60 logs/daemon.log
 tail -n 60 logs/llama-server.log
 ```
 
 Si Docker muestra permisos denegados, confirma que la sesión tenga el grupo
-`docker`; reiniciar solo la terminal puede no aplicar el cambio. Si tu
-`docker` no es el GID 984, pon `DOCKER_GID` en `.env`. No uses
+`docker`; reiniciar solo la terminal puede no aplicar el cambio. Si
+instalaste Docker después de INSTALL, vuelve a correrlo para que escriba
+`DOCKER_GID`. No uses
 `sudo rinthel/install.sh`, porque los datos quedarían con propietario root.
 
 Para cambiar de Local model, edita `models.local.json` y usa
 `python -m rinthel_tui.models use <id>` con los servicios parados, o el
-cambio del daemon ([`local-models.md`](local-models.md)). Cada BOOT y cada
-cambio reescriben el `models.json` del portal.
+cambio del daemon desde Deck ([`local-models.md`](local-models.md)).
 
 ## Pruebas reproducibles
 
 ```bash
-.venv/bin/python -m pip install -e '.[dev]'
-.venv/bin/python -m pytest -q
+rinthel/.venv/bin/python -m pip install -e 'rinthel[dev]'
+(cd rinthel && .venv/bin/python -m pytest -q)
 bash -n rinthel/install.sh rinthel/rinthel-boot.sh
-cargo test --locked --manifest-path rinthel-client/Cargo.toml
+cargo test --locked --manifest-path rinthel/rinthel-client/Cargo.toml
 ```
 
 `graphify` no estaba instalado en este equipo; no se regeneró el grafo.

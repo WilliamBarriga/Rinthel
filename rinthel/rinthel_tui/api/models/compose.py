@@ -1,5 +1,5 @@
 """The composition of the ``models`` area: the switch over the Lifecycle and
-what follows a successful one (the live ``cfg`` and the legacy portal)."""
+what follows a successful one (the live ``cfg``)."""
 
 from __future__ import annotations
 
@@ -11,8 +11,7 @@ from fastapi import APIRouter
 from rinthel_tui.api.adapters import Adapters
 from rinthel_tui.api.models.routes import router
 from rinthel_tui.config import RinthelConfig, with_local_model
-from rinthel_tui.install import portal_model
-from rinthel_tui.lifecycle import executor, install_tasks
+from rinthel_tui.lifecycle import executor
 from rinthel_tui.lifecycle.executor import Broadcast
 from rinthel_tui.models.adapters.lifecycle_llama import LifecycleLlama
 from rinthel_tui.models.domain.models import ModelSwitch
@@ -27,8 +26,8 @@ class ModelsArea:
     active: ActiveModels
     switch: ModelSwitch
     # After a switch: the model llama-server now serves becomes the one of
-    # the live ``cfg`` (routing, boot, reload) and of the legacy portal.
-    # Returns the warnings of what could not follow.
+    # the live ``cfg`` (routing, boot, reload). Returns the warnings of what
+    # could not follow.
     adopt: Callable[[LocalModel], list[str]]
 
 
@@ -44,14 +43,7 @@ def compose(
     switch = ModelSwitch(models.catalog, models.active, {"llm": llama}, models.turns)
 
     def adopt(model: LocalModel) -> list[str]:
-        cfg = with_local_model(cfg_of(), model)
-        set_cfg(cfg)
-        if not cfg.pithagoras.enabled:
-            return []
-        try:
-            portal_model.publish(install_tasks.portal_model(cfg), adapters.lifecycle_host.host_info.platform())
-        except (ValueError, OSError) as exc:
-            return [f"el portal no pudo seguir al modelo nuevo: {exc}"]
+        set_cfg(with_local_model(cfg_of(), model))
         return []
 
     return ModelsArea(router=router, catalog=models.catalog, active=models.active, switch=switch, adopt=adopt)

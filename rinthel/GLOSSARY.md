@@ -5,7 +5,7 @@ Rinthel administra una infraestructura local de IA como un conjunto coordinado d
 ## Language
 
 **Managed service**:
-Una capacidad de infraestructura que Rinthel controla como una sola unidad de ciclo de vida: Llama, Understory, Deck o Pithagoras.
+Una capacidad de infraestructura que Rinthel controla como una sola unidad de ciclo de vida: Llama, Understory o Deck.
 _Avoid_: Proceso, contenedor; son mecanismos de ejecución, no la capacidad administrada.
 
 **Install**:
@@ -36,7 +36,7 @@ Flujo identificado de observaciones en vivo sobre servicios, recursos o activida
 _Avoid_: Evento, actualización; cada stream conserva una identidad y significado propios.
 
 **Knowledge workspace**:
-Carpeta controlada por la persona usuaria que Pithagoras expone al agente como fuente documental local.
+Carpeta controlada por la persona usuaria que Deck expone al Agente como fuente documental local.
 _Avoid_: Entrenamiento, índice RAG; el agente consulta archivos, no modifica los pesos del modelo.
 
 **Grounded response**:

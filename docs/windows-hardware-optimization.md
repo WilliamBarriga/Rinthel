@@ -67,7 +67,7 @@ During a controlled 420-token generation, the server produced 30.0 tokens/s.
 CPU utilization averaged 59.5% and peaked at 74.5%; system RAM peaked at
 29.57 GiB used; GPU utilization peaked at 81%; VRAM stayed at 7341 MiB used
 with 551 MiB reported free. Temperature peaked at 58 C and GPU power at
-45.04 W. The longer Pithagoras validation averaged about 32.5 tokens/s.
+45.04 W. The longer validation through the previous web portal averaged about 32.5 tokens/s.
 
 The AMD XDNA NPU is present but is not part of this profile. The installed
 `llama-server` is a CUDA build, and the current GGUF inference path uses the

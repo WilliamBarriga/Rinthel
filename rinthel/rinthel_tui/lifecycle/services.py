@@ -95,11 +95,10 @@ LLAMA_SERVICE = LocalProcessService(
 # ── DockerComposeService ──────────────────────────────────────────────
 #
 # Comparten un único docker-compose.yaml en la raíz de la Instance
-# (`include:` de understory/ y del portal), así que todos los ``dir_of``
-# apuntan a ``cfg.instance.root`` — no a ``cfg.understory.dir``/
-# ``cfg.pithagoras.dir``, que describen dónde vive el *código fuente* del
-# subtree (lo usa install.py), un concepto distinto de "desde dónde corro
-# docker compose".
+# (`extends:` de understory/, `include:` de deck/), así que todos los
+# ``dir_of`` apuntan a ``cfg.instance.root`` — no a ``cfg.understory.dir``/
+# ``cfg.deck.dir``, que describen dónde vive el *código fuente* del
+# componente, un concepto distinto de "desde dónde corro docker compose".
 
 UNDERSTORY_SERVICE = DockerComposeService(
     display_name="Understory",
@@ -113,23 +112,7 @@ UNDERSTORY_SERVICE = DockerComposeService(
     ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.understory.port}/",
 )
 
-# El portal heredado, hasta que Deck lo reemplace.
-PITHAGORAS_SERVICE = DockerComposeService(
-    display_name="Pithagoras",
-    menu_label="PITHAGORAS  --  PI TASK PORTAL",
-    wait_label="PITHAGORAS",
-    kill_label="PITHAGORAS  --  PI TASK PORTAL",
-    dir_of=lambda cfg: cfg.instance.root,
-    port_of=lambda cfg: cfg.pithagoras.port,
-    enabled_of=lambda cfg: cfg.pithagoras.enabled,
-    compose_service_name="portal",
-    extra_env_of=lambda cfg: {"PORT": str(cfg.pithagoras.port)},
-    build_args=("build", "portal"),
-    ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.pithagoras.port}/",
-)
-
-# Deck, el portal web. Vive junto al heredado, en su propio puerto, hasta
-# que lo reemplace.
+# Deck, el portal web de la Instance.
 DECK_SERVICE = DockerComposeService(
     display_name="Deck",
     menu_label="DECK  --  WEB PORTAL",
@@ -147,4 +130,4 @@ DECK_SERVICE = DockerComposeService(
 # Orden de aparición en BOOT/TERMINATE/RELOAD — agregar o sacar un servicio de
 # estas listas alcanza para que los planes lo reflejen.
 LOCAL_SERVICES: list[LocalProcessService] = [LLAMA_SERVICE]
-DOCKER_SERVICES: list[DockerComposeService] = [UNDERSTORY_SERVICE, PITHAGORAS_SERVICE, DECK_SERVICE]
+DOCKER_SERVICES: list[DockerComposeService] = [UNDERSTORY_SERVICE, DECK_SERVICE]

@@ -14,7 +14,7 @@ import { resolveSkills } from "./skills.ts";
 
 /**
  * Tools que un subagente nunca usa: memoria solo con permiso de Tarkark, no hay UI para preguntar,
- * y el guard de Pithagoras no corre en la sesion hija, asi que nada con alcance sobre el host.
+ * y el guard del portal no corre en la sesion hija, asi que nada con alcance sobre el host.
  */
 const EXCLUDED_TOOLS = [
 	"mcp__understory__memory_add",
@@ -96,7 +96,7 @@ async function run(agent: Agent, task: string, opts: RunOptions): Promise<Result
 			additionalSkillPaths: skills.dirs,
 			noPromptTemplates: true,
 			noThemes: true,
-			// Sin estado global (Pithagoras corre varias sesiones en un proceso): se filtra por las tools que registran.
+			// Sin estado global (el portal corre varias sesiones en un proceso): se filtra por las tools que registran.
 			extensionsOverride: (base) => ({
 				...base,
 				extensions: base.extensions.filter((e) => !CHILD_BLOCKED_TOOLS.some((t) => e.tools.has(t))),

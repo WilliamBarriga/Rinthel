@@ -1,8 +1,8 @@
 # Instalación en Windows 11
 
 Rinthel puede ejecutar de forma nativa el cliente, el daemon y
-`llama-server`. Understory y Pithagoras siguen siendo contenedores Linux y
-requieren Docker Desktop.
+`llama-server`. Deck y Understory son contenedores Linux y requieren Docker
+Desktop.
 
 ## Requisitos
 
@@ -43,7 +43,9 @@ selecciona los defaults de su plataforma. No se cambian las mediciones
 registradas ni los valores del perfil Windows validado.
 
 En la TUI, ejecuta `INSTALL` para validar CUDA/Docker, compilar llama.cpp,
-descargar el modelo y preparar Pithagoras/Understory. La descarga del modelo
+descargar el modelo, generar los secretos del `.env` raíz, crear el primer
+admin (su contraseña se muestra una sola vez) y preparar Understory. La
+descarga del modelo
 es de aproximadamente 22 GB.
 
 Mientras compila o descarga, abre otra PowerShell en la raíz y ejecuta:
@@ -52,8 +54,8 @@ Mientras compila o descarga, abre otra PowerShell en la raíz y ejecuta:
 .\install-status.ps1 -Watch
 ```
 
-`INSTALL COMPLETO` significa que existen el servidor, el modelo y las
-configuraciones de Pithagoras y Understory. Cierra ese monitor con `Ctrl+C`;
+`INSTALL COMPLETO` significa que existen el servidor, el modelo, los
+secretos del `.env` raíz y el bundle de Understory. Cierra ese monitor con `Ctrl+C`;
 no detiene la instalación principal.
 
 ## Uso diario
@@ -72,14 +74,12 @@ El daemon queda en segundo plano cuando se cierra la TUI. En el siguiente uso
 normal no es necesario repetir `INSTALL`: ejecuta `rinthel-boot.ps1` y usa
 `BOOT` solamente cuando alguno de los tres servicios esté detenido.
 
-Pithagoras queda en `http://127.0.0.1:4100`. En Windows, su contenedor se
-comunica con `llama-server` mediante `host.docker.internal`
-(`deck.host_address` de Windows); el daemon mantiene el proveedor `local-llm`
-apuntado al Local model activo y el portal monta su `models.json` como solo
-lectura.
-El lifecycle ejecuta Compose desde los stacks preparados por INSTALL bajo
-`Rinthel-data`, separados del proyecto Compose Linux del monorepositorio.
-Las contraseñas y tokens permanecen en los `.env` locales y nunca deben
+Deck queda en `http://127.0.0.1:4100`. En Windows, su contenedor llega al
+daemon y a `llama-server` mediante `host.docker.internal`
+(`deck.host_address` de Windows). Deck usa red de host en el compose raíz;
+el override de Windows (red bridge y puerto publicado solo en loopback)
+todavía no existe, así que Deck en Windows no está validado.
+Las contraseñas y tokens permanecen en el `.env` raíz y nunca deben
 añadirse al repositorio.
 
 ## Diagnóstico rápido
@@ -106,7 +106,5 @@ terminal actual:
 Set-ExecutionPolicy -Scope Process Bypass
 ```
 
-Si Pithagoras muestra `No API key found for openrouter`, confirma que
-`llama-server`, Pithagoras y Understory estén `ONLINE` en `MONITOR`, y vuelve
-a ejecutar `INSTALL` para reparar de forma idempotente el proveedor local sin
-reemplazar secretos.
+Si Deck no responde, confirma que `llama-server`, Deck y Understory estén
+`ONLINE` en `MONITOR`; `INSTALL` se puede repetir sin reemplazar secretos.

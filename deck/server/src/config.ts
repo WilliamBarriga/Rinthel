@@ -38,7 +38,7 @@ export function deckConfigFromEnv(env: NodeJS.ProcessEnv): DeckConfig {
   const slotsGb = Number(env.DECK_SLOTS_MAX_GB || 20);
   if (!Number.isFinite(slotsGb) || slotsGb <= 0) throw new Error(`DECK_SLOTS_MAX_GB must be a positive number, got "${env.DECK_SLOTS_MAX_GB}"`);
   return {
-    port: Number(env.PORT || 4200),
+    port: Number(env.PORT || 4100),
     databasePath: path.resolve(env.DECK_DB || path.join(dataDir, "deck.db")),
     journalMode: journal,
     binDir: path.resolve(env.BIN_DIR || path.join(dataDir, "bin")),

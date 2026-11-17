@@ -61,7 +61,10 @@ class HostInfo(Protocol):
     build en ``build_dir`` (o ``None`` si no hay): dónde lo deja el build
     depende de la Platform. ``which`` también conoce dónde instala cada
     Platform sus herramientas de build (CMake de Visual Studio en Windows).
-    Nunca levantan salvo ``sha256`` sobre un archivo que no se puede leer
+    ``user_ids`` es el uid/gid de quien corre la Instance, con el que corren
+    los contenedores que escriben en ``data/``; ``group_id`` el gid de un
+    grupo del host. Los dos son ``None`` donde la Platform no tiene ese
+    concepto (Windows) o el grupo no existe. Nunca levantan salvo ``sha256`` sobre un archivo que no se puede leer
     (``OSError``)."""
 
     def platform(self) -> Platform: ...
@@ -73,6 +76,8 @@ class HostInfo(Protocol):
     def cpu_count(self) -> int: ...
     def find_llama_server(self, build_dir: Path) -> Path | None: ...
     async def sha256(self, path: Path) -> str: ...
+    def user_ids(self) -> tuple[int, int] | None: ...
+    def group_id(self, name: str) -> int | None: ...
 
 
 class PackageRegistry(Protocol):

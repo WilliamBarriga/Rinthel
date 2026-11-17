@@ -238,7 +238,7 @@ def _running_daemon(
         cleanup.callback(stop_listeners, live.llama_port)
         live.llama_log.touch()
         # compose directories exist (empty): the Monitor's `docker compose ps` is a real child process.
-        for name in ("understory", "pithagoras"):
+        for name in ("understory", "deck"):
             (root / name).mkdir()
         _write_env(
             root,

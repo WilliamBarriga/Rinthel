@@ -26,6 +26,13 @@ class WindowsHostInfo(SystemHostInfo):
     def platform(self) -> Platform:
         return "windows"
 
+    def user_ids(self) -> tuple[int, int] | None:
+        # Docker Desktop maps bind mounts itself: no host uid/gid to run as.
+        return None
+
+    def group_id(self, name: str) -> int | None:
+        return None
+
     def _program_files(self) -> Path:
         return Path(self._env.get("ProgramFiles", r"C:\Program Files"))
 

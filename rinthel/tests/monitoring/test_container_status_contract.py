@@ -11,7 +11,7 @@ from rinthel_tui.monitoring.adapters.memory import InMemoryContainers
 from rinthel_tui.monitoring.domain.types import DockerContainer
 
 UNDERSTORY = DockerContainer(name="understory-1", state="running", ports="3800->3800", status="Up 1m")
-PORTAL = DockerContainer(name="pithagoras-portal-1", state="exited", ports="-", status="Exited (0) 5 minutes ago")
+DECK = DockerContainer(name="rinthel-general-deck-1", state="exited", ports="-", status="Exited (0) 5 minutes ago")
 
 
 class ComposeHarness:
@@ -45,9 +45,9 @@ def harness(request, cfg, tmp_path, fake_executable):
 
 
 async def test_lists_the_containers_up_or_not(harness):
-    harness.runs(UNDERSTORY, PORTAL)
+    harness.runs(UNDERSTORY, DECK)
 
-    assert await harness.status.containers() == [UNDERSTORY, PORTAL]
+    assert await harness.status.containers() == [UNDERSTORY, DECK]
 
 
 async def test_no_containers_is_an_empty_list(harness):

@@ -38,6 +38,17 @@ class SystemHostInfo:
     async def sha256(self, path: Path) -> str:
         return await asyncio.to_thread(_sha256, path)
 
+    def user_ids(self) -> tuple[int, int] | None:
+        return os.getuid(), os.getgid()
+
+    def group_id(self, name: str) -> int | None:
+        import grp
+
+        try:
+            return grp.getgrnam(name).gr_gid
+        except KeyError:
+            return None
+
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()

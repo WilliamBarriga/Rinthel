@@ -43,8 +43,9 @@ def test_layout_paths_hang_from_root(tmp_path):
     assert instance.data_dir == tmp_path / "data"
     assert instance.logs_dir == tmp_path / "logs"
     assert instance.understory_dir == tmp_path / "understory"
-    assert instance.portal_dir == tmp_path / "pithagoras"
-    assert instance.portal_data_dir == tmp_path / "data" / "pithagoras"
+    assert instance.understory_data_dir == tmp_path / "data" / "understory"
+    assert instance.deck_dir == tmp_path / "deck"
+    assert instance.deck_data_dir == tmp_path / "data" / "deck"
 
 
 def test_config_reads_the_instance_env(tmp_path, monkeypatch):
@@ -66,13 +67,13 @@ def test_shell_env_wins_over_the_instance_env(tmp_path, monkeypatch):
 
 
 def test_config_layout_defaults_come_from_the_instance(tmp_path, monkeypatch):
-    for var in ("RINTHEL_UNDERSTORY_DIR", "RINTHEL_PITHAGORAS_DIR", "RINTHEL_LLAMA_LOG_PATH"):
+    for var in ("RINTHEL_UNDERSTORY_DIR", "RINTHEL_DECK_DIR", "RINTHEL_LLAMA_LOG_PATH"):
         monkeypatch.delenv(var, raising=False)
 
     cfg = default_config(Instance(tmp_path))
 
     assert cfg.understory.dir == tmp_path / "understory"
-    assert cfg.pithagoras.dir == tmp_path / "pithagoras"
+    assert cfg.deck.dir == tmp_path / "deck"
     assert cfg.llama.log == tmp_path / "logs" / "llama-server.log"
 
 

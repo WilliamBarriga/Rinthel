@@ -25,17 +25,17 @@ usuario, contraseña ni token forma parte del repositorio.
 
 - Cliente Ratatui, daemon FastAPI y `llama-server.exe`: procesos nativos de
   Windows.
-- Understory y Pithagoras: contenedores Linux en Docker Desktop.
+- Understory y el portal web: contenedores Linux en Docker Desktop.
 - `llama-server`: `127.0.0.1:8080` en el host.
 - Understory: `127.0.0.1:3800`.
-- Pithagoras: `127.0.0.1:4100`.
-- Pithagoras alcanza el modelo mediante
-  `http://host.docker.internal:8080/v1` y el proveedor `local-llm`.
+- Portal web: `127.0.0.1:4100`.
+- El portal alcanza el modelo mediante `http://host.docker.internal:8080/v1`.
 
-El adaptador de Windows reemplaza `network_mode: host` por un puerto publicado
-en loopback, prepara permisos persistentes de `/data`, hace opcional
-`TS_AUTHKEY` y conserva los secretos existentes. Estas transformaciones son
-idempotentes.
+La validación se hizo con el portal web anterior, que Deck reemplazó. Deck
+habla con el mismo `llama-server` y el mismo argv del Validated profile (el
+cambio es del cliente, no de la inferencia), así que las mediciones de abajo
+siguen valiendo; Deck en Windows (override de red bridge con puerto publicado
+en loopback) queda pendiente de validar en este equipo.
 
 ## Dónde vive el perfil
 
@@ -67,15 +67,15 @@ verificación manual en la máquina de referencia.
 6. Comprobación de Docker Desktop con `docker info`, sin depender de
    `systemctl`.
 7. Transporte WebSocket declarado como dependencia de runtime.
-8. Proveedor local de Pithagoras conectado al modelo del host, eliminando la
-   dependencia accidental de OpenRouter.
+8. Proveedor local del portal web conectado al modelo del host, eliminando
+   la dependencia accidental de OpenRouter.
 9. Monitor independiente `install-status.ps1` para compilación, descarga y
    finalización.
 
 ## Rendimiento observado
 
 Se realizaron cinco consultas documentales y una corrección de guardrails en
-una sesión de Pithagoras. El contexto acumulado llegó a 15,526 tokens sin error
+una sesión del portal web anterior. El contexto acumulado llegó a 15,526 tokens sin error
 de CUDA ni pérdida del documento.
 
 | Prueba | Salida | Tiempo | Velocidad aproximada | Calidad revisada |

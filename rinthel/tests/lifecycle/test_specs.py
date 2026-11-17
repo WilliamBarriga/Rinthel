@@ -30,8 +30,8 @@ PLANS = {
 @pytest.mark.parametrize(
     ("plan", "disabled"),
     [
-        ("boot", "understory"), ("boot", "pithagoras"), ("terminate", "pithagoras"),
-        ("reload", "understory"), ("install", "understory"), ("install", "pithagoras"),
+        ("boot", "understory"), ("boot", "deck"), ("terminate", "deck"),
+        ("reload", "understory"), ("install", "understory"), ("install", "deck"),
     ],
 )
 def test_a_disabled_service_is_left_out_of_the_plan_and_nothing_else_changes(cfg, plan, disabled):
@@ -57,12 +57,6 @@ def test_boot_plan_checks_docker_then_spawns_llama_then_ups_each_docker_service(
         (None, "docker", ["◈ DOCKER"]),
         (None, "llama-server", ["◈ LLAMA-SERVER", "◈ ESPERANDO LLAMA-SERVER"]),
         (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER", "◈ ESPERANDO UNDERSTORY"]),
-        (None, "pithagoras", [
-            "◈ DATOS DEL PORTAL  --  DUEÑO DEL DIRECTORIO",
-            "◈ PORTAL  --  LOCAL MODEL ACTIVO",
-            "◈ PITHAGORAS  --  PI TASK PORTAL",
-            "◈ ESPERANDO PITHAGORAS",
-        ]),
         (None, "deck", [
             "◈ DATOS DE DECK  --  DUEÑO DEL DIRECTORIO",
             "◈ DECK  --  WEB PORTAL",
@@ -84,7 +78,6 @@ def test_terminate_plan_stops_every_service_and_continues_on_failure(cfg):
     assert _shape(plan) == [
         (None, "llama-server", ["◈ LLAMA-SERVER  --  LOCAL MODEL"]),
         (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER"]),
-        (None, "pithagoras", ["◈ PITHAGORAS  --  PI TASK PORTAL"]),
         (None, "deck", ["◈ DECK  --  WEB PORTAL"]),
     ]
 
@@ -96,18 +89,11 @@ def test_reload_plan_shuts_down_then_boots_local_then_rebuilds_docker(cfg):
     assert _shape(plan) == [
         (None, "llama-server", ["◈ LLAMA-SERVER  --  LOCAL MODEL"]),
         (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER"]),
-        (None, "pithagoras", ["◈ PITHAGORAS  --  PI TASK PORTAL"]),
         (None, "deck", ["◈ DECK  --  WEB PORTAL"]),
         (None, "llama-server", ["◈ PUERTO LLAMA-SERVER LIBRE"]),
         ("boot", "docker", ["◈ DOCKER"]),
         ("boot", "llama-server", ["◈ LLAMA-SERVER", "◈ ESPERANDO LLAMA-SERVER"]),
         ("rebuild", "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER", "◈ ESPERANDO UNDERSTORY"]),
-        ("rebuild", "pithagoras", [
-            "◈ DATOS DEL PORTAL  --  DUEÑO DEL DIRECTORIO",
-            "◈ PORTAL  --  LOCAL MODEL ACTIVO",
-            "◈ PITHAGORAS  --  PI TASK PORTAL",
-            "◈ ESPERANDO PITHAGORAS",
-        ]),
         ("rebuild", "deck", [
             "◈ DATOS DE DECK  --  DUEÑO DEL DIRECTORIO",
             "◈ DECK  --  WEB PORTAL",
@@ -128,26 +114,19 @@ def test_install_plan_preflight_first_then_every_unit_and_stops_on_failure(cfg):
             "◈ LLAMA.CPP — clone", "◈ LLAMA.CPP — build CUDA (native)", "◈ MODELO GGUF — descarga",
             "◈ LOCAL MODELS — catálogo inicial",
         ]),
-        (None, "instance", ["◈ INSTANCE — secretos del .env"]),
+        (None, "instance", [
+            "◈ INSTANCE — secretos del .env", "◈ INSTANCE — token de host exec",
+            "◈ INSTANCE — usuario de los contenedores",
+        ]),
         (None, "identity", ["◈ IDENTITY — rinthel.db + primer admin"]),
         (None, "deck", ["◈ DECK — SOUL de la Instance"]),
-        (None, "pithagoras", ["◈ PITHAGORAS — clone + configurar"]),
-        (None, "understory", ["◈ UNDERSTORY — scaffold + configurar"]),
+        (None, "understory", ["◈ UNDERSTORY — token + bundle"]),
     ]
 
 
-def _portal_data_phase(plan: specs.Plan) -> specs.PhaseSpec:
-    portal = next(unit for batch in plan.batches for unit in batch.units if unit.service == "pithagoras")
-    return portal.phases[0]
-
-
-def test_the_portal_data_directory_is_prepared_for_the_container_user_of_the_env(cfg):
-    cfg.instance.env_path.write_text("PUID=1234\nPGID=5678\n")
-
-    phase = _portal_data_phase(specs.boot_plan(cfg))
-
-    assert phase.fn is data_dir.phase_ensure_data_dir
-    assert phase.kwargs == {"path": cfg.instance.root / "data" / "pithagoras", "uid": 1234, "gid": 5678}
+def _deck_data_phase(plan: specs.Plan) -> specs.PhaseSpec:
+    deck = next(unit for batch in plan.batches for unit in batch.units if unit.service == "deck")
+    return deck.phases[0]
 
 
 def test_decks_data_directory_is_its_volume_prepared_for_the_container_user(cfg):
@@ -159,7 +138,7 @@ def test_decks_data_directory_is_its_volume_prepared_for_the_container_user(cfg)
     assert deck.phases[0].kwargs == {"path": cfg.instance.root / "data" / "deck", "uid": 1234, "gid": 5678}
 
 
-def test_the_portal_data_directory_defaults_to_the_compose_default_user(cfg):
-    phase = _portal_data_phase(specs.boot_plan(cfg))
+def test_decks_data_directory_defaults_to_the_compose_default_user(cfg):
+    phase = _deck_data_phase(specs.boot_plan(cfg))
 
     assert (phase.kwargs["uid"], phase.kwargs["gid"]) == (1000, 1000)

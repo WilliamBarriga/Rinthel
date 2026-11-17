@@ -1,4 +1,4 @@
-# rinthel-subagents (Pithagoras)
+# rinthel-subagents
 
 Tool `subagent`, siempre en serie. Un subagente = una AgentSession en el mismo proceso.
 
@@ -16,5 +16,5 @@ Minimos forzados en codigo (modelo local lento): `timeout` >= 1200 s (20 min), `
 Skills: `skills` en la llamada, por item o en el frontmatter; se cargan bajo demanda (`inlineSkills: true` pega el SKILL.md).
 `persona` adapta un agent (p. ej. `custom`). Sin sub-subagentes. Sin escritura a Understory.
 Instalar en terminal: ruta del directorio en `packages` de settings.json.
-Pithagoras: `RINTHEL_SUBAGENTS_EXTENSION` (lo monta `compose/*host-exec.override.yaml`); el portal la pasa al resource loader.
+Portal: `RINTHEL_SUBAGENTS_EXTENSION` (lo declara `compose/host-exec.override.yaml`, hoy fuera del compose raíz); el portal la pasa al resource loader.
 Seguridad: la sesion hija no carga el guard del portal. Por eso excluye `rinthel_host_exec`, escritura a Understory y `ask_user_question`, `custom` no tiene write/edit, y la salida del subagente cuenta como no confiable (taint) en la sesion padre.

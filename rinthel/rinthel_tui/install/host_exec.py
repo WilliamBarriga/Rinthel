@@ -1,4 +1,5 @@
-"""Prepare the shared host-exec secret without replacing existing secrets."""
+"""The token ``hostexecd`` shares with whoever asks it to run a command, in the
+root ``.env``, never replacing one that is already there."""
 
 import json
 import os
@@ -12,29 +13,23 @@ from rinthel_tui.env_file import update_env_file
 _TOKEN = "RINTHEL_HOSTEXECD_TOKEN"
 
 
-def prepare_host_exec(repo_root: Path, portal_dir: Path) -> None:
-    """Ensure host and Compose use one token; reject conflicting local values.
+def prepare_host_exec(repo_root: Path) -> bool:
+    """Ensure the root ``.env`` holds the token; reject a conflicting one.
 
-    Existing non-empty values win over generation. No token is returned or
-    logged. Both INSTALL and the host launcher cross this same interface.
-    """
-    paths = (repo_root / ".env", portal_dir / ".env")
-    configured = [
-        (dotenv_values(path, interpolate=False).get(_TOKEN) or "").strip()
-        for path in paths
-    ]
-    values = {value for value in configured if value}
+    An existing non-empty value wins over generation, and so does one
+    exported in the shell. No token is returned or logged. Both INSTALL and
+    the host launcher cross this same interface. Returns ``True`` only when
+    it wrote the token."""
+    env_path = repo_root / ".env"
+    configured = (dotenv_values(env_path, interpolate=False).get(_TOKEN) or "").strip() if env_path.exists() else ""
     inherited = os.getenv(_TOKEN, "").strip()
-    if inherited:
-        values.add(inherited)
-    if len(values) > 1:
-        raise ValueError("Host exec tiene tokens distintos en los .env; unifícalos antes de arrancar")
-    token = next(iter(values), None) or secrets.token_hex(32)
-    for path, existing in zip(paths, configured):
-        # BOOT must not create a token-only portal .env: INSTALL needs to seed
-        # that file with its other required secrets on a fresh installation.
-        if not existing and (path == paths[0] or path.exists()):
-            update_env_file(path, {_TOKEN: json.dumps(token, ensure_ascii=False)})
+    if configured and inherited and configured != inherited:
+        raise ValueError("Host exec tiene tokens distintos en el .env y en el entorno; unifícalos antes de arrancar")
+    if configured:
+        return False
+    token = inherited or secrets.token_hex(32)
+    update_env_file(env_path, {_TOKEN: json.dumps(token, ensure_ascii=False)}, seed_from=repo_root / ".env.example")
+    return True
 
 
 if __name__ == "__main__":
@@ -42,9 +37,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repo_root", type=Path)
-    parser.add_argument("portal_dir", type=Path)
     args = parser.parse_args()
     try:
-        prepare_host_exec(args.repo_root, args.portal_dir)
+        prepare_host_exec(args.repo_root)
     except ValueError as exc:
         parser.exit(1, f"{exc}\n")

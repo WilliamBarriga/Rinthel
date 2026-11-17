@@ -17,212 +17,56 @@
 
 </div>
 
-TUI (Rust/Ratatui client talking to a Python/FastAPI daemon over a local
-WebSocket+REST protocol — see `.scratch/ratatui-migration/`) for managing
-the lifecycle of Rinthel's local infrastructure: a
-`llama-server` (CUDA) serving **Qwen3.6-35B-A3B-MTP** plus the Docker stacks
-for **Understory** (MCP memory layer) and **Pithagoras** (task portal).
+A local Instance of Rinthel: a Python/FastAPI daemon with a Rust/Ratatui TUI
+(`rinthel/`) that runs the lifecycle of a CUDA `llama-server` serving the
+active Local model, **Deck** (`deck/`, the web portal: login, Sessions, chat)
+and **Understory** (`understory/`, MCP memory layer) in Docker.
 
-**Documentation:**
+## Quick install
 
-- [`docs/01-system-overview.md`](docs/01-system-overview.md) — what runs,
-  lifecycle phases, code structure.
-- [`docs/02-hardware-optimization.md`](docs/02-hardware-optimization.md) —
-  established Linux inference profile (VRAM, quant, MoE cache).
-- [`docs/03-troubleshooting.md`](docs/03-troubleshooting.md) — common errors
-  and how to fix them.
-- [`docs/04-windows-installation.md`](docs/04-windows-installation.md) —
-  native Windows bootstrap and Docker Desktop integration.
-- [`docs/05-windows-validation.md`](docs/05-windows-validation.md) —
-  validated Windows profile, measured performance and grounded-use cases.
-- [`docs/windows-hardware-optimization.md`](docs/windows-hardware-optimization.md) —
-  inference settings for the validated Windows hardware.
-- [`docs/local-models.md`](docs/local-models.md) — the Local model
-  catalog, the active model, switching and the routing Deck reads.
+**Ubuntu 26.04** — system dependencies and CUDA first, see
+[`docs/06-ubuntu-installation.md`](docs/06-ubuntu-installation.md):
 
-## `[0]` Quick install (new machine)
+```bash
+rinthel/install.sh            # venv, daemon, Rust client, opens the TUI
+```
 
-### Windows 11 (PowerShell)
-
-Consulta primero [`docs/04-windows-installation.md`](docs/04-windows-installation.md).
-Con Python 3.13+, Rust y Git disponibles:
+**Windows 11** — read [`docs/04-windows-installation.md`](docs/04-windows-installation.md) first:
 
 ```powershell
 .\rinthel\install.ps1
 ```
 
-El bootstrap crea `.venv`, instala el daemon, compila el cliente y abre
-Rinthel. CUDA, CMake y Docker Desktop se validan después desde `INSTALL`;
-el script no los instala ni descarga el modelo sin que el usuario elija esa
-opción en la TUI. En Windows rige el Validated profile medido para 32 GB de
-RAM y 8 GB de VRAM (en la config del daemon, no en `.env`); consulta
-[`docs/05-windows-validation.md`](docs/05-windows-validation.md) antes de
-subir contexto, batch u offload de GPU.
-
-### Ubuntu 26.04
-
-Consulta [`docs/06-ubuntu-installation.md`](docs/06-ubuntu-installation.md)
-para instalar las dependencias del sistema y CUDA compatible con tu GPU.
-Ubuntu 26.04 incluye Python 3.14; no necesita el PPA deadsnakes.
-
-```bash
-rinthel/install.sh
-```
-
-El bootstrap crea `.venv`, instala el daemon, compila el cliente Rust y
-abre la TUI. `rinthel/install.sh --skip-launch` instala sin abrir la
-interfaz. Rust se instala con rustup si no existe Cargo. Linux usa el
-compose raíz único.
-
-Después usa **INSTALL** para compilar llama.cpp, descargar el Local model
-por defecto (~22 GB) y escribir el catálogo inicial (ver
-[`docs/local-models.md`](docs/local-models.md)), y **BOOT** para iniciar
-los servicios. CUDA, CMake y Docker deben
-estar instalados antes de ejecutar INSTALL. Node.js no hace falta en el
-host: los servicios web se compilan en Docker.
+Then, in the TUI: **INSTALL** (llama.cpp build, default Local model ~22 GB,
+secrets and container user in the root `.env`, `rinthel.db` and the first
+admin, whose password is shown once) and **BOOT**. Deck answers on
+`http://127.0.0.1:4100`. `rinthel/rinthel-boot.sh` reopens the TUI;
+`--stop` stops the daemon.
 
 ## Hardware requirements
 
-- NVIDIA GPU with at least **8 GB of VRAM** (for `llama-server`'s CUDA
-  offload; the rest of the model's layers run on CPU via `--n-cpu-moe`,
-  adjustable in `.env`).
+- NVIDIA GPU with at least **8 GB of VRAM**, CUDA toolkit, CMake.
 - At least **32 GB of RAM**.
+- Docker with `docker compose`.
 
-## Requirements
+## Documentation
 
-- Python 3.13+ (daemon) + a Rust toolchain (client) — `install.sh`
-  bootstraps both (`rustup`, non-interactive, if `cargo` is missing)
-- A `llama.cpp` build with CUDA support (`llama-server`) from
-  upstream [`ggml-org/llama.cpp`](https://github.com/ggml-org/llama.cpp);
-  `[0] INSTALL` clones and builds it
-- The GGUF model — default is **Qwen3.6-35B-A3B-MTP** at `Q4_K_XL`
-  quantization (see `.env.example` for other models)
-- Docker + `docker compose` if you're going to run Understory/Pithagoras
-- `nvidia-container-toolkit` installed and configured (`nvidia-ctk runtime
-  configure --runtime=docker`) if you're going to use Pithagoras' voice
-  add-on (`pithagoras-voice` requires GPU via Docker) — without this,
-  `docker info` won't detect the NVIDIA runtime and the add-on can't start
-  (see `docs/guide/voice.md` in the Pithagoras repo)
-- The Understory and Pithagoras repos cloned somewhere (configurable
-  paths, see [Configuration](#configuration))
+- [`docs/01-system-overview.md`](docs/01-system-overview.md) — what runs, lifecycle phases, code structure.
+- [`docs/02-hardware-optimization.md`](docs/02-hardware-optimization.md) — Linux inference profile.
+- [`docs/03-troubleshooting.md`](docs/03-troubleshooting.md) — common errors.
+- [`docs/04-windows-installation.md`](docs/04-windows-installation.md) and [`docs/05-windows-validation.md`](docs/05-windows-validation.md) — Windows bootstrap and its Validated profile.
+- [`docs/06-ubuntu-installation.md`](docs/06-ubuntu-installation.md) — Ubuntu bootstrap.
+- [`docs/07-host-exec.md`](docs/07-host-exec.md) — `hostexecd`.
+- [`docs/local-models.md`](docs/local-models.md) — the Local model catalog, switching and routing.
+- [`docs/deck/`](docs/deck/) — Deck architecture and configuration.
+- [`docs/diagrams/`](docs/diagrams/) — architecture map.
 
-## Installation
-
-`rinthel/install.sh` (see above) does the whole thing. To do it by hand:
-
-**Daemon** (Python — dev mode, recommended if you're going to touch the code):
-
-```bash
-python3 -m venv rinthel/.venv
-rinthel/.venv/bin/pip install -e rinthel
-```
-
-**Client** (Rust):
-
-```bash
-cd rinthel/rinthel-client && cargo build --release
-```
-
-## Usage
-
-From the repo root. Full lifecycle details (phases, diagram, services) in
-[`docs/01-system-overview.md`](docs/01-system-overview.md):
-
-```bash
-rinthel/rinthel-boot.sh
-```
-
-`rinthel-boot.sh` resolves `.venv/bin/python` and `rinthel-client/target/release/rinthel`
-relative to itself and changes to the repository directory, so it can be
-called by its absolute path from another directory. Do not copy the script
-out of the repository. It
-autostarts the daemon if it isn't already listening (pidfile at
-`.rinthel-daemon.pid`, survives the client closing) and then launches the
-Rust client, which opens straight into the menu (no splash screen):
-
-```
-MONITOR     -- Services/Docker/GPU/CPU status
-BOOT        -- Bring everything up
-RELOAD      -- Full shutdown + restart
-TERMINATE   -- Full shutdown
-CONFIGURAR  -- Active services and parameters
-LOGS        -- Watch llama-server live
-INSTALL     -- Initial setup (CUDA/model/Pithagoras/Understory)
-SALIR       -- Exit (prompts whether to also stop the daemon)
-```
-
-To stop the daemon without opening the client: `rinthel/rinthel-boot.sh --stop`.
-
-## Configuration
-
-All of `llama-server`'s paths, ports and inference flags have an embedded
-default in `rinthel_tui/config.py::default_config()`. To tune them for
-your machine, copy `.env.example` to `.env` at the repo root and
-uncomment/adjust what you need:
-
-```bash
-cp .env.example .env
-```
-
-`.env` loads automatically when `rinthel_tui.config` is imported (via
-`python-dotenv`, searching upward from the cwd) and is never committed
-(it's in `.gitignore`). Without a `.env`, the embedded defaults from
-`rinthel_tui/config.py::default_config()` are used.
-
-Available variables: binary/log paths, each service's port, and all
-the hardware and sampling flags (`--temp`, `--top-p`, `--n-cpu-moe`, `--threads`,
-etc.) — see `.env.example` for the full list with their values, and
-[`docs/02-hardware-optimization.md`](docs/02-hardware-optimization.md) for
-why each inference flag is set the way it is.
-
-If `RINTHEL_LLAMA_BIN` points at something that doesn't exist, or the
-active Local model is unknown or invalid, the app **doesn't crash on
-startup** — it just warns on stderr (without an active model, BOOT leaves
-`llama-server` out). The real failure (with a clear message) only happens if you
-pick BOOT and the llama-server spawn phase actually fails. More cases in
-[`docs/03-troubleshooting.md`](docs/03-troubleshooting.md).
-
-## Repos
-
-Understory and Pithagoras live inside this repo as `git subtree`s
-(`understory/`, `pithagoras/`), pulled from Tarkark's personal forks —
-[`WilliamBarriga/understory`](https://github.com/WilliamBarriga/understory)
-and [`WilliamBarriga/pithagoras`](https://github.com/WilliamBarriga/pithagoras)
-— not the upstream repos directly. This is groundwork for a future
-monorepo consolidation; it doesn't change how `install.sh`/`BOOT` run
-these services today (see [Credits](#credits) below).
-
-**Fork de facto**: no automatic sync, in either direction. Updates are
-manual, via `git subtree pull`/`push` plus cherry-pick when needed:
-
-```bash
-git subtree pull --prefix=understory understory-fork main
-git subtree pull --prefix=pithagoras pithagoras-fork main
-
-git subtree push --prefix=understory understory-fork main
-git subtree push --prefix=pithagoras pithagoras-fork main
-```
-
-Same policy applies between each personal fork and its own upstream
-(`thecodacus/understory`, `thecodacus/pithagoras`), and will apply between
-this repo and Plataforma Corp (a future sibling monorepo, the sellable
-product built on the same base) once it exists.
+Configuration lives in a single root `.env` (copy from `.env.example`).
 
 ## Credits
 
-Three pieces of infrastructure that `[0] INSTALL` sets up are from
-[thecodacus](https://github.com/thecodacus):
-
-- **Understory** (MCP memory layer) — runs from the published image
-  [`ghcr.io/thecodacus/understory`](https://github.com/thecodacus/understory),
-  not cloned or built from source, see `phase_install_setup_understory` in
-  `rinthel_tui/lifecycle/install.py`.
-- **Pithagoras** (task portal) — the work is
-  [thecodacus](https://github.com/thecodacus/pithagoras)'s; used via my
-  fork [`WilliamBarriga/pithagoras`](https://github.com/WilliamBarriga/pithagoras).
-- **`llama.cpp`** upstream (`master`, default
-  `RINTHEL_LLAMACPP_REPO_URL=https://github.com/ggml-org/llama.cpp.git`),
-  cloned and built with CUDA support.
+- **Understory** (MCP memory layer) by [thecodacus](https://github.com/thecodacus/understory).
+- **`llama.cpp`** upstream ([`ggml-org/llama.cpp`](https://github.com/ggml-org/llama.cpp)), cloned and built with CUDA by INSTALL.
 
 ## License
 

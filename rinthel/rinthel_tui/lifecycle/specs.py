@@ -10,12 +10,10 @@ tocar este archivo a mano.
 
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Literal
 
 from rinthel_tui.config import RinthelConfig
-from rinthel_tui.install import portal_model
-from rinthel_tui.lifecycle import install, install_tasks, services
+from rinthel_tui.lifecycle import install, services
 from rinthel_tui.lifecycle.domain.host import Host
 from rinthel_tui.lifecycle.domain.outcome import PhaseReport
 from rinthel_tui.lifecycle.domain.phases import data_dir, docker, managed_service
@@ -164,37 +162,18 @@ def llama_restart_plan(cfg: RinthelConfig) -> Plan:
     return Plan(on_failure="stop", batches=(Batch(marker=None, units=(Unit(llama.display_name.lower(), phases),)),))
 
 
-def _portal_data_dir(cfg: RinthelConfig, svc: DockerComposeService) -> tuple[str, Path] | None:
-    """El volumen de un portal (el heredado o Deck), que corre con el usuario
-    del host: el nombre de su fase y el directorio."""
-    if svc is services.PITHAGORAS_SERVICE:
-        return "DATOS DEL PORTAL", cfg.instance.portal_data_dir
-    if svc is services.DECK_SERVICE:
-        return "DATOS DE DECK", cfg.instance.deck_data_dir
-    return None
-
-
 def _docker_unit(cfg: RinthelConfig, svc: DockerComposeService, *, rebuild: bool = False) -> Unit:
-    """Un servicio compose: arriba y esperado. Un portal, antes de todo, deja
-    su directorio de datos con el dueño del contenedor."""
+    """Un servicio compose: arriba y esperado. Deck, que corre con el usuario
+    del host, antes de todo deja su volumen con el dueño del contenedor."""
     phases = [_up_spec(cfg, svc, rebuild=rebuild), _wait_spec(cfg, svc)]
-    volume = _portal_data_dir(cfg, svc)
-    if volume is not None:
-        label, path = volume
+    if svc is services.DECK_SERVICE:
         uid, gid = _container_user(cfg)
         data = PhaseSpec(
-            f"◈ {label}  --  DUEÑO DEL DIRECTORIO",
+            "◈ DATOS DE DECK  --  DUEÑO DEL DIRECTORIO",
             data_dir.phase_ensure_data_dir,
-            {"path": path, "uid": uid, "gid": gid},
+            {"path": cfg.instance.deck_data_dir, "uid": uid, "gid": gid},
         )
         phases.insert(0, data)
-    if svc is services.PITHAGORAS_SERVICE:
-        model = PhaseSpec(
-            "◈ PORTAL  --  LOCAL MODEL ACTIVO",
-            portal_model.phase_publish_portal_model,
-            {"task": install_tasks.portal_model(cfg)},
-        )
-        phases.insert(1, model)
     return Unit(svc.display_name.lower(), tuple(phases))
 
 

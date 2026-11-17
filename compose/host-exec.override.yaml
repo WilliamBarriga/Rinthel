@@ -1,4 +1,5 @@
-# Paths are relative to pithagoras/, as specified by the root include.
+# Not included by the root compose: kept until host exec moves into Deck.
+# Paths are relative to the directory of the compose project that includes it.
 services:
   portal:
     volumes:

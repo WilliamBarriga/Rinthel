@@ -1,6 +1,6 @@
 """Fases de INSTALL — bootstrap de infra en una máquina nueva: build CUDA de
-llama.cpp, descarga del modelo GGUF, scaffolding del portal y Understory,
-secretos de la Instance, ``rinthel.db`` y el primer admin.
+llama.cpp, descarga del modelo GGUF, secretos y usuario de contenedores en el
+``.env`` raíz, Understory, ``rinthel.db`` y el primer admin.
 
 Mismo protocolo que el resto de lifecycle/ (``async def phase_*(host, report,
 **kwargs) -> None``, ``PhaseError``): comandos por ``Host.runner``, lo que la
@@ -17,8 +17,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from dotenv import dotenv_values
-
 from rinthel_tui import database
 from rinthel_tui.config import RinthelConfig
 from rinthel_tui.atomic_write import atomic_write
@@ -26,7 +24,6 @@ from rinthel_tui.env_file import update_env_file
 from rinthel_tui.identity.adapters.sqlite import SqliteIdentity
 from rinthel_tui.identity.admin import FIRST_ADMIN, ensure_first_admin
 from rinthel_tui.install.host_exec import prepare_host_exec
-from rinthel_tui.install.portal_model import PORTAL_MODEL_ID, PORTAL_PROVIDER
 from rinthel_tui.instance import RotatableSecret
 from rinthel_tui.lifecycle import install_tasks
 from rinthel_tui.lifecycle.domain.errors import PhaseError
@@ -40,7 +37,6 @@ from rinthel_tui.lifecycle.install_tasks import (
     LlamaCppInstall,
     ModelCatalogInstall,
     ModelDownload,
-    PortalInstall,
     UnderstoryInstall,
 )
 from rinthel_tui.models.adapters.json_catalog import write_catalog
@@ -49,6 +45,7 @@ from rinthel_tui.models.adapters.toml_active import TomlActiveModels
 PhaseFn = Callable[..., Coroutine[Any, Any, None]]
 
 _UNDERSTORY_BUNDLE_DIRS = ("agents", "extensions", "projects", "reference", "users")
+_UNDERSTORY_TOKENS = ("AUTH_TOKEN", "UNDERSTORY_TOKEN")
 
 _WINDOWS_TOOL_HINTS = {
     "git": "instala Git for Windows (winget install --id Git.Git -e)",
@@ -244,129 +241,31 @@ async def phase_install_model_catalog(host: Host, report: PhaseReport, *, task: 
         report.warn(f"Local model activo ya elegido ({current}) — omito")
 
 
-# ── el portal heredado: sale entero cuando Deck lo reemplace ────────────────
-
-
-def prepare_portal_for_windows(portal_dir: Path, report: PhaseReport) -> None:
-    """Adapta el compose Linux del portal a Docker Desktop de forma idempotente."""
-    compose_path = portal_dir / "docker-compose.yml"
-    if compose_path.exists():
-        compose = compose_path.read_text()
-        updated = compose.replace(
-            "    network_mode: host\n",
-            '    ports:\n      - "127.0.0.1:${PORT:-4100}:${PORT:-4100}"\n',
-        ).replace(
-            "TS_AUTHKEY: ${TS_AUTHKEY:?set TS_AUTHKEY in .env}",
-            "TS_AUTHKEY: ${TS_AUTHKEY:-}",
-        )
-        models_mount = (
-            "      - ${PI_AGENT_DIR}/models.json:"
-            "/data/home/.pi/agent/models.json:ro\n"
-        )
-        mount_anchor = (
-            "      - ${PI_AGENT_DIR}/git/github.com/harms-haus/pi-processes:"
-            "/data/home/.pi/agent/git/github.com/harms-haus/pi-processes:ro\n"
-        )
-        if models_mount not in updated and mount_anchor in updated:
-            updated = updated.replace(mount_anchor, mount_anchor + models_mount)
-        if updated != compose:
-            compose_path.write_text(updated)
-            report.success("Portal adaptado a la red local de Docker Desktop")
-
-    dockerfile_path = portal_dir / "Dockerfile"
-    if dockerfile_path.exists():
-        dockerfile = dockerfile_path.read_text()
-        updated = dockerfile
-        if "chown -R node:node /data" not in dockerfile:
-            updated = dockerfile.replace(
-                "RUN mkdir -p /data/home /data/bin\n",
-                "RUN mkdir -p /data/home /data/bin /data/sessions /data/channels /data/agent-home \\\n"
-                "    && chown -R node:node /data\n",
-            )
-        if updated != dockerfile:
-            dockerfile_path.write_text(updated)
-            report.success("Permisos persistentes del portal preparados para Windows")
-
-
-async def phase_install_setup_portal(host: Host, report: PhaseReport, *, task: PortalInstall) -> None:
-    # ``.git`` propio (checkout standalone) o directorio no vacío (subtree del
-    # monorepo, sin ``.git`` propio pero con contenido): no hay nada que clonar.
-    if (task.dir / ".git").exists() or (task.dir.is_dir() and any(task.dir.iterdir())):
-        report.warn(f"{task.dir} ya existe — omito clone")
-    else:
-        await _git_clone(host, report, task.repo_url, task.dir, "portal clone", branch=task.branch)
-        report.success(f"Portal clonado en {task.dir}")
-
-    if host.host_info.platform() == "windows":
-        prepare_portal_for_windows(task.dir, report)
-
-    # El portal chatea contra el Local model activo: su pi usa el proveedor
-    # que el daemon mantiene (``install/portal_model.py``), en cada rerun.
-    local_model = {"LLAMA_BASE_URL": task.llama_url, "PI_PROVIDER": PORTAL_PROVIDER, "PI_MODEL": PORTAL_MODEL_ID}
-    env_path = task.dir / ".env"
-    if env_path.exists():
-        update_env_file(env_path, local_model)
-        report.success("Portal apuntado al Local model activo")
-        report.warn(f"{env_path} ya existe — conservo sus secretos")
-    else:
-        example_path = task.dir / ".env.example"
-        if not example_path.exists():
-            report.error(f"{example_path} no existe — no puedo generar .env")
-            raise PhaseError("portal .env.example missing")
-        overrides = {
-            "PORTAL_PASSWORD": secrets.token_urlsafe(16),
-            "PORTAL_SECRET": secrets.token_hex(32),
-            "UNDERSTORY_TOKEN": secrets.token_hex(24),
-            # No es un secreto — es la carpeta real que el portal monta en
-            # /workspaces (ver RinthelConfig.install.workspaces_dir).
-            "WORKSPACES_DIR": str(task.workspaces_dir),
-            # Sin esto, Compose monta un directorio vacío donde Pi espera sus
-            # paquetes y luego intenta instalar sobre un mount de solo lectura.
-            "PI_AGENT_DIR": str(task.pi_agent_dir),
-            **local_model,
-        }
-        update_env_file(env_path, overrides, seed_from=example_path)
-        report.success(f"{env_path} generado")
-
-    try:
-        prepare_host_exec(task.instance.root, task.dir)
-    except ValueError as exc:
-        report.error(str(exc))
-        raise PhaseError("host exec token conflict") from exc
-    report.success("Token compartido de host exec preparado")
-
-
-def _read_understory_token(portal_env: Path) -> str | None:
-    if not portal_env.exists():
-        return None
-    return dotenv_values(portal_env).get("UNDERSTORY_TOKEN") or None
+# ── Understory: un token en el .env raíz y el bundle en data/understory ──────
 
 
 async def phase_install_setup_understory(host: Host, report: PhaseReport, *, task: UnderstoryInstall) -> None:
-    """Prepara el despliegue de Understory. Sin clone: corre desde su imagen
-    publicada, no desde fuente."""
-    task.dir.mkdir(parents=True, exist_ok=True)
-
-    compose_path = task.dir / "docker-compose.yml"
-    if compose_path.exists():
-        report.warn(f"{compose_path} ya existe — omito")
+    """Prepara Understory, que corre desde su subtree con el compose raíz: un
+    solo token en el ``.env`` raíz (``AUTH_TOKEN`` lo exige Understory,
+    ``UNDERSTORY_TOKEN`` lo presenta quien lo llama; los dos iguales) y el
+    bundle vivo en ``data/understory``. Nunca pisa un token ni un archivo
+    del bundle que ya existan."""
+    instance = task.instance
+    tokens = {key: instance.get(key) for key in _UNDERSTORY_TOKENS}
+    present = {value for value in tokens.values() if value}
+    if len(present) > 1:
+        report.error(f"{' y '.join(_UNDERSTORY_TOKENS)} difieren en {instance.env_path} — unificalos a mano")
+        raise PhaseError("understory: conflicting tokens")
+    token = next(iter(present), None) or secrets.token_hex(24)
+    missing = {key: token for key, value in tokens.items() if not value}
+    if missing:
+        update_env_file(instance.env_path, missing, seed_from=instance.env_example_path)
+        report.success(f"{', '.join(missing)} en {instance.env_path}")
     else:
-        template = importlib.resources.files("rinthel_tui.install") / "templates" / "understory-docker-compose.yml"
-        compose_path.write_text(template.read_text())
-        report.success(f"{compose_path} escrito")
+        report.warn("token de Understory ya estaba seteado — omito")
+    instance.env_path.chmod(0o600)
 
-    env_path = task.dir / ".env"
-    if env_path.exists():
-        report.warn(f"{env_path} ya existe — omito")
-    else:
-        token = _read_understory_token(task.portal_env)
-        if not token:
-            report.error(f"no encontré UNDERSTORY_TOKEN en {task.portal_env} — corré la fase del portal antes que esta")
-            raise PhaseError("understory: UNDERSTORY_TOKEN not found")
-        env_path.write_text(f"AUTH_TOKEN={token}\n")
-        report.success(f"{env_path} generado")
-
-    bundle_dir = task.dir / "bundle"
+    bundle_dir = task.bundle_dir
     created = 0
     for sub in _UNDERSTORY_BUNDLE_DIRS:
         sub_dir = bundle_dir / sub
@@ -382,9 +281,49 @@ async def phase_install_setup_understory(host: Host, report: PhaseReport, *, tas
             created += 1
 
     if created:
-        report.success(f"bundle/ listo ({created} archivo(s) nuevo(s))")
+        report.success(f"{bundle_dir} listo ({created} archivo(s) nuevo(s))")
     else:
-        report.warn("bundle/ ya estaba completo — omito")
+        report.warn(f"{bundle_dir} ya estaba completo — omito")
+
+
+async def phase_install_container_user(host: Host, report: PhaseReport, *, task: InstanceSecrets) -> None:
+    """En Linux los contenedores que escriben en ``data/`` corren con el
+    uid/gid de quien corre la Instance (``PUID``/``PGID``), así lo que dejan
+    se puede editar desde afuera; ``DOCKER_GID`` es el grupo que da acceso al
+    socket de Docker. Se escriben en el ``.env`` raíz solo si faltan: lo que
+    el admin puso gana. Windows no tiene ninguno de los tres."""
+    ids = host.host_info.user_ids()
+    if ids is None:
+        report.warn("esta Platform no corre contenedores con el usuario del host — omito")
+        return
+    instance = task.instance
+    wanted = {"PUID": str(ids[0]), "PGID": str(ids[1])}
+    docker_gid = host.host_info.group_id("docker")
+    if docker_gid is None:
+        report.warn("no hay grupo 'docker' en el host — DOCKER_GID sin setear; reintentá tras instalar Docker")
+    else:
+        wanted["DOCKER_GID"] = str(docker_gid)
+    missing = {key: value for key, value in wanted.items() if not instance.get(key)}
+    if not missing:
+        report.warn("PUID/PGID/DOCKER_GID ya estaban seteados — omito")
+        return
+    update_env_file(instance.env_path, missing, seed_from=instance.env_example_path)
+    instance.env_path.chmod(0o600)
+    report.success(f"{', '.join(f'{k}={v}' for k, v in missing.items())} en {instance.env_path}")
+
+
+async def phase_install_host_exec_token(host: Host, report: PhaseReport, *, task: InstanceSecrets) -> None:
+    """El token que comparten ``hostexecd`` y quien le pide comandos, en el
+    ``.env`` raíz. El boot lo asegura igual (``rinthel-boot.sh``)."""
+    try:
+        generated = prepare_host_exec(task.instance.root)
+    except ValueError as exc:
+        report.error(str(exc))
+        raise PhaseError("host exec token conflict") from exc
+    if generated:
+        report.success(f"RINTHEL_HOSTEXECD_TOKEN generado en {task.instance.env_path}")
+    else:
+        report.warn("RINTHEL_HOSTEXECD_TOKEN ya estaba seteado — omito")
 
 
 async def phase_install_instance_secrets(host: Host, report: PhaseReport, *, task: InstanceSecrets) -> None:
@@ -472,11 +411,13 @@ LLAMA_INSTALL = InstallUnit(
     ),
 )
 
-# Los secretos que la TUI y el daemon leen del ``.env`` raíz.
+# Lo que el daemon, ``hostexecd`` y compose leen del ``.env`` raíz.
 SECRETS_INSTALL = InstallUnit(
     label="INSTANCE",
     steps=(
         InstallStep("INSTANCE — secretos del .env", phase_install_instance_secrets, install_tasks.instance_secrets),
+        InstallStep("INSTANCE — token de host exec", phase_install_host_exec_token, install_tasks.instance_secrets),
+        InstallStep("INSTANCE — usuario de los contenedores", phase_install_container_user, install_tasks.container_user),
     ),
 )
 
@@ -493,20 +434,14 @@ DECK_INSTALL = InstallUnit(
     steps=(InstallStep("DECK — SOUL de la Instance", phase_install_instance_soul, install_tasks.instance_soul),),
 )
 
-PITHAGORAS_INSTALL = InstallUnit(
-    label="PITHAGORAS",
-    enabled_of=lambda cfg: cfg.pithagoras.enabled,
-    steps=(InstallStep("PITHAGORAS — clone + configurar", phase_install_setup_portal, install_tasks.portal_install),),
-)
-
 UNDERSTORY_INSTALL = InstallUnit(
     label="UNDERSTORY",
     enabled_of=lambda cfg: cfg.understory.enabled,
     steps=(
-        InstallStep("UNDERSTORY — scaffold + configurar", phase_install_setup_understory, install_tasks.understory_install),
+        InstallStep("UNDERSTORY — token + bundle", phase_install_setup_understory, install_tasks.understory_install),
     ),
 )
 
 INSTALL_UNITS: list[InstallUnit] = [
-    LLAMA_INSTALL, SECRETS_INSTALL, IDENTITY_INSTALL, DECK_INSTALL, PITHAGORAS_INSTALL, UNDERSTORY_INSTALL,
+    LLAMA_INSTALL, SECRETS_INSTALL, IDENTITY_INSTALL, DECK_INSTALL, UNDERSTORY_INSTALL,
 ]

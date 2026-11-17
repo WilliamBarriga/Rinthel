@@ -105,14 +105,9 @@ class Instance:
         return self.data_dir / "deck"
 
     @property
-    def portal_dir(self) -> Path:
-        """Default of ``cfg.pithagoras.dir``: the legacy portal, until Deck replaces it."""
-        return self.root / "pithagoras"
-
-    @property
-    def portal_data_dir(self) -> Path:
-        """The legacy portal's state, bind-mounted into its container."""
-        return self.data_dir / "pithagoras"
+    def understory_data_dir(self) -> Path:
+        """Understory's live bundle, bind-mounted into its container."""
+        return self.data_dir / "understory"
 
     def get(self, key: str) -> str | None:
         """Reads ``key`` from the ``.env`` on disk, uncached: a ``.env`` edited by

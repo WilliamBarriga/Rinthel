@@ -3,16 +3,10 @@
 # Deck keeps its own deck/docker-compose.yml and enters by `include:`.
 # Understory enters by `extends:`, because `include:` does not let the parent
 # redefine an imported service: its fixed network and host alias are set here.
-# The legacy portal still enters by `include:` with its host-exec override,
-# until Deck replaces it.
 name: rinthel-general
 
 include:
   - deck/docker-compose.yml
-  - path:
-      - pithagoras/docker-compose.yml
-      - compose/host-exec.override.yaml
-    project_directory: pithagoras
 
 services:
   understory:

@@ -219,10 +219,9 @@ __marimo__/
 .streamlit/secrets.toml
 
 # ── Rinthel-general (project-specific) ─────────────────────────
-# Local credentials and machine-specific model profiles
+# Local credentials
 .env.backup-*
 .env.before-*
-model-profiles.local.json
 # Local model catalog of the Instance (edited by hand) and the example
 # INSTALL writes next to it
 /models.local.json
@@ -231,10 +230,9 @@ logs/
 plans/
 .claude/
 
-# Estado real de los managed services (bundle de Understory, portal.db/
-# sessions de Pithagoras) — nunca dentro de understory/ ni pithagoras/ (esos
-# son subtrees, pueden pushearse de vuelta al fork) para que un secret/dato
-# real nunca termine en ese push.
+# State of the Instance (rinthel.db, instance.toml, Deck's volume, the
+# Understory bundle) — never inside understory/ or deck/, so a secret or real
+# data never ends up in a commit.
 data/
 
 # graphify — generated knowledge graph, regenerable, not source

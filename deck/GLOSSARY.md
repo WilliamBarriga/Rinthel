@@ -6,7 +6,7 @@ Deck es el portal web de la Instance: cada Usuario entra con su Panel token y tr
 
 **Deck**:
 El portal web de la Instance y su servidor: el managed service que aloja al Agente, guarda las Sesiones en `deck.db` y deja a cada Usuario entrar con su Panel token. Los usuarios y sus contraseñas son del daemon; Deck solo pregunta.
-_Avoid_: Portal a secas (lo era el portal heredado), frontend, panel.
+_Avoid_: Portal a secas, frontend, panel.
 
 **Sesión**:
 La unidad de trabajo de Deck: un directorio de trabajo, una conversación con el Agente y su historial de eventos. Es de uno de dos tipos: **tarea** (`task`, abierta sobre un workspace que elige su dueño) o **agente** (`agent`, el chat en la casa del Agente). Tiene un dueño, el Usuario que la abrió; la corrida la posee el servidor, no la pestaña del navegador.

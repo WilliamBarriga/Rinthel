@@ -1,12 +1,11 @@
 """Daemon FastAPI de hostexecd — ejecuta comandos de shell en el host real
-desde una tool de pi (``host_exec``) que corre dentro del contenedor
-Pithagoras. Ver ``plans/rinthel-host-exec.md`` para el diseño completo
-(grillado con Tarkark, todas las decisiones cerradas ahí, no repetidas acá).
+desde una tool de pi (``host_exec``) que corre dentro de un contenedor de
+la Instance. Ver ``docs/07-host-exec.md``.
 
 Corré con:  .venv/bin/python -m hostexecd.daemon
 
 Deliberadamente separado de ``rinthel_tui.daemon`` (que administra el
-lifecycle del propio stack de Rinthel: llama-server/Understory/Pithagoras):
+lifecycle del propio stack de Rinthel: llama-server/Understory/Deck):
 este daemon no sabe nada de esos servicios, solo corre lo que se le pida
 como el usuario que lo lanzó (``tarkark``, sin sudo, sin escalar
 privilegios) y audita cada ejecución en ``logs/hostexecd.log``. Blast
@@ -128,7 +127,7 @@ def main() -> None:
     # overrideable por `.env`; `rinthel-boot.sh` lo lee de ahí para
     # chequear si ya está arriba antes de autostartearlo. Default 8766:
     # siguiente libre tras 8765 (rinthel_tui)/3800 (Understory)/4100
-    # (Pithagoras).
+    # (Deck).
     port = int(os.getenv("RINTHEL_HOSTEXECD_PORT", "8766"))
     print(f"[hostexecd] {time.strftime('%H:%M:%S')} arrancando en http://127.0.0.1:{port}")
     if auth.expected_token() is None:

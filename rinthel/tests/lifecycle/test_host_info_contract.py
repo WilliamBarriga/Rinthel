@@ -122,6 +122,19 @@ def test_platform_names_the_host_system(world):
     assert world.host.platform() == world.platform
 
 
+def test_containers_run_as_a_host_user_only_on_linux(world):
+    ids = world.host.user_ids()
+
+    if world.platform == "windows":
+        assert ids is None
+    else:
+        assert isinstance(ids, tuple) and len(ids) == 2 and all(isinstance(i, int) and i >= 0 for i in ids)
+
+
+def test_a_missing_group_has_no_id(world):
+    assert world.host.group_id("rinthel-no-such-group") is None
+
+
 def test_no_llama_server_before_the_build(world, tmp_path):
     assert world.host.find_llama_server(tmp_path / "build-cuda") is None
 

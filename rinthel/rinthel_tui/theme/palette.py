@@ -1,8 +1,7 @@
 """Paleta canónica cyberpunk — fuente numérica única.
 
-Portado 1:1 de ``nightcity/clifx/theme/cyberpunk.sh``. Compartida con el
-frontend web de Pithagoras vía ``[data-theme="cyberpunk"]`` — no cambiar
-estos hex sin actualizar ese lado también.
+Portado 1:1 de ``nightcity/clifx/theme/cyberpunk.sh``. Un frontend web que
+quiera el mismo tema copia estos hex; no cambiarlos sin revisar ese lado.
 """
 
 FG = "#7CFCFF"  # electric cyan

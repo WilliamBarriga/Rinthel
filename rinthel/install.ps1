@@ -71,7 +71,6 @@ try {
 $EnvFile = Join-Path $InstanceRoot '.env'
 if (-not (Test-Path -LiteralPath $EnvFile)) {
     $DataRoot = (Join-Path $env:USERPROFILE 'Rinthel-data').Replace('\', '/')
-    $UserRoot = $env:USERPROFILE.Replace('\', '/')
     # Only machine paths: the Validated profile of Windows lives in the
     # daemon config (rinthel_tui/config.py::VALIDATED_PROFILES), and the
     # Local model in the catalog that [0] INSTALL writes.
@@ -80,10 +79,6 @@ if (-not (Test-Path -LiteralPath $EnvFile)) {
         "RINTHEL_MODELS_DIR=$DataRoot/models"
         "RINTHEL_LLAMA_LOG_PATH=$DataRoot/logs/llama-server.log"
         "RINTHEL_LLAMACPP_REPO_DIR=$DataRoot/llama.cpp"
-        "RINTHEL_UNDERSTORY_DIR=$DataRoot/understory"
-        "RINTHEL_PITHAGORAS_DIR=$DataRoot/pithagoras"
-        "RINTHEL_WORKSPACES_DIR=$UserRoot"
-        "RINTHEL_PI_AGENT_DIR=$UserRoot/.pi/agent"
     ) | Set-Content -LiteralPath $EnvFile -Encoding UTF8
     Write-Host "[install] configuración Windows creada en $EnvFile"
 }

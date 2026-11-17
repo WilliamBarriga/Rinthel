@@ -49,9 +49,9 @@ def _npm(versions: dict[str, str]) -> FakeRegistry:
     return FakeRegistry(versions)
 
 
-# Un portal cuya imagen recibe la última versión publicada de pi al reconstruirse.
+# Deck con una imagen que recibe la última versión publicada de pi al reconstruirse.
 _PI_PORTAL = dataclasses.replace(
-    services.PITHAGORAS_SERVICE, npm_build_args=(("PI_VERSION", "@earendil-works/pi-coding-agent"),)
+    services.DECK_SERVICE, npm_build_args=(("PI_VERSION", "@earendil-works/pi-coding-agent"),)
 )
 
 
@@ -250,7 +250,7 @@ async def test_wait_ready_never_waits_past_its_timeout(cfg, report):
 async def test_wait_ready_stops_polling_as_soon_as_the_service_answers(cfg, report):
     host, _ = fake_host()
     service = dataclasses.replace(
-        services.PITHAGORAS_SERVICE, ready_poll_interval=1.0, ready_poll_backoff=2.0, ready_poll_max_interval=10.0
+        services.DECK_SERVICE, ready_poll_interval=1.0, ready_poll_backoff=2.0, ready_poll_max_interval=10.0
     )
     host.probe.script_http(service.ready_url_of(cfg), [False, False, True])
     started = host.clock.now()
@@ -441,7 +441,7 @@ async def test_up_with_rebuild_builds_with_the_latest_npm_version(cfg, report, t
     await managed_service.phase_up(host, report, service=service.spec(cfg), rebuild=True)
 
     (up,) = [c for c in host.compose.calls if c[0] == "up"]
-    assert up[1:3] == ("portal", {"PI_VERSION": "1.2.3"})
+    assert up[1:3] == ("deck", {"PI_VERSION": "1.2.3"})
 
 
 async def test_up_with_rebuild_still_builds_with_latest_when_the_registry_is_unreachable(cfg, report, tmp_path):
@@ -458,7 +458,7 @@ async def test_up_with_rebuild_still_builds_with_latest_when_the_registry_is_unr
 
 async def test_up_with_rebuild_rebuilds_a_service_with_no_npm_build_args(cfg, report, tmp_path):
     host, _ = fake_host()
-    service = _with_dir(services.PITHAGORAS_SERVICE, tmp_path)
+    service = _with_dir(services.DECK_SERVICE, tmp_path)
 
     await managed_service.phase_up(host, report, service=service.spec(cfg), rebuild=True)
 

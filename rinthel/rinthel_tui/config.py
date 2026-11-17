@@ -6,7 +6,7 @@ explícito como argumento (no leen el entorno global), así que no importa en
 qué orden ni en qué proceso/subshell corran.
 
 ``RinthelConfig`` es composición de un sub-config por servicio
-(``cfg.llama``, ``cfg.understory``, ``cfg.pithagoras``, ``cfg.deck``, ``cfg.moe``,
+(``cfg.llama``, ``cfg.understory``, ``cfg.deck``, ``cfg.moe``,
 ``cfg.install``) — cada uno con sus propios
 campos, sin el prefijo repetido que tenían como campos sueltos del
 dataclass monolítico anterior (``cfg.llama_port`` -> ``cfg.llama.port``).
@@ -87,7 +87,7 @@ class Field:
     exists: bool = False
     # Categoría para agrupar visualmente en [N] CONFIGURAR — "" para
     # sub-configs con pocos campos que no lo necesitan (understory/
-    # pithagoras/moe). Identificador plano (sin acentos) porque cruza a
+    # deck/moe). Identificador plano (sin acentos) porque cruza a
     # JSON/Rust vía GET /config; el label mostrado es responsabilidad del
     # cliente.
     group: str = ""
@@ -317,29 +317,10 @@ UNDERSTORY_FIELDS: list[Field] = [
 
 
 @dataclass(frozen=True)
-class PithagorasConfig:
-    """El portal heredado, hasta que Deck lo reemplace."""
-
-    dir: Path
-    port: int
-    enabled: bool
-
-
-PITHAGORAS_FIELDS: list[Field] = [
-    # Subtree del monorepo. Estado real vive en la raíz de la Instance, en data/.
-    Field("dir", "RINTHEL_PITHAGORAS_DIR", Path, lambda i: str(i.portal_dir)),
-    Field("port", "RINTHEL_PITHAGORAS_PORT", int, 4100, port=True),
-    Field("enabled", "RINTHEL_PITHAGORAS_ENABLED", bool, True),
-]
-
-
-@dataclass(frozen=True)
 class DeckConfig:
     """Lo que el daemon necesita saber de Deck. ``host_address`` es cómo Deck
     alcanza el host desde su contenedor: el daemon arma con ella toda URL que
-    le entrega (la ruta de llama, voz, hostexecd); Deck nunca las reescribe.
-    Hasta que Deck reemplace al portal heredado, este la usa igual, y Deck
-    escucha en su propio puerto."""
+    le entrega (la ruta de llama, voz, hostexecd); Deck nunca las reescribe."""
 
     host_address: str
     dir: Path
@@ -352,7 +333,7 @@ DECK_FIELDS: list[Field] = [
     # Subtree del monorepo. Estado real (deck.db, home de pi) vive en la raíz
     # de la Instance, en data/deck.
     Field("dir", "RINTHEL_DECK_DIR", Path, lambda i: str(i.deck_dir)),
-    Field("port", "RINTHEL_DECK_PORT", int, 4200, port=True),
+    Field("port", "RINTHEL_DECK_PORT", int, 4100, port=True),
     Field("enabled", "RINTHEL_DECK_ENABLED", bool, True),
 ]
 
@@ -402,9 +383,6 @@ class InstallConfig:
     llamacpp_repo_dir: Path
     llamacpp_repo_url: str
     models_dir: Path
-    pithagoras_repo_url: str
-    workspaces_dir: Path
-    pi_agent_dir: Path
 
 
 INSTALL_FIELDS: list[Field] = [
@@ -412,9 +390,6 @@ INSTALL_FIELDS: list[Field] = [
     Field("llamacpp_repo_url", "RINTHEL_LLAMACPP_REPO_URL", str, "https://github.com/ggml-org/llama.cpp.git"),
     # Donde INSTALL baja el GGUF del Local model por defecto (fuera del repo).
     Field("models_dir", "RINTHEL_MODELS_DIR", Path, "~/llama.cpp/models"),
-    Field("pithagoras_repo_url", "RINTHEL_PITHAGORAS_REPO_URL", str, "https://github.com/WilliamBarriga/pithagoras.git"),
-    Field("workspaces_dir", "RINTHEL_WORKSPACES_DIR", Path, "~"),
-    Field("pi_agent_dir", "RINTHEL_PI_AGENT_DIR", Path, "~/.pi/agent"),
 ]
 
 
@@ -429,7 +404,6 @@ _ENTRIES: list[tuple[str, list[Field]]] = [
     ("llama", LLAMA_FIELDS),
     ("moe", MOE_FIELDS),
     ("understory", UNDERSTORY_FIELDS),
-    ("pithagoras", PITHAGORAS_FIELDS),
     ("deck", DECK_FIELDS),
     ("install", INSTALL_FIELDS),
 ]
@@ -446,7 +420,6 @@ class RinthelConfig:
     llama: LlamaConfig
     moe: MoeConfig
     understory: UnderstoryConfig
-    pithagoras: PithagorasConfig
     deck: DeckConfig
     install: InstallConfig
     secrets: Secrets = Secrets("", "")
@@ -643,7 +616,6 @@ def default_config(instance: Instance | None = None, *, platform: Platform | Non
         llama=_load(LlamaConfig, LLAMA_FIELDS, env, instance, defaults=VALIDATED_PROFILES[platform].llama),
         moe=_load(MoeConfig, MOE_FIELDS, env, instance),
         understory=_load(UnderstoryConfig, UNDERSTORY_FIELDS, env, instance),
-        pithagoras=_load(PithagorasConfig, PITHAGORAS_FIELDS, env, instance),
         install=_load(InstallConfig, INSTALL_FIELDS, env, instance),
         deck=_load(DeckConfig, DECK_FIELDS, env, instance, defaults=_DECK_DEFAULTS[platform]),
         secrets=Secrets(**{attr: _str_env(name, "", env) for attr, name in SECRET_ENVS.items()}),

@@ -10,17 +10,23 @@ $ErrorActionPreference = 'Stop'
 $DataRoot = Join-Path $env:USERPROFILE 'Rinthel-data'
 $Server = Join-Path $DataRoot 'llama.cpp\build-cuda\bin\Release\llama-server.exe'
 $Model = Join-Path $DataRoot 'models\Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf'
-$Pithagoras = Join-Path $DataRoot 'pithagoras'
-$Understory = Join-Path $DataRoot 'understory'
+$InstanceRoot = Split-Path -Parent $PSScriptRoot
+$EnvFile = Join-Path $InstanceRoot '.env'
+$Bundle = Join-Path $InstanceRoot 'data\understory\index.md'
+
+function Test-EnvKey([string]$Key) {
+    if (-not (Test-Path -LiteralPath $EnvFile)) { return $false }
+    return [bool](Select-String -LiteralPath $EnvFile -Pattern "^$Key=.+" -Quiet)
+}
 
 function Test-InstallComplete {
     return (
         (Test-Path -LiteralPath $Server) -and
         (Test-Path -LiteralPath $Model) -and
         ((Get-Item -LiteralPath $Model).Length -gt 1GB) -and
-        (Test-Path -LiteralPath (Join-Path $Pithagoras '.env')) -and
-        (Test-Path -LiteralPath (Join-Path $Understory '.env')) -and
-        (Test-Path -LiteralPath (Join-Path $Understory 'docker-compose.yml'))
+        (Test-EnvKey 'RINTHEL_PANEL_SECRET') -and
+        (Test-EnvKey 'UNDERSTORY_TOKEN') -and
+        (Test-Path -LiteralPath $Bundle)
     )
 }
 
@@ -38,8 +44,8 @@ do {
     Write-Host "llama-server.exe   : $(if (Test-Path -LiteralPath $Server) { 'LISTO' } else { 'pendiente' })"
     Write-Host "Descarga activa    : $DownloadCount proceso(s)"
     Write-Host "Modelo descargado  : $ModelSizeGB GB de ~22 GB"
-    Write-Host "Pithagoras         : $(if (Test-Path -LiteralPath (Join-Path $Pithagoras '.env')) { 'LISTO' } else { 'pendiente' })"
-    Write-Host "Understory         : $(if (Test-Path -LiteralPath (Join-Path $Understory '.env')) { 'LISTO' } else { 'pendiente' })"
+    Write-Host "Secretos (.env)    : $(if (Test-EnvKey 'RINTHEL_PANEL_SECRET') { 'LISTO' } else { 'pendiente' })"
+    Write-Host "Understory         : $(if ((Test-EnvKey 'UNDERSTORY_TOKEN') -and (Test-Path -LiteralPath $Bundle)) { 'LISTO' } else { 'pendiente' })"
 
     if (Test-InstallComplete) {
         Write-Host "`nINSTALL COMPLETO" -ForegroundColor Green

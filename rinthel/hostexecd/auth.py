@@ -1,7 +1,6 @@
 """Chequeo de token compartido para hostexecd — mismo criterio que
-UNDERSTORY_TOKEN/PORTAL_SECRET: un secreto en un header de cada request,
-generado por fuera (openssl rand -hex 32, ver .env.example) y comparado en
-tiempo constante."""
+UNDERSTORY_TOKEN: un secreto en un header de cada request, generado por
+INSTALL o el boot en el ``.env`` raíz y comparado en tiempo constante."""
 
 from __future__ import annotations
 
@@ -24,10 +23,9 @@ def check_token(received: str | None) -> bool:
 
     Sin ``RINTHEL_HOSTEXECD_TOKEN`` seteado, falla cerrado: nunca autentica,
     ni con header vacío — un daemon sin secreto propio en la máquina
-    equivocada no debe quedar abierto por accidente (ver plan, decisión 5:
-    Pithagoras y Understory comparten `network_mode: host`, así que sin
-    token este daemon sería alcanzable desde cualquiera de los dos
-    contenedores, no solo desde la sesión de Rinthel)."""
+    equivocada no debe quedar abierto por accidente: los contenedores de la
+    Instance llegan al host, así que sin token este daemon sería alcanzable
+    desde cualquiera de ellos, no solo desde la sesión de Rinthel)."""
     expected = expected_token()
     if expected is None or not received:
         return False

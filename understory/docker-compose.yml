@@ -27,12 +27,11 @@ services:
       LLM_FALLBACK_ALLOW_FOR: ${LLM_FALLBACK_ALLOW_FOR:-query}
       # Legacy compat (still supported)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      # OJO: no ${OPENROUTER_API_KEY} a secas — Pithagoras declara esa misma
-      # var (su propio fallback provider) en el mismo .env compartido de la
-      # raíz desde la consolidación de Fase 2. Si understory la heredara,
-      # aborta con "Ambiguous legacy LLM configuration" al tenerla sola sin
-      # LLM_API_BASE_URL/LLM_API_KEY. Nombre propio, sin setear todavía —
-      # wiring real de model provider es Fase 4, no esta.
+      # OJO: no ${OPENROUTER_API_KEY} a secas — el .env de la raíz es
+      # compartido y esa var puede estar para otro componente. Si understory
+      # la heredara, aborta con "Ambiguous legacy LLM configuration" al
+      # tenerla sola sin LLM_API_BASE_URL/LLM_API_KEY. Nombre propio, sin
+      # setear todavía.
       OPENROUTER_API_KEY: ${UNDERSTORY_OPENROUTER_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       LLAMACPP_BASE_URL: ${LLAMACPP_BASE_URL:-}

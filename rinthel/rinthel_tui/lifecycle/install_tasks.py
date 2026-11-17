@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from rinthel_tui.config import RinthelConfig
-from rinthel_tui.install.portal_model import PortalModel
 from rinthel_tui.instance import Instance
 from rinthel_tui.models.domain.types import LocalModel
 
@@ -44,27 +43,11 @@ class ModelCatalogInstall:
 
 
 @dataclass(frozen=True)
-class PortalInstall:
-    """El portal heredado: dónde vive su código (subtree del monorepo), de
-    dónde se clona si falta, y lo que su ``.env`` toma de la Instance. Sale
-    con el portal, cuando Deck lo reemplace."""
-
-    instance: Instance
-    dir: Path
-    repo_url: str
-    branch: str
-    workspaces_dir: Path
-    pi_agent_dir: Path
-    # Cómo el portal llega a llama-server (armada con ``deck.host_address``).
-    llama_url: str
-
-
-@dataclass(frozen=True)
 class UnderstoryInstall:
+    """Its token goes in the root ``.env``; its live bundle in ``bundle_dir``."""
+
     instance: Instance
-    dir: Path
-    # El ``.env`` del portal: de ahí sale el token de Understory.
-    portal_env: Path
+    bundle_dir: Path
 
 
 @dataclass(frozen=True)
@@ -90,7 +73,6 @@ class InstanceSoulSeed:
 
 
 LLAMACPP_BRANCH = "master"
-PORTAL_BRANCH = "rinthel-pithagoras"
 
 
 def llamacpp_install(cfg: RinthelConfig) -> LlamaCppInstall:
@@ -120,37 +102,21 @@ def model_catalog(cfg: RinthelConfig) -> ModelCatalogInstall:
     return ModelCatalogInstall(cfg.instance, default_local_model(cfg))
 
 
-def portal_install(cfg: RinthelConfig) -> PortalInstall:
-    return PortalInstall(
-        instance=cfg.instance,
-        dir=cfg.pithagoras.dir,
-        repo_url=cfg.install.pithagoras_repo_url,
-        branch=PORTAL_BRANCH,
-        workspaces_dir=cfg.install.workspaces_dir,
-        pi_agent_dir=cfg.install.pi_agent_dir,
-        llama_url=llama_url(cfg),
-    )
-
-
 def llama_url(cfg: RinthelConfig) -> str:
     """La URL de llama-server que el daemon entrega a quien corre en Docker."""
     return f"http://{cfg.deck.host_address}:{cfg.llama.port}"
 
 
-def portal_model(cfg: RinthelConfig) -> PortalModel:
-    return PortalModel(
-        linux_agent_dir=cfg.instance.portal_data_dir / "home" / ".pi" / "agent",
-        windows_agent_dir=cfg.install.pi_agent_dir,
-        llama_url=llama_url(cfg),
-        model=cfg.local_model,
-    )
-
-
 def understory_install(cfg: RinthelConfig) -> UnderstoryInstall:
-    return UnderstoryInstall(cfg.instance, cfg.understory.dir, cfg.pithagoras.dir / ".env")
+    return UnderstoryInstall(cfg.instance, cfg.instance.understory_data_dir)
 
 
 def instance_secrets(cfg: RinthelConfig) -> InstanceSecrets:
+    return InstanceSecrets(cfg.instance)
+
+
+def container_user(cfg: RinthelConfig) -> InstanceSecrets:
+    """``PUID``/``PGID``/``DOCKER_GID`` live in the same root ``.env``."""
     return InstanceSecrets(cfg.instance)
 
 

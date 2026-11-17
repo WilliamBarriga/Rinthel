@@ -49,7 +49,7 @@ async def test_boot_spawns_llama_server_with_its_argv_and_brings_up_the_docker_s
     assert all(o.ok for o in outcomes), outcomes
     (spawn,) = host.processes.spawns
     assert list(spawn.argv) == services.LLAMA_SERVICE.build_argv(cfg)
-    assert {call[1] for call in host.compose.calls if call[0] == "up"} == {"understory", "portal", "deck"}
+    assert {call[1] for call in host.compose.calls if call[0] == "up"} == {"understory", "deck"}
 
 
 async def test_terminate_with_llama_already_dead_warns_and_shuts_down_the_rest(cfg, host, lifecycle):
@@ -72,4 +72,4 @@ async def test_terminate_keeps_going_when_a_docker_service_does_not_go_down(cfg,
     failed = [o for o in outcomes if not o.ok]
     assert [o.service for o in failed] == [services.DOCKER_SERVICES[0].display_name.lower()]
     assert "docker compose down falló" in failed[0].message
-    assert [call[1] for call in host.compose.calls if call[0] == "down"] == ["understory", "portal", "deck"]
+    assert [call[1] for call in host.compose.calls if call[0] == "down"] == ["understory", "deck"]

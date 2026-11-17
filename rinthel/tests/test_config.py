@@ -73,7 +73,7 @@ def test_validate_raises_on_duplicate_ports():
 
 def test_validate_raises_on_port_out_of_range():
     base = default_config()
-    cfg = dataclasses.replace(base, pithagoras=dataclasses.replace(base.pithagoras, port=70000))
+    cfg = dataclasses.replace(base, deck=dataclasses.replace(base.deck, port=70000))
     with pytest.raises(ConfigError, match="fuera de rango"):
         cfg.validate()
 
@@ -142,7 +142,6 @@ def test_default_config_enables_all_services_by_default():
     cfg = default_config()
     assert cfg.llama.enabled is True
     assert cfg.understory.enabled is True
-    assert cfg.pithagoras.enabled is True
     assert cfg.deck.enabled is True
 
 
@@ -151,7 +150,6 @@ def test_default_config_enables_all_services_by_default():
     [
         ("RINTHEL_LLAMA_ENABLED", "llama"),
         ("RINTHEL_UNDERSTORY_ENABLED", "understory"),
-        ("RINTHEL_PITHAGORAS_ENABLED", "pithagoras"),
         ("RINTHEL_DECK_ENABLED", "deck"),
     ],
 )
@@ -191,10 +189,10 @@ def test_stringify_other_types_use_str():
 def test_diff_overrides_excludes_values_that_match_current_config(cfg):
     edits = {
         "RINTHEL_LLAMA_PORT": str(cfg.llama.port),  # sin cambios reales
-        "RINTHEL_PITHAGORAS_ENABLED": "false",  # sí cambió (default es true)
+        "RINTHEL_DECK_ENABLED": "false",  # sí cambió (default es true)
     }
     overrides = diff_overrides(cfg, edits)
-    assert overrides == {"RINTHEL_PITHAGORAS_ENABLED": "false"}
+    assert overrides == {"RINTHEL_DECK_ENABLED": "false"}
 
 
 def test_diff_overrides_empty_when_nothing_changed(cfg):
@@ -208,13 +206,13 @@ def test_diff_overrides_ignores_env_vars_not_in_any_field(cfg):
 
 
 def test_diff_overrides_reflects_a_cfg_already_disabled(cfg):
-    disabled = dataclasses.replace(cfg, pithagoras=dataclasses.replace(cfg.pithagoras, enabled=False))
+    disabled = dataclasses.replace(cfg, deck=dataclasses.replace(cfg.deck, enabled=False))
     # Re-habilitar en la UI, contra un cfg que ya está deshabilitado, debe
     # contar como cambio.
-    edits = {"RINTHEL_PITHAGORAS_ENABLED": "true"}
-    assert diff_overrides(disabled, edits) == {"RINTHEL_PITHAGORAS_ENABLED": "true"}
+    edits = {"RINTHEL_DECK_ENABLED": "true"}
+    assert diff_overrides(disabled, edits) == {"RINTHEL_DECK_ENABLED": "true"}
     # Pero "false" contra ese mismo cfg ya deshabilitado no es un cambio.
-    assert diff_overrides(disabled, {"RINTHEL_PITHAGORAS_ENABLED": "false"}) == {}
+    assert diff_overrides(disabled, {"RINTHEL_DECK_ENABLED": "false"}) == {}
 
 
 def test_with_overrides_parses_each_kind_from_a_raw_string(cfg):
@@ -241,7 +239,7 @@ def test_with_overrides_does_not_mutate_the_original_cfg(cfg):
 def test_with_overrides_leaves_untouched_sub_configs_alone(cfg):
     updated = with_overrides(cfg, {"RINTHEL_LLAMA_PORT": "9090"})
     assert updated.understory == cfg.understory
-    assert updated.pithagoras == cfg.pithagoras
+    assert updated.deck == cfg.deck
 
 
 def test_with_overrides_result_can_fail_validate(cfg):

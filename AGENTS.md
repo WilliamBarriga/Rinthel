@@ -1,7 +1,6 @@
 # AGENTS.md — Rinthel-general
 
-> Instructions for the `pi` CLI in this repo — both running directly on
-> the host and when Pithagoras launches it (same agent, same skill).
+> Instructions for the `pi` CLI in this repo, running directly on the host.
 > graphify is already installed as a project skill
 > (`.pi/agent/skills/graphify/`, via `graphify pi install --project`).
 
