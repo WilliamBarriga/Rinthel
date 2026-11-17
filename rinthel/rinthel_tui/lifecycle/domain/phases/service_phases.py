@@ -1,14 +1,14 @@
-"""Las phases genéricas de un servicio gestionado — spawn/wait/kill de un
-proceso local y up/down/recreate de un servicio ``docker compose`` —, una
-sola vez para todos los servicios en vez de una función casi idéntica por
-servicio.
+"""The generic phases of a managed service — spawn/wait/kill of a local
+process and up/down/recreate of a ``docker compose`` service —, written once
+for all services instead of a near-identical function per service.
 
-Cada una respeta la firma ``(host, report, **kwargs)`` que exige ``PhaseSpec``
-(``lifecycle/specs.py``): el ``Host`` (ADR 0004) trae los puertos del host
-donde corre la Instance, y el ``service`` — un ``LocalProcessSpec`` o un
-``DockerComposeSpec`` ya armado a partir de la config — viaja por ``kwargs``.
-Ninguna lee ``RinthelConfig``: las definiciones de ``services.py`` la
-convierten en spec antes de armar el plan."""
+Each one follows the ``(host, report, **kwargs)`` signature that
+``PhaseSpec`` requires (``lifecycle/specs.py``): the ``Host``
+(ports-and-adapters ADR) carries the ports of the host where the Instance
+runs, and the ``service`` — a ``LocalProcessSpec`` or a
+``DockerComposeSpec`` already built from the config — travels via
+``kwargs``. None reads ``RinthelConfig``: the ``services.py`` definitions
+turn it into a spec before building the plan."""
 
 from pathlib import Path
 
@@ -17,19 +17,19 @@ from rinthel_tui.lifecycle.domain.host import Host
 from rinthel_tui.lifecycle.domain.outcome import PhaseReport, fail_on_error, report_output, require_ok
 from rinthel_tui.lifecycle.domain.types import DockerComposeSpec, LocalProcessSpec, ServiceSpec
 
-_MAX_LOG_BYTES = 10 * 1024 * 1024  # 10MB — arriba de esto, rotamos antes de escribir más
-# Cuánto se espera tras lanzar un proceso para decir que no murió al instante.
+_MAX_LOG_BYTES = 10 * 1024 * 1024  # 10MB — above this, rotate before writing more
+# How long to wait after launching a process before saying it did not die instantly.
 _SPAWN_GRACE_SECONDS = 1.5
-# Cuánto se espera a que un puerto se libere tras el SIGTERM antes del SIGKILL.
+# How long to wait for a port to be freed after SIGTERM before SIGKILL.
 _TERM_GRACE_SECONDS = 10
 
 
 def _rotate_log_if_large(log: Path, max_bytes: int = _MAX_LOG_BYTES) -> None:
-    """Rota ``log`` a ``log.1`` (un solo backup) si ya pasó ``max_bytes`` —
-    sin esto, un log de un proceso de larga vida (llama-server corriendo
-    semanas) crece sin límite. Se llama en cada ``phase_spawn``, así que
-    cubre cada BOOT/RELOAD; no protege dentro de una misma corrida larga sin
-    reinicio, para eso hace falta logrotate a nivel de sistema."""
+    """Rotate ``log`` to ``log.1`` (a single backup) once it exceeds
+    ``max_bytes`` — without this, the log of a long-lived process
+    (llama-server running for weeks) grows without bound. Called on every
+    ``phase_spawn``, so it covers each BOOT/RELOAD; it does not protect within
+    a single long run without restart, that needs system-level logrotate."""
     if log.exists() and log.stat().st_size > max_bytes:
         rotated = log.with_name(log.name + ".1")
         rotated.unlink(missing_ok=True)
@@ -45,12 +45,12 @@ async def _wait_http_ready(
     max_interval: float,
     backoff: float,
 ) -> bool:
-    """Poll de ``url`` con backoff exponencial (capeado en ``max_interval``)
-    hasta que responda 200 o se agote ``timeout``. Arranca en ``interval``
-    para no perder la respuesta rápida de servicios livianos (tts) y crece
-    para no saturar el endpoint de un servicio que tarda en cargar (modelos
-    grandes en llama-server) con polls cada 2s durante 90s. Devuelve True si
-    llegó a responder."""
+    """Poll ``url`` with exponential backoff (capped at ``max_interval``)
+    until it answers 200 or ``timeout`` runs out. Starts at ``interval`` so
+    as not to miss the quick answer of lightweight services (tts) and grows
+    so as not to flood the endpoint of a slow-loading service (large models
+    in llama-server) with polls every 2s for 90s. Return True if it
+    answered."""
     waited = 0.0
     while not await host.probe.http_ok(url):
         if waited >= timeout:
@@ -63,9 +63,9 @@ async def _wait_http_ready(
 
 
 def service_port(service: ServiceSpec) -> int:
-    """El puerto con el que se habla del servicio. Un servicio sin puerto no
-    es direccionable: que una fase que sí lo necesita llegue
-    acá es un error de programación, no una condición operativa."""
+    """The port used to talk to the service. A service without a port is not
+    addressable: a phase that does need one reaching
+    here is a programming error, not an operational condition."""
     if service.port is None:
         raise ValueError(f"{service.display_name} has no port to talk to")
     return service.port
@@ -91,9 +91,9 @@ async def phase_spawn(host: Host, report: PhaseReport, *, service: LocalProcessS
     except SpawnFailed as exc:
         report.error(f"{service.display_name} no arrancó: {exc}")
         raise PhaseError(f"{service.display_name} failed to start: {exc}") from exc
-    # Sin esto, un binario/flag roto que crashea al instante queda reportado
-    # como "lanzado" y la fase siguiente solo se entera 90s después con un
-    # timeout genérico.
+    # Without this, a broken binary/flag that crashes instantly is reported
+    # as "launched" and the next phase only finds out 90s later with a
+    # generic timeout.
     await host.clock.sleep(_SPAWN_GRACE_SECONDS)
     if not host.processes.is_alive(process):
         report.error(f"{service.display_name} murió al instante — revisa {service.log}")
@@ -109,12 +109,12 @@ async def phase_wait_ready(
     timeout: int | None = None,
     required: bool = False,
 ) -> bool:
-    """Poll de ``service.ready_url`` — compartido entre los servicios locales y
-    los de docker compose. Un servicio sin ``ready_url`` (sin healthcheck HTTP
-    propio) no tiene nada que pollear y vuelve al toque. Devuelve si
-    respondió: para boot un timeout es solo un aviso, para quien lo necesite
-    arriba (``phase_recreate_with_new_secret``) es un fallo. Con ``required``
-    el timeout es un fallo de la fase."""
+    """Poll ``service.ready_url`` — shared between local and docker compose
+    services. A service without ``ready_url`` (no HTTP healthcheck of its
+    own) has nothing to poll and returns right away. Return whether it
+    answered: for boot a timeout is only a warning, for whoever needs it
+    up (``phase_recreate_with_new_secret``) it is a failure. With
+    ``required`` the timeout is a phase failure."""
     if service.ready_url is None:
         return True
     timeout = service.ready_timeout if timeout is None else timeout
@@ -139,10 +139,10 @@ async def phase_wait_ready(
 
 
 async def phase_kill(host: Host, report: PhaseReport, *, service: ServiceSpec, required: bool = False) -> None:
-    """Con ``required``, un puerto que sigue ocupado después de forzar es un
-    fallo de la fase, no un aviso."""
-    # Matamos por puerto (no por PID guardado): lo que importa es quién sea
-    # que esté escuchando ahí.
+    """With ``required``, a port still busy after forcing is a phase
+    failure, not a warning."""
+    # Kill by port (not by a stored PID): what matters is whoever is
+    # listening there.
     port = service_port(service)
     if not await host.probe.port_open(port):
         report.warn(f"No había {service.display_name} corriendo en :{port}")
@@ -165,14 +165,14 @@ async def phase_kill(host: Host, report: PhaseReport, *, service: ServiceSpec, r
 
 
 async def phase_notice(host: Host, report: PhaseReport, *, message: str) -> None:
-    """Una unidad que no corre: deja su motivo como aviso en el resultado."""
+    """A unit that does not run: leaves its reason as a warning in the result."""
     report.warn(message)
 
 
 async def phase_wait_port_free(host: Host, report: PhaseReport, *, port: int, timeout: int = 30) -> None:
-    """Genérico a propósito (no atado a un servicio): RELOAD lo usa para
-    esperar a que el puerto de un servicio puntual (hoy llama-server) quede
-    libre entre el shutdown y el boot."""
+    """Generic on purpose (not tied to a service): RELOAD uses it to wait
+    for the port of a specific service (today llama-server) to be free
+    between shutdown and boot."""
     waited = 0
     while await host.probe.port_open(port):
         if waited >= timeout:
@@ -187,8 +187,8 @@ async def phase_wait_port_free(host: Host, report: PhaseReport, *, port: int, ti
 
 
 async def _build_args(host: Host, service: DockerComposeSpec, report: PhaseReport) -> dict[str, str]:
-    """Un ``--build-arg`` por cada ``npm_build_args``, con la última versión
-    publicada del paquete (``latest`` si el registry no responde)."""
+    """One ``--build-arg`` per ``npm_build_args`` entry, with the package's
+    latest published version (``latest`` if the registry does not answer)."""
     build: dict[str, str] = {}
     for arg, package in service.npm_build_args:
         version = await host.registry.latest(package)
@@ -208,8 +208,8 @@ async def phase_up(host: Host, report: PhaseReport, *, service: DockerComposeSpe
     if rebuild and service.build_args:
         report.warn(f"Reconstruyendo imagen {service.display_name.lower()}…")
         build = await _build_args(host, service, report)
-    # El nombre del servicio es obligatorio (el adapter siempre lo nombra): sin él compose
-    # recrea todo el proyecto con el env de este servicio solamente.
+    # The service name is mandatory (the adapter always names it): without it compose
+    # recreates the whole project with only this service's env.
     result = await host.compose.up(service.stack, build=build)
     report_output(report, result)
     report_output(report, await host.compose.logs(service.stack, tail=5))
@@ -225,9 +225,9 @@ async def phase_down(host: Host, report: PhaseReport, *, service: DockerComposeS
     if not directory.is_dir():
         report.warn(f"{directory} no encontrado — omitido")
         return
-    # Solo este servicio: los servicios compose comparten un mismo compose
-    # project (docker-compose.yaml en la raíz, ver services.py) — un `down` a
-    # secas tumbaría los otros también.
+    # Only this service: the compose services share one compose project
+    # (docker-compose.yaml at the root, see services.py) — a bare `down`
+    # would take the others down too.
     result = await host.compose.down(service.stack)
     require_ok(
         report, result, failed=f"{service.display_name}: docker compose down falló",

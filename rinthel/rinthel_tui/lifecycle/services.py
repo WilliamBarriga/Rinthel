@@ -1,6 +1,6 @@
-"""Instancias concretas de ``LocalProcessService``/``DockerComposeService``
-— un lugar único para agregar un servicio nuevo (llama-server local, o
-Understory y el portal vía docker compose) sin tocar ``service_defs.py``.
+"""Concrete instances of ``LocalProcessService``/``DockerComposeService``
+— a single place to add a new service (local llama-server, or Understory
+and the portal via docker compose) without touching ``service_defs.py``.
 """
 
 import json
@@ -15,11 +15,11 @@ from rinthel_tui.models.domain.types import Capability
 
 
 def _llama_argv(cfg: RinthelConfig) -> list[str]:
-    """El argv del Validated profile con el Local model activo: cualquier
-    cambio de orden o de flags pide un benchmark nuevo
-    (``docs/05-windows-validation.md``). Sin Local model activo no hay nada
-    que lanzar (``specs.boot_plan`` deja a llama-server fuera); parar por
-    puerto no necesita el argv."""
+    """The Validated profile argv with the active Local model: any change of
+    order or flags calls for a new benchmark
+    (``docs/05-windows-validation.md``). Without an active Local model there
+    is nothing to launch (``specs.boot_plan`` leaves llama-server out);
+    stopping by port does not need the argv."""
     model = cfg.local_model
     if model is None:
         return []
@@ -30,9 +30,9 @@ def _llama_argv(cfg: RinthelConfig) -> list[str]:
         "-c", str(model.context_window),
         "-fa", "on" if llama.flash_attention else "off",
         "-fit", "on" if llama.fit_to_memory else "off",
-        # 0.0.0.0, no 127.0.0.1 (el default de llama-server): Understory
-        # corre en un container Docker y llega acá vía host.docker.internal
-        # (host-gateway), que no alcanza un bind en loopback puro.
+        # 0.0.0.0, not 127.0.0.1 (llama-server's default): Understory
+        # runs in a Docker container and gets here via host.docker.internal
+        # (host-gateway), which cannot reach a pure loopback bind.
         "--host", "0.0.0.0",
         "--port", str(llama.port),
         "--n-cpu-moe", str(llama.n_cpu_moe),
@@ -49,15 +49,15 @@ def _llama_argv(cfg: RinthelConfig) -> list[str]:
         "--cache-reuse", str(llama.cache_reuse),
         "--cache-ram", str(llama.cache_ram),
         "--load-mode", llama.load_mode,
-        # MTP lo prende el Local model (``mtp``): apagado, el modo se fuerza a
-        # "none" sin mirar spec_type; prendido, manda spec_type.
+        # The Local model turns MTP on (``mtp``): off, the mode is forced to
+        # "none" regardless of spec_type; on, spec_type rules.
         "--spec-type", llama.spec_type if model.mtp else "none",
         "--spec-draft-n-max", str(llama.spec_draft_n_max),
         "--cache-type-k", llama.cache_type_k,
         "--cache-type-v", llama.cache_type_v,
     ]
-    # --mmproj se omite con MTP: llama.cpp no lo soporta junto a spec
-    # decoding. La entrada del catálogo no cambia; solo se saltea el flag.
+    # --mmproj is omitted with MTP: llama.cpp does not support it together
+    # with spec decoding. The catalog entry does not change; only the flag is skipped.
     if model.mmproj is not None and not model.mtp:
         argv += ["--mmproj", str(model.mmproj)]
     if cfg.moe.cache_mib > 0:
@@ -136,10 +136,10 @@ def _audiocpp_files(cfg: RinthelConfig) -> dict[Path, str]:
 
 # ── LocalProcessService ───────────────────────────────────────────────
 #
-# menu_label/wait_label/kill_label alimentan directamente los labels de
-# PhaseSpec en specs.py — agregar un servicio nuevo acá (más su entrada en
-# LOCAL_SERVICES/DOCKER_SERVICES más abajo) alcanza para que aparezca en
-# BOOT/TERMINATE/RELOAD sin tocar specs.py.
+# menu_label/wait_label/kill_label feed the PhaseSpec labels in specs.py
+# directly — adding a new service here (plus its entry in
+# LOCAL_SERVICES/DOCKER_SERVICES below) is enough for it to show up in
+# BOOT/TERMINATE/RELOAD without touching specs.py.
 
 LLAMA_SERVICE = LocalProcessService(
     display_name="llama-server",
@@ -233,11 +233,11 @@ def _deck_host_exec_env(cfg: RinthelConfig) -> dict[str, str]:
 
 # ── DockerComposeService ──────────────────────────────────────────────
 #
-# Comparten un único docker-compose.yaml en la raíz de la Instance
-# (`extends:` de understory/, `include:` de deck/), así que todos los
-# ``dir_of`` apuntan a ``cfg.instance.root`` — no a ``cfg.understory.dir``/
-# ``cfg.deck.dir``, que describen dónde vive el *código fuente* del
-# componente, un concepto distinto de "desde dónde corro docker compose".
+# They share a single docker-compose.yaml at the Instance root
+# (`extends:` of understory/, `include:` of deck/), so every
+# ``dir_of`` points at ``cfg.instance.root`` — not at ``cfg.understory.dir``/
+# ``cfg.deck.dir``, which describe where the component's *source code*
+# lives, a different concept from "where I run docker compose from".
 
 UNDERSTORY_SERVICE = DockerComposeService(
     display_name="Understory",
@@ -268,7 +268,7 @@ def understory_url(cfg: RinthelConfig) -> str | None:
     return f"http://127.0.0.1:{cfg.understory.port}"
 
 
-# Deck, el portal web de la Instance.
+# Deck, the Instance's web portal.
 DECK_SERVICE = DockerComposeService(
     display_name="Deck",
     menu_label="DECK  --  WEB PORTAL",
@@ -283,7 +283,7 @@ DECK_SERVICE = DockerComposeService(
     ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.deck.port}/api/auth/status",
 )
 
-# Orden de aparición en BOOT/TERMINATE/RELOAD — agregar o sacar un servicio de
-# estas listas alcanza para que los planes lo reflejen.
+# Order of appearance in BOOT/TERMINATE/RELOAD — adding or removing a service
+# from these lists is enough for the plans to reflect it.
 LOCAL_SERVICES: list[LocalProcessService] = [LLAMA_SERVICE, WHISPER_SERVICE, AUDIOCPP_SERVICE, HOSTEXECD_SERVICE]
 DOCKER_SERVICES: list[DockerComposeService] = [UNDERSTORY_SERVICE, DECK_SERVICE]

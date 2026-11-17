@@ -1,7 +1,7 @@
-"""``domain/phases/docker.py``, lo que no encaja en el patrón de
-service_phases.py: el chequeo del daemon de Docker. El resto (spawn/wait/kill
-de servicios, up/down docker) se prueba en test_service_phases.py. Corre
-contra un ``Host`` de dobles."""
+"""``domain/phases/docker.py``, what does not fit the service_phases.py
+pattern: the Docker daemon check. The rest (service spawn/wait/kill, docker
+up/down) is tested in test_service_phases.py. Runs against a ``Host`` of
+doubles."""
 
 import pytest
 
@@ -25,7 +25,7 @@ async def test_check_docker_succeeds_when_the_daemon_answers(report):
 
 async def test_check_docker_starts_an_inactive_daemon_with_passwordless_sudo(report):
     host, log = fake_host()
-    host.runner.script_rcs(INFO, [1, 0])  # caído, y arriba después de levantarlo
+    host.runner.script_rcs(INFO, [1, 0])  # down, then up after starting it
     host.runner.script(START, rc=0)
 
     await phases.phase_check_docker(host, report)

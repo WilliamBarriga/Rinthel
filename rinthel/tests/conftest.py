@@ -1,6 +1,6 @@
-"""Fixtures compartidas. Ningún test toca red ni subprocesos reales: lo que
-varía entra por un puerto con su doble (``tests/lifecycle/fakes.py``) o por
-un parámetro (ADR 0005)."""
+"""Shared fixtures. No test touches the real network or real subprocesses:
+what varies comes in through a port with its double
+(``tests/lifecycle/fakes.py``) or through a parameter (testing-policy ADR)."""
 
 import contextlib
 import dataclasses
@@ -34,8 +34,8 @@ def pytest_addoption(parser):
 
 
 class FakeReport:
-    """PhaseReport de prueba: junta los mensajes en listas en vez de imprimir,
-    para poder assertear contra ellos."""
+    """Test PhaseReport: collects the messages in lists instead of printing,
+    so tests can assert against them."""
 
     def __init__(self) -> None:
         self.infos: list[str] = []
@@ -63,9 +63,10 @@ def report() -> FakeReport:
 
 @pytest.fixture
 def cfg(tmp_path):
-    """RinthelConfig real (misma construcción que en prod vía default_config())
-    sobre una Instance en tmp_path — layout (.env, data/, subtrees) y paths
-    de log fuera del repo real — con un Local model activo, como deja INSTALL."""
+    """Real RinthelConfig (same construction as in prod via default_config())
+    over an Instance in tmp_path — layout (.env, data/, subtrees) and log
+    paths outside the real repo — with an active Local model, as INSTALL
+    leaves it."""
     base = default_config(Instance(tmp_path), platform="linux")
     base = with_local_model(base, LocalModel("test-model", "Test model", "llm", tmp_path / "model.gguf", 112000))
     return dataclasses.replace(base, llama=dataclasses.replace(base.llama, log=tmp_path / "llama-server.log"))
@@ -73,8 +74,8 @@ def cfg(tmp_path):
 
 @pytest.fixture(autouse=True)
 def _hermetic_llama_env(monkeypatch):
-    """El entorno real de la máquina no debe filtrarse a los tests: paths de
-    llama.cpp, variables legacy del fork y la raíz de la Instance."""
+    """The machine's real environment must not leak into the tests: llama.cpp
+    paths, the fork's legacy variables and the Instance root."""
     for name in (
         "RINTHEL_LLAMA_BIN", "RINTHEL_LLAMACPP_REPO_DIR", "RINTHEL_MOE_CACHE_SLOTS",
         "RINTHEL_MOE_CACHE_PROFILE", "RINTHEL_MOE_TRACE_BUILD",
@@ -88,9 +89,9 @@ def _hermetic_llama_env(monkeypatch):
 
 @pytest.fixture
 def resource_warnings():
-    """Context manager que junta las ``ResourceWarning`` emitidas adentro
-    (conexiones sin cerrar, por ejemplo), con un ``gc.collect()`` a
-    cada lado para que cuente solo lo que se abrió en el bloque."""
+    """Context manager that collects the ``ResourceWarning`` emitted inside
+    (unclosed connections, for example), with a ``gc.collect()`` on
+    each side so it counts only what was opened in the block."""
 
     @contextlib.contextmanager
     def collect():
@@ -107,8 +108,8 @@ def resource_warnings():
 
 @pytest.fixture
 def serve_http():
-    """``serve_http(handler_cls) -> port``: un ``HTTPServer`` local en un
-    hilo, apagado y cerrado al terminar el test."""
+    """``serve_http(handler_cls) -> port``: a local ``HTTPServer`` in a
+    thread, shut down and closed when the test ends."""
     running: list[tuple[HTTPServer, threading.Thread]] = []
 
     def serve(handler_cls: type[BaseHTTPRequestHandler]) -> int:
@@ -127,9 +128,9 @@ def serve_http():
 
 @pytest.fixture
 def fake_executable():
-    """``fake_executable(path, body)``: un script Python ejecutable en
-    ``path`` con ``body`` como cuerpo. Para los adapters que corren un proceso
-    (``nvidia-smi``, ``docker``): se les pasa por constructor."""
+    """``fake_executable(path, body)``: an executable Python script at
+    ``path`` with ``body`` as its body. For the adapters that run a process
+    (``nvidia-smi``, ``docker``): it is passed to them via the constructor."""
 
     def write(path: Path, body: str) -> None:
         path.write_text(f"#!{sys.executable}\n{body}")

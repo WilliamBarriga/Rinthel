@@ -1,11 +1,11 @@
-"""Lifecycle plans (ver GLOSSARY.md): qué corre cada comando — tandas
-ordenadas, chequeo de DOCKER incluido y failure policy. Los corre
-``executor.execute``.
+"""Lifecycle plans (see GLOSSARY.md): what each command runs — ordered
+batches, DOCKER check included, and failure policy. ``executor.execute``
+runs them.
 
-BOOT/TERMINATE/RELOAD se arman iterando ``services.LOCAL_SERVICES``/
-``services.DOCKER_SERVICES`` — agregar o sacar un servicio ahí (más su
-instancia en ``services.py``) alcanza para que los planes lo reflejen sin
-tocar este archivo a mano.
+BOOT/TERMINATE/RELOAD are built by iterating ``services.LOCAL_SERVICES``/
+``services.DOCKER_SERVICES`` — adding or removing a service there (plus its
+instance in ``services.py``) is enough for the plans to reflect it without
+touching this file by hand.
 """
 
 from collections.abc import Callable, Coroutine
@@ -24,9 +24,9 @@ PhaseFn = Callable[..., Coroutine[Any, Any, None]]
 
 @dataclass(frozen=True)
 class PhaseSpec:
-    """Una fase del plan: ``fn(host, report, **kwargs)``. Lo que la fase necesita
-    (el spec de un servicio, o la tarea de INSTALL) llega por ``kwargs``, ya
-    atado por el builder del plan."""
+    """A plan phase: ``fn(host, report, **kwargs)``. What the phase needs
+    (a service's spec, or the INSTALL task) arrives via ``kwargs``, already
+    bound by the plan builder."""
 
     label: str
     fn: PhaseFn
@@ -38,7 +38,7 @@ class PhaseSpec:
 
 @dataclass(frozen=True)
 class Unit:
-    """Las fases de una unidad — un ``ServiceOutcome`` en la respuesta."""
+    """The phases of one unit — one ``ServiceOutcome`` in the response."""
 
     service: str
     phases: tuple[PhaseSpec, ...]
@@ -46,8 +46,8 @@ class Unit:
 
 @dataclass(frozen=True)
 class Batch:
-    """Tanda de unidades. ``marker`` se transmite como ``phase_batch`` al
-    abrirla; ``None`` no transmite nada."""
+    """A batch of units. ``marker`` is broadcast as ``phase_batch`` when it
+    opens; ``None`` broadcasts nothing."""
 
     marker: str | None
     units: tuple[Unit, ...]
@@ -55,16 +55,16 @@ class Batch:
 
 @dataclass(frozen=True)
 class Plan:
-    """Lifecycle plan: lo que corre un comando entero. ``on_failure`` es la
-    failure policy del plan — "stop" corta en la primera unidad que falla,
-    "continue" sigue con las que quedan."""
+    """Lifecycle plan: what a whole command runs. ``on_failure`` is the
+    plan's failure policy — "stop" halts at the first failing unit,
+    "continue" goes on with the remaining ones."""
 
     on_failure: Literal["stop", "continue"]
     batches: tuple[Batch, ...]
 
 
-# ── builders de PhaseSpec por servicio — un solo lugar que sabe qué label
-# y qué kwargs le corresponden a cada tipo de fase ────────────────────────
+# ── per-service PhaseSpec builders — a single place that knows which label
+# and which kwargs belong to each phase type ──────────────────────────────
 
 
 def _spawn_spec(cfg: RinthelConfig, service: LocalProcessService) -> PhaseSpec:
@@ -72,9 +72,9 @@ def _spawn_spec(cfg: RinthelConfig, service: LocalProcessService) -> PhaseSpec:
 
 
 def _wait_spec(cfg: RinthelConfig, service: LocalProcessService | DockerComposeService) -> PhaseSpec:
-    # Mismo phase_wait_ready para los dos tipos de servicio — ver
-    # service_defs._ServiceBase, de donde ambos heredan los campos de
-    # ready/poll.
+    # Same phase_wait_ready for both service types — see
+    # service_defs._ServiceBase, from which both inherit the ready/poll
+    # fields.
     return PhaseSpec(f"◈ ESPERANDO {service.wait_label}", service_phases.phase_wait_ready, {"service": service.spec(cfg)})
 
 
@@ -95,10 +95,10 @@ def _down_spec(cfg: RinthelConfig, service: DockerComposeService) -> PhaseSpec:
 
 
 # ── INSTALL ───────────────────────────────────────────────────────────────
-# Un Unit por InstallUnit habilitada, más PREFLIGHT como Unit propio y
-# primero: si falta CUDA/docker no tiene sentido seguir con clone/build/
-# descarga. No numera labels: el daemon no pinta checklist, solo necesita qué
-# corrió y si salió bien.
+# One Unit per enabled InstallUnit, plus PREFLIGHT as its own Unit and
+# first: if CUDA/docker is missing there is no point going on with clone/
+# build/download. Labels are not numbered: the daemon paints no checklist, it
+# only needs what ran and whether it went well.
 def _install_spec(cfg: RinthelConfig, step: install.InstallStep) -> PhaseSpec:
     return PhaseSpec(f"◈ {step.label}", step.fn, {"task": step.task(cfg)})
 
@@ -125,15 +125,15 @@ def install_plan(cfg: RinthelConfig, *, voice: bool = False) -> Plan:
 
 
 # ── BOOT/TERMINATE ────────────────────────────────────────────────────────
-# Un Unit por servicio: el daemon devuelve un ServiceOutcome por servicio en
-# POST /boot y /terminate (wire shape fijado en docs/adr/0001), aunque boot
-# corra 2 fases por servicio (spawn+wait / up+wait) y terminate 1 (kill /
-# down). El chequeo de DOCKER es un Unit más ("docker"), primero en boot:
-# si falla, boot no toca ningún servicio.
+# One Unit per service: the daemon returns one ServiceOutcome per service in
+# POST /boot and /terminate (wire shape fixed in docs/adr/0001), even though
+# boot runs 2 phases per service (spawn+wait / up+wait) and terminate 1 (kill /
+# down). The DOCKER check is one more Unit ("docker"), first in boot:
+# if it fails, boot touches no service.
 
 
 def _container_user(cfg: RinthelConfig) -> tuple[int, int]:
-    """``PUID``/``PGID`` del ``.env``, con el 1000:1000 que compose usa si faltan."""
+    """``PUID``/``PGID`` from the ``.env``, with the 1000:1000 compose uses if missing."""
     instance = cfg.instance
     return int(instance.variable("PUID") or 1000), int(instance.variable("PGID") or 1000)
 
@@ -148,8 +148,8 @@ def _enabled_docker(cfg: RinthelConfig) -> list[DockerComposeService]:
 
 def _local_unit(cfg: RinthelConfig, svc: LocalProcessService) -> Unit:
     if svc is services.LLAMA_SERVICE and cfg.local_model is None:
-        # Sin Local model activo usable llama no arranca: el aviso queda en
-        # el resultado del boot y el resto de los servicios sigue.
+        # Without a usable active Local model llama does not start: the notice
+        # stays in the boot result and the rest of the services go on.
         notice = PhaseSpec(
             f"◈ {svc.menu_label}  --  SIN LOCAL MODEL ACTIVO",
             service_phases.phase_notice,
@@ -160,9 +160,9 @@ def _local_unit(cfg: RinthelConfig, svc: LocalProcessService) -> Unit:
 
 
 def restart_phases(cfg: RinthelConfig, service: LocalProcessService) -> tuple[PhaseSpec, ...]:
-    """Parar lo que escuche en el puerto de ``service``, lanzarlo con el
-    modelo de ``cfg`` y esperar a que responda. Cada paso es obligatorio: un
-    puerto que no se libera o un modelo que no responde es un fallo."""
+    """Stop whatever listens on ``service``'s port, launch it with ``cfg``'s
+    model and wait for it to respond. Every step is required: a port that is
+    not freed or a model that does not respond is a failure."""
     spec = service.spec(cfg)
     return (
         PhaseSpec(f"◈ {service.kill_label}", service_phases.phase_kill, {"service": spec, "required": True}),
@@ -172,22 +172,22 @@ def restart_phases(cfg: RinthelConfig, service: LocalProcessService) -> tuple[Ph
 
 
 def restart_plan(cfg: RinthelConfig, service: LocalProcessService) -> Plan:
-    """El cambio de Local model de la Capability que sirve ``service``
-    (``services.MODEL_SERVICES``): quien cambia decide el rollback."""
+    """The Local model switch of the Capability ``service`` serves
+    (``services.MODEL_SERVICES``): whoever switches decides the rollback."""
     unit = Unit(service.display_name.lower(), restart_phases(cfg, service))
     return Plan(on_failure="stop", batches=(Batch(marker=None, units=(unit,)),))
 
 
 def stop_plan(cfg: RinthelConfig, service: LocalProcessService) -> Plan:
-    """Apagar una Capability (``models off``): parar ``service`` por su
-    puerto; un puerto que no se libera es un fallo."""
+    """Turn a Capability off (``models off``): stop ``service`` by its
+    port; a port that is not freed is a failure."""
     kill = PhaseSpec(f"◈ {service.kill_label}", service_phases.phase_kill, {"service": service.spec(cfg), "required": True})
     return Plan(on_failure="stop", batches=(Batch(marker=None, units=(Unit(service.display_name.lower(), (kill,)),)),))
 
 
 def _docker_unit(cfg: RinthelConfig, svc: DockerComposeService, *, rebuild: bool = False) -> Unit:
-    """Un servicio compose: arriba y esperado. Deck, que corre con el usuario
-    del host, antes de todo deja su volumen con el dueño del contenedor."""
+    """A compose service: up and awaited. Deck, which runs as the host user,
+    first of all hands its volume to the container's owner."""
     phases = [_up_spec(cfg, svc, rebuild=rebuild), _wait_spec(cfg, svc)]
     if svc is services.DECK_SERVICE:
         uid, gid = _container_user(cfg)
@@ -201,7 +201,7 @@ def _docker_unit(cfg: RinthelConfig, svc: DockerComposeService, *, rebuild: bool
 
 
 def _shutdown_units(cfg: RinthelConfig) -> tuple[Unit, ...]:
-    """Lo comparten ``terminate_plan`` y el shutdown de ``reload_plan``."""
+    """Shared by ``terminate_plan`` and the shutdown of ``reload_plan``."""
     return (
         *[Unit(svc.display_name.lower(), (_kill_spec(cfg, svc),)) for svc in _enabled_local(cfg)],
         *[Unit(svc.display_name.lower(), (_down_spec(cfg, svc),)) for svc in _enabled_docker(cfg)],
@@ -222,21 +222,21 @@ def boot_plan(cfg: RinthelConfig) -> Plan:
 
 
 def terminate_plan(cfg: RinthelConfig) -> Plan:
-    """``continue``: terminate sigue con lo que queda aunque un servicio no
-    se deje parar (GLOSSARY.md, Boot / Terminate)."""
+    """``continue``: terminate goes on with what remains even if a service
+    refuses to stop (GLOSSARY.md, Boot / Terminate)."""
     return Plan(on_failure="continue", batches=(Batch(marker=None, units=_shutdown_units(cfg)),))
 
 
 # ── RELOAD ────────────────────────────────────────────────────────────────
-# shutdown (sin marcador) → "boot" (DOCKER y los servicios locales) →
-# "rebuild" (docker, build + up). Los marcadores viajan como ``phase_batch``
-# para que el cliente sepa cuándo disparar sus transiciones (docs/adr/0001).
+# shutdown (no marker) → "boot" (DOCKER and the local services) →
+# "rebuild" (docker, build + up). The markers travel as ``phase_batch``
+# so the client knows when to fire its transitions (docs/adr/0001).
 def reload_plan(cfg: RinthelConfig) -> Plan:
     shutdown = list(_shutdown_units(cfg))
     llama = services.LLAMA_SERVICE
-    # llama-server tarda en soltar el puerto (mlock de un modelo grande): si
-    # boot lo vuelve a prender, que lo encuentre libre. Solo si está
-    # habilitado: si no, nadie lo mató ni nadie lo va a levantar.
+    # llama-server is slow to release the port (mlock of a large model): if
+    # boot turns it back on, it should find it free. Only if it is
+    # enabled: otherwise nobody killed it and nobody will bring it up.
     if llama.enabled_of(cfg):
         shutdown.append(
             Unit(

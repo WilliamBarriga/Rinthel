@@ -96,7 +96,7 @@ def test_validate_warns_on_missing_paths_but_does_not_raise(cfg):
     assert any("no existe todavía" in w for w in warnings)
 
 
-# ── MTP: lo prende el Local model + warnings de los combos inseguros ─────
+# ── MTP: the Local model turns it on + warnings on the unsafe combos ────
 
 
 def _mtp(cfg, *, mtp=True, mmproj=None, **llama):
@@ -105,7 +105,7 @@ def _mtp(cfg, *, mtp=True, mmproj=None, **llama):
 
 
 def test_validate_warns_when_mtp_is_on_with_a_batch_that_does_not_fit(cfg):
-    # test-tarkAIrk/logs/27: MTP + batch 2048 = 48 MiB libres, CUDA OOM.
+    # test-tarkAIrk/logs/27: MTP + batch 2048 = 48 MiB free, CUDA OOM.
     risky = _mtp(cfg, batch_size=2048, ubatch_size=2048)
     warnings = risky.validate()
     assert any("MTP + batch/ubatch 2048/2048" in w and "logs/27" in w for w in warnings)
@@ -117,7 +117,7 @@ def test_validate_does_not_warn_about_batch_size_with_mtp_off(cfg):
 
 
 def test_validate_warns_on_mtp_with_parallel_gt_1_and_with_vision(cfg):
-    # Las dos limitaciones propias de llama.cpp (handoff/03), no de VRAM.
+    # The two limits of llama.cpp itself (handoff/03), not of VRAM.
     combo = _mtp(cfg, mmproj=Path("/m/mmproj-F16.gguf"), batch_size=512, ubatch_size=512, parallel=2)
     warnings = combo.validate()
     assert any("--parallel > 1" in w for w in warnings)
@@ -125,8 +125,8 @@ def test_validate_warns_on_mtp_with_parallel_gt_1_and_with_vision(cfg):
 
 
 def test_validate_warns_when_the_model_turns_mtp_on_but_spec_type_is_none(cfg):
-    # MTP prendido en el catálogo pero modo "none": el argv arrancaría con
-    # --spec-type none, MTP apagado pese a la entrada.
+    # MTP on in the catalog but mode "none": the argv would start with
+    # --spec-type none, MTP off despite the entry.
     contradictory = _mtp(cfg, spec_type="none", batch_size=512, ubatch_size=512)
     assert any("queda apagado" in w for w in contradictory.validate())
 
@@ -174,8 +174,8 @@ def test_validate_warns_without_an_active_local_model(tmp_path):
 
 
 # ── stringify/diff_overrides/with_overrides ─────────────────────────────
-# Esta lógica es compartida entre el daemon (GET/POST /config) y cualquier
-# UI, no específica de una sola.
+# This logic is shared by the daemon (GET/POST /config) and any UI, not
+# specific to one.
 
 
 def test_stringify_bool_uses_lowercase_true_false():
@@ -209,11 +209,11 @@ def test_diff_overrides_ignores_env_vars_not_in_any_field(cfg):
 
 def test_diff_overrides_reflects_a_cfg_already_disabled(cfg):
     disabled = dataclasses.replace(cfg, deck=dataclasses.replace(cfg.deck, enabled=False))
-    # Re-habilitar en la UI, contra un cfg que ya está deshabilitado, debe
-    # contar como cambio.
+    # Re-enabling in the UI, against a cfg that is already disabled, must
+    # count as a change.
     edits = {"RINTHEL_DECK_ENABLED": "true"}
     assert diff_overrides(disabled, edits) == {"RINTHEL_DECK_ENABLED": "true"}
-    # Pero "false" contra ese mismo cfg ya deshabilitado no es un cambio.
+    # But "false" against that same disabled cfg is not a change.
     assert diff_overrides(disabled, {"RINTHEL_DECK_ENABLED": "false"}) == {}
 
 

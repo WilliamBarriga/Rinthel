@@ -1,6 +1,6 @@
-"""Lo que no encaja en el patrón genérico de ``service_phases.py``: un
-chequeo de infra (el daemon de Docker) que no es ni un proceso local ni un
-stack docker compose en sí mismo."""
+"""What does not fit the generic pattern of ``service_phases.py``: an infra
+check (the Docker daemon) that is neither a local process nor a docker
+compose stack itself."""
 
 from rinthel_tui.lifecycle.domain.errors import PhaseError
 from rinthel_tui.lifecycle.domain.host import Host
@@ -21,12 +21,12 @@ async def phase_check_docker(host: Host, report: PhaseReport) -> None:
             "espera a que indique que el motor está ejecutándose y vuelve a intentar"
         )
         raise PhaseError("docker daemon inactive; start Docker Desktop")
-    # Intento de auto-levante no interactivo (`sudo -n`): si ya hay una regla
-    # NOPASSWD para este comando, boot sigue solo; si no, `sudo` falla al
-    # toque en vez de colgarse esperando una contraseña que nunca va a llegar
-    # (este proceso no tiene TTY). Sin NOPASSWD configurado, el daemon nunca
-    # levanta Docker solo — solo le pasa al usuario el comando exacto para
-    # que lo corra a mano y el PRÓXIMO boot ya lo encuentre activo.
+    # Non-interactive auto-start attempt (`sudo -n`): if there is already a
+    # NOPASSWD rule for this command, boot carries on by itself; if not,
+    # `sudo` fails right away instead of hanging on a password that will never
+    # come (this process has no TTY). Without NOPASSWD configured, the daemon
+    # never starts Docker by itself — it only hands the user the exact command
+    # to run by hand so the NEXT boot finds it already running.
     started = await host.runner.run(["sudo", "-n", "systemctl", "start", "docker"])
     if started.rc == 0 and await _docker_ready(host):
         report.success("Docker daemon estaba inactivo — levantado solo (sudo -n systemctl start docker)")

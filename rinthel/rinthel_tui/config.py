@@ -1,25 +1,25 @@
-"""Única fuente de verdad para paths/puertos de infra.
+"""Single source of truth for infra paths/ports.
 
-Reemplaza ``nightcity/config/rinthel-env.sh``. A diferencia del bash, no hace
-falta un patrón de "exportar todo arriba": las fases reciben ``cfg``
-explícito como argumento (no leen el entorno global), así que no importa en
-qué orden ni en qué proceso/subshell corran.
+Replaces ``nightcity/config/rinthel-env.sh``. Unlike the bash version, there
+is no need for an "export everything up front" pattern: phases receive
+``cfg`` explicitly as an argument (they do not read the global environment),
+so it does not matter in which order or in which process/subshell they run.
 
-``RinthelConfig`` es composición de un sub-config por servicio
+``RinthelConfig`` is composed of one sub-config per service
 (``cfg.llama``, ``cfg.understory``, ``cfg.deck``, ``cfg.moe``,
-``cfg.install``) — cada uno con sus propios
-campos, sin el prefijo repetido que tenían como campos sueltos del
-dataclass monolítico anterior (``cfg.llama_port`` -> ``cfg.llama.port``).
+``cfg.install``) — each with its own
+fields, without the repeated prefix they had as loose fields of the
+previous monolithic dataclass (``cfg.llama_port`` -> ``cfg.llama.port``).
 
-Todo campo puede overridearse con una var de entorno ``RINTHEL_*`` (ver
-``.env.example``) — los nombres de esas vars NO cambiaron con este split,
-salvo el caso especial de llama-server, que antes no tenía prefijo propio y
-ahora es consistente con el resto de los servicios (``RINTHEL_LLAMA_PORT``/
-``RINTHEL_LLAMA_MODEL_PATH``/``RINTHEL_LLAMA_LOG_PATH``).
+Every field can be overridden with a ``RINTHEL_*`` environment variable (see
+``.env.example``) — the names of those variables did NOT change with this
+split, except for the special case of llama-server, which had no prefix of
+its own before and is now consistent with the rest of the services
+(``RINTHEL_LLAMA_PORT``/``RINTHEL_LLAMA_MODEL_PATH``/``RINTHEL_LLAMA_LOG_PATH``).
 
-``default_config(instance)`` lee el ``.env`` de la Instance (ver
-``instance.py``) directo del archivo, sin tocar ``os.environ`` — las
-``RINTHEL_*`` del shell ganan sobre el archivo.
+``default_config(instance)`` reads the Instance's ``.env`` (see
+``instance.py``) straight from the file, without touching ``os.environ`` —
+the shell's ``RINTHEL_*`` win over the file.
 """
 
 import os
@@ -67,14 +67,14 @@ def _bool_env(name: str, default: bool, env: Mapping[str, str] | None = None) ->
 
 @dataclass(frozen=True)
 class Field:
-    """Un campo cargable desde env var — vive junto al dataclass que
-    describe, así que agregar/quitar un campo de un servicio es una sola
-    línea en un solo lugar, en vez de tocar el parsing en ``default_config()``
-    y por separado acordarse de sumarlo a los chequeos de ``validate()``.
+    """A field loadable from an env var — it lives next to the dataclass it
+    describes, so adding/removing a service field is a single line in a
+    single place, instead of touching the parsing in ``default_config()``
+    and separately remembering to add it to the ``validate()`` checks.
 
-    ``port``/``positive``/``exists`` etiquetan qué chequeo de ``validate()``
-    le corresponde a este campo — ver ``_ENTRIES`` más abajo, que los agrega
-    genéricamente en vez de 3 listas mantenidas a mano."""
+    ``port``/``positive``/``exists`` tag which ``validate()`` check applies
+    to this field — see ``_ENTRIES`` below, which aggregates them
+    generically instead of 3 hand-maintained lists."""
 
     attr: str
     env: str
@@ -83,11 +83,11 @@ class Field:
     port: bool = False
     positive: bool = False
     exists: bool = False
-    # Categoría para agrupar visualmente en [N] CONFIGURAR — "" para
-    # sub-configs con pocos campos que no lo necesitan (understory/
-    # deck/moe). Identificador plano (sin acentos) porque cruza a
-    # JSON/Rust vía GET /config; el label mostrado es responsabilidad del
-    # cliente.
+    # Category for visual grouping in [N] CONFIGURAR — "" for
+    # sub-configs with few fields that do not need it (understory/
+    # deck/moe). Plain identifier (no accents) because it crosses to
+    # JSON/Rust via GET /config; the displayed label is the client's
+    # responsibility.
     group: str = ""
 
 
@@ -99,9 +99,9 @@ _LOADERS: dict[type, Callable[[str, Any, Mapping[str, str]], Any]] = {
     str: _str_env,
 }
 
-# Parsers de un valor crudo (string, ej. lo que llega en un override de
-# POST /config) al tipo del campo — hermano de `_LOADERS`, que en cambio lee
-# desde una env var. Mismo criterio de verdad que `_bool_env` para bool.
+# Parsers from a raw value (string, e.g. what arrives in a POST /config
+# override) to the field's type — sibling of `_LOADERS`, which instead reads
+# from an env var. Same truthiness rule as `_bool_env` for bool.
 _PARSERS: dict[type, Callable[[str], Any]] = {
     Path: _p,
     int: int,
@@ -110,10 +110,10 @@ _PARSERS: dict[type, Callable[[str], Any]] = {
     str: lambda raw: raw,
 }
 
-# Nombre de tipo servido en GET /config (``kind``) para que el cliente sepa
-# qué widget renderizar (checkbox vs. input) sin tener que conocer los tipos
-# de Python — mismo criterio que "sin codegen" de ADR 0001, un dict chico en
-# vez de una herramienta de schema.
+# Type name served in GET /config (``kind``) so the client knows which
+# widget to render (checkbox vs. input) without knowing Python types —
+# same "no codegen" rule as ADR 0001, a small dict instead of a schema
+# tool.
 KIND_NAMES: dict[type, str] = {
     Path: "path",
     int: "int",
@@ -131,10 +131,10 @@ def _load(
     *,
     defaults: dict[str, Any] | None = None,
 ) -> Any:
-    """Instancia ``cls`` (un dataclass de config) leyendo cada ``Field`` de
-    ``source``. ``defaults`` pisa el default de algunos campos (el Validated profile de
-    una Platform). Un ``default`` callable es un default de layout: se
-    resuelve contra la ``instance`` (ej. ``understory.dir``)."""
+    """Instantiate ``cls`` (a config dataclass) reading each ``Field`` from
+    ``source``. ``defaults`` overrides the default of some fields (a
+    Platform's Validated profile). A callable ``default`` is a layout
+    default: it is resolved against the ``instance`` (e.g. ``understory.dir``)."""
     defaults = defaults or {}
 
     def default_of(f: Field) -> Any:
@@ -146,16 +146,16 @@ def _load(
 
 _LOCAL_MODEL_HINT = "es del Local model: editá models.local.json y elegí el activo con «models use <id>»"
 
-# Variables del fork thecodacus/llama.cpp que llama.cpp upstream no tiene: un
-# .env viejo las puede seguir trayendo y se ignoran en silencio.
+# Variables of the thecodacus/llama.cpp fork that upstream llama.cpp lacks: an
+# old .env may still carry them and they are silently ignored.
 _LEGACY_ENV: dict[str, str] = {
     "RINTHEL_MOE_CACHE_SLOTS": "usá RINTHEL_MOE_CACHE_MIB (--moe-cache-mib de upstream)",
     "RINTHEL_MOE_CACHE_PROFILE": "el perfil de ruteo MoE ya no existe en upstream",
     "RINTHEL_MOE_TRACE_BUILD": "llama-moe-trace ya no existe en upstream",
     "RINTHEL_MOE_TRACE_OUT_DIR": "llama-moe-trace ya no existe en upstream",
     "RINTHEL_SCHED_ASYNC_CPU": "--no-sched-async-cpu ya no existe en upstream",
-    # Lo que ahora es de cada Local model (catálogo ``models.local.json`` y
-    # ``[models]`` de ``data/instance.toml``), no del ``.env``.
+    # What now belongs to each Local model (``models.local.json`` catalog and
+    # ``[models]`` of ``data/instance.toml``), not to the ``.env``.
     "RINTHEL_LLAMA_MODEL_PATH": _LOCAL_MODEL_HINT,
     "RINTHEL_CONTEXT_WINDOW": _LOCAL_MODEL_HINT,
     "RINTHEL_LLAMA_MMPROJ_PATH": _LOCAL_MODEL_HINT,
@@ -188,9 +188,9 @@ class LlamaConfig:
     cache_reuse: int
     cache_ram: int
     load_mode: str
-    # El modo de MTP (speculative decoding) cuando el Local model activo lo
-    # prende (``mtp`` en su entrada del catálogo); con ``mtp`` apagado el
-    # argv arranca con ``--spec-type none`` sin mirar este valor (ver
+    # The MTP (speculative decoding) mode when the active Local model turns
+    # it on (``mtp`` in its catalog entry); with ``mtp`` off the argv starts
+    # with ``--spec-type none`` without looking at this value (see
     # ``lifecycle/services.py::_llama_argv``).
     spec_type: str
     spec_draft_n_max: int
@@ -198,9 +198,9 @@ class LlamaConfig:
     cache_type_v: str
 
 
-# `fit_to_memory` arma el flag `-fit` (`services.py::_llama_argv`), que
-# ajusta los args no seteados para entrar en memoria del device — no tiene
-# relación con flash attention pese a lo que sugeriría un nombre distinto.
+# `fit_to_memory` builds the `-fit` flag (`services.py::_llama_argv`), which
+# adjusts unset args to fit in device memory — it is unrelated to flash
+# attention, despite what a different name might suggest.
 LLAMA_FIELDS: list[Field] = [
     Field("bin", "RINTHEL_LLAMA_BIN", Path, "~/llama.cpp/src/build-cuda/bin/llama-server", exists=True, group="general"),
     Field("port", "RINTHEL_LLAMA_PORT", int, 8080, port=True, group="general"),
@@ -231,8 +231,8 @@ LLAMA_FIELDS: list[Field] = [
 
 @dataclass(frozen=True)
 class DefaultModel:
-    """El Local model que INSTALL descarga y deja activo: la entrada inicial
-    del catálogo, con la ventana de contexto medida para la Platform."""
+    """The Local model INSTALL downloads and leaves active: the catalog's
+    initial entry, with the context window measured for the Platform."""
 
     id: str
     name: str
@@ -244,11 +244,11 @@ class DefaultModel:
 
 @dataclass(frozen=True)
 class ValidatedProfile:
-    """El Validated profile de una Platform (ver GLOSSARY.md), en un solo
-    lugar: ``llama`` pisa el default de los ``LLAMA_FIELDS`` de hardware
-    (una variable explícita del ``.env`` o del shell sigue ganando) y
-    ``model`` es el Local model por defecto. Cambiar cualquiera de los dos
-    cambia el argv de ``llama-server``, y eso pide un benchmark nuevo
+    """A Platform's Validated profile (see GLOSSARY.md), in one place:
+    ``llama`` overrides the default of the hardware ``LLAMA_FIELDS`` (an
+    explicit variable from the ``.env`` or the shell still wins) and
+    ``model`` is the default Local model. Changing either one changes the
+    ``llama-server`` argv, and that calls for a new benchmark
     (``docs/05-windows-validation.md``)."""
 
     llama: dict[str, Any]
@@ -269,9 +269,9 @@ def _qwen(context_window: int) -> DefaultModel:
 
 
 VALIDATED_PROFILES: dict[Platform, ValidatedProfile] = {
-    # Los defaults de LLAMA_FIELDS son los de Linux.
+    # The LLAMA_FIELDS defaults are the Linux ones.
     "linux": ValidatedProfile(llama={}, model=_qwen(112000)),
-    # Medido en la máquina de referencia (docs/05-windows-validation.md).
+    # Measured on the reference machine (docs/05-windows-validation.md).
     "windows": ValidatedProfile(
         llama={
             "n_cpu_moe": 34,
@@ -291,8 +291,8 @@ class MoeConfig:
     cache_mib: int
 
 
-# ``--moe-cache-mib`` de llama.cpp upstream: MiB de VRAM para cachear los
-# expertos MoE que viven en CPU. 0 = deshabilitado (default de upstream).
+# Upstream llama.cpp's ``--moe-cache-mib``: MiB of VRAM to cache the MoE
+# experts that live on CPU. 0 = disabled (upstream default).
 MOE_FIELDS: list[Field] = [
     Field("cache_mib", "RINTHEL_MOE_CACHE_MIB", int, 0),
 ]
@@ -306,8 +306,8 @@ class UnderstoryConfig:
 
 
 UNDERSTORY_FIELDS: list[Field] = [
-    # Subtree del monorepo. Estado real (bundle) vive en la raíz de la
-    # Instance, en data/understory; ver docker-compose.yaml de la raíz.
+    # Monorepo subtree. The real state (bundle) lives at the Instance root,
+    # in data/understory; see the root docker-compose.yaml.
     Field("dir", "RINTHEL_UNDERSTORY_DIR", Path, lambda i: str(i.understory_dir)),
     Field("port", "RINTHEL_UNDERSTORY_PORT", int, 3800, port=True),
     Field("enabled", "RINTHEL_UNDERSTORY_ENABLED", bool, True),
@@ -316,9 +316,10 @@ UNDERSTORY_FIELDS: list[Field] = [
 
 @dataclass(frozen=True)
 class DeckConfig:
-    """Lo que el daemon necesita saber de Deck. ``host_address`` es cómo Deck
-    alcanza el host desde su contenedor: el daemon arma con ella toda URL que
-    le entrega (la ruta de llama, voz, hostexecd); Deck nunca las reescribe."""
+    """What the daemon needs to know about Deck. ``host_address`` is how Deck
+    reaches the host from its container: the daemon builds every URL it
+    hands over with it (the llama route, voice, hostexecd); Deck never
+    rewrites them."""
 
     host_address: str
     dir: Path
@@ -328,15 +329,15 @@ class DeckConfig:
 
 DECK_FIELDS: list[Field] = [
     Field("host_address", "RINTHEL_DECK_HOST_ADDRESS", str, "127.0.0.1"),
-    # Subtree del monorepo. Estado real (deck.db, home de pi) vive en la raíz
-    # de la Instance, en data/deck.
+    # Monorepo subtree. The real state (deck.db, pi's home) lives at the
+    # Instance root, in data/deck.
     Field("dir", "RINTHEL_DECK_DIR", Path, lambda i: str(i.deck_dir)),
     Field("port", "RINTHEL_DECK_PORT", int, 4100, port=True),
     Field("enabled", "RINTHEL_DECK_ENABLED", bool, True),
 ]
 
-# Default por Platform: en Linux el contenedor comparte la red del host;
-# Docker Desktop (Windows) llega al host por su nombre reservado.
+# Default per Platform: on Linux the container shares the host network;
+# Docker Desktop (Windows) reaches the host by its reserved name.
 _DECK_DEFAULTS: dict[Platform, dict[str, Any]] = {
     "linux": {},
     "windows": {"host_address": "host.docker.internal"},
@@ -420,11 +421,11 @@ HOSTEXECD_TOKEN_ENV = "RINTHEL_HOSTEXECD_TOKEN"
 
 @dataclass(frozen=True)
 class Secrets:
-    """Los secretos de la Instance que el daemon lee. Van aparte de
-    ``_ENTRIES``: ``GET /config`` nunca los muestra. ``service`` es el que
-    exige la policy ``service`` (la TUI); ``panel`` firma los Panel tokens.
-    Sin default real: un secreto vacío no deja pasar a nadie. Los genera
-    INSTALL (``phase_install_instance_secrets``) y el boot (``service``)."""
+    """The Instance secrets the daemon reads. They are kept apart from
+    ``_ENTRIES``: ``GET /config`` never shows them. ``service`` is the one
+    the ``service`` policy requires (the TUI); ``panel`` signs the Panel
+    tokens. No real default: an empty secret lets nobody through. INSTALL
+    (``phase_install_instance_secrets``) and boot (``service``) generate them."""
 
     service: str
     panel: str
@@ -461,18 +462,18 @@ class InstallConfig:
 INSTALL_FIELDS: list[Field] = [
     Field("llamacpp_repo_dir", "RINTHEL_LLAMACPP_REPO_DIR", Path, "~/llama.cpp/src"),
     Field("llamacpp_repo_url", "RINTHEL_LLAMACPP_REPO_URL", str, "https://github.com/ggml-org/llama.cpp.git"),
-    # Donde INSTALL baja el GGUF del Local model por defecto (fuera del repo).
+    # Where INSTALL downloads the default Local model's GGUF (outside the repo).
     Field("models_dir", "RINTHEL_MODELS_DIR", Path, "~/llama.cpp/models"),
 ]
 
 
-# Un solo lugar que empareja cada sub-config con su tabla de campos —
-# ``RinthelConfig.validate()`` deriva los 3 chequeos (puertos, positivos,
-# paths) de acá en vez de mantener 3 listas a mano por separado. Agregar un
-# servicio nuevo es sumar una línea acá, no 3 en 3 lugares distintos.
-# ``attr`` dobla como prefijo de los mensajes de error/warning (ej.
-# "llama.port=...") porque coincide 1:1 con el nombre del sub-config en
-# RinthelConfig — no hay caso hoy donde difieran.
+# A single place pairing each sub-config with its field table —
+# ``RinthelConfig.validate()`` derives the 3 checks (ports, positives,
+# paths) from here instead of keeping 3 separate hand-maintained lists.
+# Adding a new service is one line here, not 3 in 3 different places.
+# ``attr`` doubles as the prefix of error/warning messages (e.g.
+# "llama.port=...") because it matches the sub-config name in
+# RinthelConfig 1:1 — there is no case today where they differ.
 _ENTRIES: list[tuple[str, list[Field]]] = [
     ("llama", LLAMA_FIELDS),
     ("moe", MOE_FIELDS),
@@ -486,8 +487,8 @@ _ENTRIES: list[tuple[str, list[Field]]] = [
 
 
 class ConfigError(Exception):
-    """Config inválida de forma tal que ninguna fase puede andar bien —
-    se levanta antes de arrancar nada (ver ``RinthelConfig.validate``)."""
+    """Config so invalid that no phase can work — raised before starting
+    anything (see ``RinthelConfig.validate``)."""
 
 
 @dataclass(frozen=True)
@@ -503,12 +504,12 @@ class RinthelConfig:
     hostexecd: HostExecConfig = HostExecConfig(8766, True)
     secrets: Secrets = Secrets("", "")
     identity: IdentityConfig = IdentityConfig()
-    # Las variables legacy presentes al construir el cfg (shell o ``.env``).
+    # The legacy variables present when the cfg was built (shell or ``.env``).
     legacy_env: tuple[str, ...] = ()
     platform: Platform = "linux"
-    # El Local model activo de ``llm`` que llama-server sirve (o va a servir
-    # en el próximo boot). ``None``: no hay uno usable y llama no arranca;
-    # ``model_warning`` dice por qué.
+    # The active ``llm`` Local model that llama-server serves (or will serve
+    # on the next boot). ``None``: there is no usable one and llama does not
+    # start; ``model_warning`` says why.
     local_model: LocalModel | None = None
     model_warning: str | None = None
     # The active Local models of voice (Linux only), as their managed
@@ -528,8 +529,8 @@ class RinthelConfig:
         return {"llm": self.local_model, "stt": self.stt_model, "tts": self.tts_model}[capability]
 
     def model_llama(self) -> LlamaConfig:
-        """``llama`` con los overrides propios del Local model activo (solo
-        los de su lista blanca: sampling y speculative decoding)."""
+        """``llama`` with the active Local model's own overrides (only the
+        allow-listed ones: sampling and speculative decoding)."""
         if self.local_model is None or not self.local_model.overrides:
             return self.llama
         kinds = {f.attr: f.kind for f in LLAMA_FIELDS}
@@ -539,14 +540,14 @@ class RinthelConfig:
         )
 
     def validate(self) -> list[str]:
-        """Devuelve warnings de paths que no existen todavía (no bloquean:
-        el usuario puede querer usar solo MONITOR/LOGS sin bootear nada, y
-        el fallo real ocurre con mensaje claro recién en phase_spawn).
-        Levanta ConfigError si encuentra algo que garantiza romper cualquier
-        fase que corra (puertos duplicados/inválidos, numéricos ≤0) — el
-        split en sub-configs hizo fácil, por ejemplo, que dos servicios
-        terminen apuntando al mismo puerto sin que nadie lo note hasta que
-        uno de los dos falla a "levantar" en silencio."""
+        """Return warnings for paths that do not exist yet (non-blocking: the
+        user may want to use only MONITOR/LOGS without booting anything, and
+        the real failure only happens, with a clear message, in phase_spawn).
+        Raise ConfigError on anything guaranteed to break any phase that runs
+        (duplicate/invalid ports, numbers ≤0) — the split into sub-configs
+        made it easy, for example, for two services to end up pointing at
+        the same port without anyone noticing until one of them silently
+        fails to "come up"."""
         errors: list[str] = []
         seen_ports: dict[int, str] = {}
         for attr, fields in _ENTRIES:
@@ -589,17 +590,17 @@ class RinthelConfig:
         return warnings
 
     def _mtp_warnings(self) -> list[str]:
-        """Avisos de los combos MTP que la investigación de
-        ``test-tarkAIrk`` dejó medidos como inseguros (VRAM) o directamente
-        ignorados/rotos por ``llama.cpp``. No son errores: se puede querer
-        guardar la config igual (p. ej. encender MTP con batch 2048 a sabiendas
-        de que hay que bajarlo si revienta), así que van como warning — llegan
-        al cliente como ``warnings`` del ``POST /config``, que es donde el TUI
-        los pinta en la barra de estado de ``[N] CONFIGURAR``.
+        """Warnings for the MTP combos that the ``test-tarkAIrk``
+        investigation measured as unsafe (VRAM) or that ``llama.cpp`` outright
+        ignores/breaks. They are not errors: one may want to save the config
+        anyway (e.g. turning MTP on with batch 2048 knowing it must be lowered
+        if it blows up), so they go out as warnings — they reach the client as
+        the ``warnings`` of ``POST /config``, which is where the TUI paints
+        them in the ``[N] CONFIGURAR`` status bar.
 
-        Fuentes: ``test-tarkAIrk/logs/08`` (OOM de MTP, ~650 MiB de compute
-        buffer extra), ``logs/27`` (MTP + batch 2048 = 48 MiB libres, reproduce
-        el OOM) y ``handoff/03`` (MTP no soporta ``--parallel`` > 1 ni
+        Sources: ``test-tarkAIrk/logs/08`` (MTP OOM, ~650 MiB of extra compute
+        buffer), ``logs/27`` (MTP + batch 2048 = 48 MiB free, reproduces the
+        OOM) and ``handoff/03`` (MTP does not support ``--parallel`` > 1 nor
         ``--mmproj``)."""
         model = self.local_model
         if model is None or not model.mtp:
@@ -631,25 +632,25 @@ class RinthelConfig:
         return out
 
 
-# ── Lectura/escritura genérica de campos, usado por GET/POST /config (ver
-# docs/adr/0001) — vive acá, junto al resto de config.py, porque tanto el
-# daemon (dueño de la config) como cualquier UI necesitan la misma lógica de
-# diff/validación antes de escribir. ──────────────────────────────────────
+# ── Generic field read/write, used by GET/POST /config (see
+# docs/adr/0001) — it lives here, with the rest of config.py, because both
+# the daemon (owner of the config) and any UI need the same
+# diff/validation logic before writing. ──────────────────────────────────
 
 
 def stringify(value: object) -> str:
-    """Misma representación de texto que terminaría en el .env — bool va
-    como "true"/"false" (lo que ``_bool_env``/``_PARSERS[bool]`` aceptan),
-    no "True"/"False"."""
+    """Same text representation that would end up in the .env — bool goes
+    as "true"/"false" (what ``_bool_env``/``_PARSERS[bool]`` accept),
+    not "True"/"False"."""
     if isinstance(value, bool):
         return "true" if value else "false"
     return str(value)
 
 
 def diff_overrides(cfg: RinthelConfig, edits: dict[str, str]) -> dict[str, str]:
-    """De todo lo tocado (``edits``: env var -> valor nuevo como string),
-    devuelve solo lo que de verdad difiere del valor actual en ``cfg`` — lo
-    mínimo que hay que escribir en el .env."""
+    """Of everything touched (``edits``: env var -> new value as string),
+    return only what actually differs from the current value in ``cfg`` —
+    the minimum that must be written to the .env."""
     overrides: dict[str, str] = {}
     for attr, fields in _ENTRIES:
         sub = getattr(cfg, attr)
@@ -662,10 +663,10 @@ def diff_overrides(cfg: RinthelConfig, edits: dict[str, str]) -> dict[str, str]:
 
 
 def with_overrides(cfg: RinthelConfig, overrides: dict[str, str]) -> RinthelConfig:
-    """Aplica ``overrides`` (env var -> string, mismo shape que
-    ``diff_overrides``/``update_env_file``) sobre una copia de ``cfg`` sin
-    tocar el .env — usado por ``POST /config`` para validar el estado
-    resultante (``RinthelConfig.validate()``) antes de escribir de verdad."""
+    """Apply ``overrides`` (env var -> string, same shape as
+    ``diff_overrides``/``update_env_file``) on a copy of ``cfg`` without
+    touching the .env — used by ``POST /config`` to validate the resulting
+    state (``RinthelConfig.validate()``) before actually writing."""
     kwargs: dict[str, Any] = {}
     for attr, fields in _ENTRIES:
         sub = getattr(cfg, attr)
@@ -675,13 +676,14 @@ def with_overrides(cfg: RinthelConfig, overrides: dict[str, str]) -> RinthelConf
 
 
 def set_in_shell(env: str) -> bool:
-    """Si ``env`` viene del entorno del proceso: ahí gana sobre el ``.env``
-    (``default_config``), así que reescribir el archivo no la cambia."""
+    """Whether ``env`` comes from the process environment: there it wins
+    over the ``.env`` (``default_config``), so rewriting the file does not
+    change it."""
     return env in os.environ
 
 
 def with_secret(cfg: RinthelConfig, env: str, value: str) -> RinthelConfig:
-    """``cfg`` con el secreto ``env`` (una de ``SECRET_ENVS``) reemplazado."""
+    """``cfg`` with the secret ``env`` (one of ``SECRET_ENVS``) replaced."""
     (attr,) = [a for a, name in SECRET_ENVS.items() if name == env]
     return replace(cfg, secrets=replace(cfg.secrets, **{attr: value}))
 
@@ -690,7 +692,7 @@ _MODEL_ATTR: dict[Capability, str] = {"llm": "local_model", "stt": "stt_model", 
 
 
 def with_local_model(cfg: RinthelConfig, model: LocalModel) -> RinthelConfig:
-    """``cfg`` con ``model`` como Local model activo de su Capability."""
+    """``cfg`` with ``model`` as the active Local model of its Capability."""
     if model.capability == "llm":
         return replace(cfg, local_model=model, model_warning=None)
     return replace(cfg, **{_MODEL_ATTR[model.capability]: model})

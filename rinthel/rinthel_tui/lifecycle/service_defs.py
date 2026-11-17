@@ -1,15 +1,15 @@
-"""Las definiciones de "servicio gestionado": qué es cada servicio y cómo se
-deriva de la config. ``LocalProcessService`` describe un binario local (puerto,
-log, cómo armar su ``argv`` a partir de ``cfg``); ``DockerComposeService``, un
-servicio de un stack ``docker compose``. Las instancias concretas
-(LLAMA_SERVICE, etc.) viven en ``services.py``, construidas a partir de los
-sub-configs de ``config.py``.
+"""The "managed service" definitions: what each service is and how it is
+derived from the config. ``LocalProcessService`` describes a local binary
+(port, log, how to build its ``argv`` from ``cfg``); ``DockerComposeService``,
+a service of a ``docker compose`` stack. The concrete instances
+(LLAMA_SERVICE, etc.) live in ``services.py``, built from the
+``config.py`` sub-configs.
 
-Una definición conoce a ``RinthelConfig`` y las phases no: ``spec(cfg)`` la
-convierte en el ``LocalProcessSpec``/``DockerComposeSpec`` ya armado que
-reciben las phases de ``lifecycle/domain/phases/service_phases.py``. Los
-labels del menú (``menu_label``, ``wait_label``, ``kill_label``) alimentan los
-``PhaseSpec`` de ``specs.py`` y no viajan al dominio.
+A definition knows ``RinthelConfig`` and the phases do not: ``spec(cfg)``
+turns it into the ready-built ``LocalProcessSpec``/``DockerComposeSpec`` that
+the phases of ``lifecycle/domain/phases/service_phases.py`` receive. The menu
+labels (``menu_label``, ``wait_label``, ``kill_label``) feed the
+``PhaseSpec`` of ``specs.py`` and do not travel to the domain.
 """
 
 from collections.abc import Callable
@@ -19,51 +19,51 @@ from pathlib import Path
 from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle.domain.types import ComposeService, DockerComposeSpec, LocalProcessSpec
 
-# ── campos compartidos por LocalProcessService y DockerComposeService ────
+# ── fields shared by LocalProcessService and DockerComposeService ────────
 #
-# Ambos tipos de servicio se esperan igual (wait_ready pollea ready_url con el
-# mismo backoff) y se listan igual en menú/report, así que ese subconjunto de
-# campos vive acá una sola vez.
-# kw_only=True porque las subclases suman sus propios campos requeridos
-# (build_argv/log_of, dir_of/compose_service_name) después de los que ya
-# tienen default acá — sin kw_only, un dataclass no lo permite.
+# Both service types are awaited the same way (wait_ready polls ready_url with
+# the same backoff) and listed the same way in menu/report, so that subset of
+# fields lives here once.
+# kw_only=True because the subclasses add their own required fields
+# (build_argv/log_of, dir_of/compose_service_name) after the ones that already
+# have a default here — without kw_only, a dataclass does not allow it.
 
 
 @dataclass(frozen=True, kw_only=True)
 class _ServiceBase:
-    # display_name: usado en los mensajes de report ("llama-server murió al
-    # instante"). menu_label/wait_label/kill_label: texto de los PhaseSpec en
-    # specs.py — separados de display_name porque no siempre coinciden (ej.
-    # "LLAMA-SERVER  --  Qwen3.6" en el menú vs. "llama-server" en los
-    # mensajes).
+    # display_name: used in report messages ("llama-server murió al
+    # instante"). menu_label/wait_label/kill_label: text of the PhaseSpec in
+    # specs.py — separate from display_name because they do not always match
+    # (e.g. "LLAMA-SERVER  --  Qwen3.6" in the menu vs. "llama-server" in the
+    # messages).
     display_name: str
     menu_label: str
     wait_label: str
     kill_label: str
-    # None en un servicio sin puerto propio.
+    # None for a service without its own port.
     port_of: Callable[[RinthelConfig], int] | None = None
-    # Filtra el servicio de INSTALL/BOOT/TERMINATE/RELOAD cuando da False (ver
-    # ``specs.py``) — default True porque hoy los 5
-    # servicios corren siempre.
+    # Filters the service out of INSTALL/BOOT/TERMINATE/RELOAD when it returns
+    # False (see ``specs.py``) — default True because today all 5
+    # services always run.
     enabled_of: Callable[[RinthelConfig], bool] = lambda cfg: True
-    # None en un DockerComposeService que no expone healthcheck HTTP propio
-    # — phase_wait_ready no tiene nada que pollear ahí y vuelve al toque.
+    # None for a DockerComposeService that exposes no HTTP healthcheck of its
+    # own — phase_wait_ready has nothing to poll there and returns right away.
     ready_url_of: Callable[[RinthelConfig], str] | None = None
     default_ready_timeout: int = 90
-    # Backoff exponencial del polling de wait_ready: arranca en
-    # ready_poll_interval, se multiplica por ready_poll_backoff en cada
-    # vuelta sin respuesta, capeado en ready_poll_max_interval — evita
-    # pollear cada N segundos fijos durante todo el timeout cuando el
-    # servicio tarda en levantar (ej. carga de un modelo grande).
+    # Exponential backoff of the wait_ready polling: starts at
+    # ready_poll_interval, is multiplied by ready_poll_backoff on each
+    # round without a response, capped at ready_poll_max_interval — avoids
+    # polling every fixed N seconds for the whole timeout when the service
+    # is slow to come up (e.g. loading a large model).
     ready_poll_interval: float = 2.0
     ready_poll_backoff: float = 1.5
     ready_poll_max_interval: float = 10.0
-    # Línea extra de contexto tras un timeout de wait_ready — solo llama-server
-    # la tiene hoy ("Levanta el modelo local antes de usar understory.").
+    # Extra context line after a wait_ready timeout — only llama-server has
+    # one today ("Levanta el modelo local antes de usar understory.").
     on_timeout_hint: str | None = None
 
     def _shared(self, cfg: RinthelConfig) -> dict:
-        """Los campos de ``ServiceSpec``, evaluados contra ``cfg``."""
+        """The ``ServiceSpec`` fields, evaluated against ``cfg``."""
         return {
             "display_name": self.display_name,
             "port": self.port_of(cfg) if self.port_of is not None else None,
@@ -84,13 +84,13 @@ class _ServiceBase:
 class LocalProcessService(_ServiceBase):
     build_argv: Callable[[RinthelConfig], list[str]]
     log_of: Callable[[RinthelConfig], Path]
-    # Variables que el proceso recibe además del entorno del daemon.
+    # Variables the process receives on top of the daemon's environment.
     env_of: Callable[[RinthelConfig], dict[str, str]] = lambda cfg: {}
-    # Archivos que el proceso lee al arrancar, derivados de la config (p. ej.
-    # el ``server.json`` de audio.cpp): se reescriben en cada spawn.
+    # Files the process reads at startup, derived from the config (e.g.
+    # audio.cpp's ``server.json``): rewritten on every spawn.
     files_of: Callable[[RinthelConfig], dict[Path, str]] = lambda cfg: {}
-    # Directorios que el proceso necesita existentes al arrancar (p. ej. el
-    # ``--slot-save-path`` de llama-server).
+    # Directories the process needs to exist at startup (e.g.
+    # llama-server's ``--slot-save-path``).
     dirs_of: Callable[[RinthelConfig], list[Path]] = lambda cfg: []
 
     def spec(self, cfg: RinthelConfig) -> LocalProcessSpec:
@@ -112,17 +112,17 @@ class DockerComposeService(_ServiceBase):
     dir_of: Callable[[RinthelConfig], Path]
     compose_service_name: str
     extra_env_of: Callable[[RinthelConfig], dict[str, str]] = lambda cfg: {}
-    # Solo el portal rebuildea su imagen antes de levantar.
+    # Only the portal rebuilds its image before coming up.
     build_args: tuple[str, ...] | None = None
-    # (build arg, paquete npm): el build recibe la última versión publicada
-    # del paquete. Con el cache de Docker prendido, es lo que rehace la capa
-    # que instala ``@latest`` cuando sale una versión nueva, y solo entonces.
+    # (build arg, npm package): the build receives the package's latest
+    # published version. With the Docker cache on, this is what rebuilds the
+    # layer that installs ``@latest`` when a new version ships, and only then.
     npm_build_args: tuple[tuple[str, str], ...] = ()
-    # Profile de compose del servicio: sin él activo, el ``up -d`` del
-    # proyecto entero (el de cualquier otro servicio) no lo levanta.
+    # The service's compose profile: without it active, the whole project's
+    # ``up -d`` (that of any other service) does not bring it up.
     profile: str | None = None
-    # Los stacks docker tardan menos en levantar que llama-server cargando
-    # un modelo grande — pisa el default de 90s de _ServiceBase.
+    # Docker stacks come up faster than llama-server loading a large
+    # model — overrides the 90s default of _ServiceBase.
     default_ready_timeout: int = 60
 
     def spec(self, cfg: RinthelConfig) -> DockerComposeSpec:

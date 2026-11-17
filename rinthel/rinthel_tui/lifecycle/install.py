@@ -1,13 +1,13 @@
-"""Fases de INSTALL — bootstrap de infra en una máquina nueva: build CUDA de
-llama.cpp, descarga del modelo GGUF, secretos y usuario de contenedores en el
-``.env`` raíz, Understory, ``rinthel.db`` y el primer admin.
+"""INSTALL phases — infra bootstrap on a new machine: CUDA build of
+llama.cpp, GGUF model download, secrets and container user in the root
+``.env``, Understory, ``rinthel.db`` and the first admin.
 
-Mismo protocolo que el resto de lifecycle/ (``async def phase_*(host, report,
-**kwargs) -> None``, ``PhaseError``): comandos por ``Host.runner``, lo que la
-máquina dice por ``Host.host_info`` y la tarea de cada fase (``install_tasks.py``)
-por ``kwargs``. INSTALL **configura**, no bootea — nunca hace ``docker
-compose up``; para eso está ``[1] BOOT`` (``specs.boot_plan``). Cada fase es
-idempotente: reruns seguros, nunca pisa algo que ya funciona.
+Same protocol as the rest of lifecycle/ (``async def phase_*(host, report,
+**kwargs) -> None``, ``PhaseError``): commands via ``Host.runner``, what the
+machine says via ``Host.host_info`` and each phase's task (``install_tasks.py``)
+via ``kwargs``. INSTALL **configures**, it does not boot — it never runs
+``docker compose up``; that is what ``[1] BOOT`` (``specs.boot_plan``) is for.
+Every phase is idempotent: safe reruns, never overwrites something that works.
 """
 
 import importlib.resources
@@ -91,16 +91,16 @@ async def _run_or_fail(
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
 ) -> None:
-    """``what`` es para el ``PhaseError``; ``label`` es lo que lee el admin
-    (por defecto, el programa que falló)."""
+    """``what`` is for the ``PhaseError``; ``label`` is what the admin reads
+    (by default, the program that failed)."""
     result = await host.runner.run(cmd, cwd=cwd, env=env)
     require_ok(report, result, failed=f"{label or Path(cmd[0]).name} falló", error=f"{what} failed at {cmd[:3]}")
 
 
 async def phase_install_preflight(host: Host, report: PhaseReport) -> None:
-    """Detecta lo que hace falta para compilar/correr todo — no instala
-    drivers ni el CUDA toolkit, solo avisa qué falta con un mensaje
-    accionable."""
+    """Detect what is needed to build/run everything — it installs neither
+    drivers nor the CUDA toolkit, it only reports what is missing with an
+    actionable message."""
     for tool in ("git", "curl", "cmake"):
         _require_tool(host, tool, report, _tool_hint(host, tool))
     driver = _require_tool(host, "nvidia-smi", report, "instalá el driver NVIDIA antes de continuar")
@@ -163,8 +163,8 @@ async def phase_install_build_llamacpp(host: Host, report: PhaseReport, *, task:
             "-DGGML_CUDA=ON",
             f"-DCMAKE_CUDA_COMPILER={nvcc}",
             "-DCMAKE_BUILD_TYPE=Release",
-            # native, no el 89 hardcodeado de la máquina original — compila
-            # para la arquitectura real de la GPU de cada máquina.
+            # native, not the 89 hardcoded for the original machine — builds
+            # for the real GPU architecture of each machine.
             "-DCMAKE_CUDA_ARCHITECTURES=native",
         ],
         "llama.cpp cmake configure",
@@ -176,8 +176,8 @@ async def phase_install_build_llamacpp(host: Host, report: PhaseReport, *, task:
         report,
         [
             cmake, "--build", str(build_dir),
-            # `--config Release`: los generadores multi-config (Visual Studio)
-            # lo necesitan; los de un solo config lo ignoran.
+            # `--config Release`: multi-config generators (Visual Studio)
+            # need it; single-config ones ignore it.
             "--config", "Release",
             "--parallel", str(host.host_info.cpu_count()),
             "--target", "llama-server",
@@ -190,11 +190,12 @@ async def phase_install_build_llamacpp(host: Host, report: PhaseReport, *, task:
 
 
 async def phase_install_download(host: Host, report: PhaseReport, *, task: ModelDownload) -> None:
-    """Reanuda en un ``.part`` y publica solo tras validar la descarga.
+    """Resume into a ``.part`` and publish only after validating the download.
 
-    Por compatibilidad, un final no vacío sin hash conocido se conserva.
-    Con hash, solo se omite un final verificado; no se reemplaza hasta validar
-    la descarga nueva. Un parcial con hash incorrecto se elimina para reintentar.
+    For compatibility, a non-empty final file with no known hash is kept.
+    With a hash, only a verified final file is skipped; it is not replaced
+    until the new download validates. A partial with a wrong hash is deleted
+    so it can be retried.
     """
     dest = task.dest
     if dest.exists() and dest.stat().st_size > 0:
@@ -223,9 +224,9 @@ async def phase_install_download(host: Host, report: PhaseReport, *, task: Model
 
 
 async def phase_install_model_catalog(host: Host, report: PhaseReport, *, task: ModelCatalogInstall) -> None:
-    """El catálogo inicial (``models.local.json``) con el Local model por
-    defecto, su ejemplo documentado al lado y ese modelo activo en
-    ``instance.toml``. Nunca pisa lo que ya existe: el catálogo es del admin."""
+    """The initial catalog (``models.local.json``) with the default Local
+    model, its documented example next to it, and that model active in
+    ``instance.toml``. Never overwrites what exists: the catalog is the admin's."""
     instance = task.instance
     if instance.models_catalog_path.exists():
         report.warn(f"{instance.models_catalog_path} ya existe — omito")
@@ -245,15 +246,15 @@ async def phase_install_model_catalog(host: Host, report: PhaseReport, *, task: 
         report.warn(f"Local model activo ya elegido ({current}) — omito")
 
 
-# ── Understory: un token en el .env raíz y el bundle en data/understory ──────
+# ── Understory: a token in the root .env and the bundle in data/understory ──
 
 
 async def phase_install_setup_understory(host: Host, report: PhaseReport, *, task: UnderstoryInstall) -> None:
-    """Prepara Understory, que corre desde su subtree con el compose raíz: un
-    solo token en el ``.env`` raíz, ``UNDERSTORY_TOKEN`` (el compose raíz se
-    lo pasa a Understory como ``AUTH_TOKEN`` y Deck lo presenta) y el bundle
-    vivo en ``data/understory``. Nunca pisa un token ni un archivo del bundle
-    que ya existan."""
+    """Prepare Understory, which runs from its subtree with the root compose: a
+    single token in the root ``.env``, ``UNDERSTORY_TOKEN`` (the root compose
+    passes it to Understory as ``AUTH_TOKEN`` and Deck presents it) and the
+    live bundle in ``data/understory``. Never overwrites an existing token or
+    bundle file."""
     instance = task.instance
     if instance.get("UNDERSTORY_TOKEN"):
         report.warn("token de Understory ya estaba seteado — omito")
@@ -284,11 +285,11 @@ async def phase_install_setup_understory(host: Host, report: PhaseReport, *, tas
 
 
 async def phase_install_container_user(host: Host, report: PhaseReport, *, task: InstanceSecrets) -> None:
-    """En Linux los contenedores que escriben en ``data/`` corren con el
-    uid/gid de quien corre la Instance (``PUID``/``PGID``), así lo que dejan
-    se puede editar desde afuera; ``DOCKER_GID`` es el grupo que da acceso al
-    socket de Docker. Se escriben en el ``.env`` raíz solo si faltan: lo que
-    el admin puso gana. Windows no tiene ninguno de los tres."""
+    """On Linux the containers that write to ``data/`` run with the uid/gid
+    of whoever runs the Instance (``PUID``/``PGID``), so what they leave can
+    be edited from outside; ``DOCKER_GID`` is the group that grants access to
+    the Docker socket. They are written to the root ``.env`` only if missing:
+    what the admin set wins. Windows has none of the three."""
     ids = host.host_info.user_ids()
     if ids is None:
         report.warn("esta Platform no corre contenedores con el usuario del host — omito")
@@ -339,9 +340,9 @@ async def phase_install_platform_compose(host: Host, report: PhaseReport, *, tas
 
 
 async def phase_install_host_exec_token(host: Host, report: PhaseReport, *, task: InstanceSecrets) -> None:
-    """El token que comparten ``hostexecd`` y quien le pide comandos, en el
-    ``.env`` raíz. El boot lo asegura igual (``rinthel-boot.sh``). En
-    Windows ``hostexecd`` no corre: no hay token que escribir."""
+    """The token shared by ``hostexecd`` and whoever asks it for commands, in
+    the root ``.env``. Boot ensures it as well (``rinthel-boot.sh``). On
+    Windows ``hostexecd`` does not run: there is no token to write."""
     if host.host_info.platform() == "windows":
         report.warn("host exec es solo de Linux — omito el token en esta Platform")
         return
@@ -357,10 +358,10 @@ async def phase_install_host_exec_token(host: Host, report: PhaseReport, *, task
 
 
 async def phase_install_instance_secrets(host: Host, report: PhaseReport, *, task: InstanceSecrets) -> None:
-    """Genera en el ``.env`` raíz los secretos que faltan: el de servicio
-    (la TUI ante el daemon) y el del panel (firma los Panel tokens). El
-    archivo es la fuente de verdad (``Instance.get``), no ``cfg``, que es una
-    foto del arranque."""
+    """Generate the missing secrets in the root ``.env``: the service one
+    (the TUI towards the daemon) and the panel one (signs the Panel tokens).
+    The file is the source of truth (``Instance.get``), not ``cfg``, which is
+    a snapshot taken at startup."""
     instance = task.instance
     if not instance.env_path.exists() and not instance.env_example_path.exists():
         report.error(f"{instance.env_example_path} no existe — no puedo generar los secretos")
@@ -512,15 +513,15 @@ async def phase_install_voice_start(host: Host, report: PhaseReport, *, task: Vo
         await service_phases.phase_wait_ready(host, report, service=spec, required=True)
 
 
-# ── unidades instalables — un servicio con enabled=False no aparece en
-# [0] INSTALL (ver specs.install_plan), aunque sigue siendo relevante para
-# BOOT/TERMINATE/RELOAD vía enabled_of ─────────────────────────────────────
+# ── installable units — a service with enabled=False does not show up in
+# [0] INSTALL (see specs.install_plan), though it is still relevant to
+# BOOT/TERMINATE/RELOAD via enabled_of ─────────────────────────────────────
 
 
 @dataclass(frozen=True)
 class InstallStep:
-    """Una fase de una unidad. ``task`` arma, desde ``cfg``, la tarea que la
-    fase recibe: ``fn(host, report, task=task(cfg))``."""
+    """One phase of a unit. ``task`` builds, from ``cfg``, the task the
+    phase receives: ``fn(host, report, task=task(cfg))``."""
 
     label: str
     fn: PhaseFn
@@ -549,7 +550,7 @@ LLAMA_INSTALL = InstallUnit(
     ),
 )
 
-# Lo que el daemon, ``hostexecd`` y compose leen del ``.env`` raíz.
+# What the daemon, ``hostexecd`` and compose read from the root ``.env``.
 SECRETS_INSTALL = InstallUnit(
     label="INSTANCE",
     steps=(
