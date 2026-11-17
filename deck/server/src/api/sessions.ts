@@ -148,7 +148,8 @@ export function sessionsRouter(deps: DiscardDeps & {
     const framing = session.staff_framing_sent === 0 ? staffFraming(session.owner_user_id, identityOf(req)!) : undefined;
     try {
       // Returns as soon as pi takes the prompt; the run goes on whatever this browser does next.
-      const { queued, turnId } = await runtime.prompt(session.id, message, framing ? { framing } : {});
+      const voice = req.body?.voice === true;
+      const { queued, turnId } = await runtime.prompt(session.id, message, { ...(framing ? { framing } : {}), ...(voice ? { voice } : {}) });
       if (framing) await store.sessions.markStaffFramingSent(session.id);
       res.json({ ok: true, status: "running", queued, turn_id: turnId });
     } catch (e) {

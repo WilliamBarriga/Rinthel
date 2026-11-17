@@ -11,6 +11,7 @@ import { workspaceOf, type SessionRoots } from "./session-roots.js";
 import { LiveEvents } from "./live-events.js";
 import { isClosed, ownerIsAdminNow, sameProfile, toolProfileFor, type ToolProfile } from "./tool-profile.js";
 import type { HostExecAccess } from "./pi/host-exec/host-exec-tools.js";
+import type { VoiceFirstSettings } from "./pi/voice-first.js";
 
 /**
  * Events delivered to whoever watches and never stored: extension dialogs (a stored one would reopen
@@ -37,6 +38,8 @@ export interface SessionManagerDeps {
   instanceSoulFile?: string;
   /** hostexecd, when the daemon handed Deck a token: an admin's Sessions get the host exec tools. */
   hostExec?: HostExecAccess;
+  /** The `VOICE_*` switches of a voice Turn. */
+  voice?: VoiceFirstSettings;
   /** Starts a Session's pi; the SDK in production, a double in the tests. */
   launch: (opts: SdkLaunch) => Promise<PiClient>;
 }
@@ -48,6 +51,8 @@ export interface PromptOptions {
    */
   framing?: string;
   turnId?: string;
+  /** Sent from voice mode: the Turn's reply is spoken (`pi/voice-first.ts`). */
+  voice?: boolean;
 }
 
 export interface PromptAccepted {
@@ -196,6 +201,7 @@ export class SessionManager extends EventEmitter {
           ? { ...this.deps.hostExec, adminNow: () => ownerIsAdminNow(owner, this.deps.identity) }
           : undefined,
         thinkingLevel: session.thinking_level || undefined,
+        voice: this.deps.voice,
       });
     } catch (error) {
       this.deps.proxy.close(sessionId);
@@ -277,10 +283,10 @@ export class SessionManager extends EventEmitter {
       const queued = !client.isIdle();
       // What the person left through a Canvas since the last Turn reaches the Agent now, never starting one before.
       const notes = isCommand ? [] : await this.store.sessions.takeNotes(sessionId);
-      if (!isCommand) this.record(sessionId, "portal_prompt", { message, turn_id: turnId });
+      if (!isCommand) this.record(sessionId, "portal_prompt", { message, turn_id: turnId, ...(options.voice ? { voice: true } : {}) });
       const framed = options.framing && !isCommand ? `${options.framing}\n\n${message}` : message;
       try {
-        await client.prompt(notes.length ? `${canvasNotesBlock(notes)}\n\n${framed}` : framed);
+        await client.prompt(notes.length ? `${canvasNotesBlock(notes)}\n\n${framed}` : framed, options.voice ? { voice: true } : undefined);
       } catch (e) {
         for (const note of notes) await this.store.sessions.addNote(sessionId, note, false);
         throw e;

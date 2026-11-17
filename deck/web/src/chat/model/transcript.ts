@@ -30,9 +30,14 @@ export interface Transcript {
   dialogs: UiDialog[];
   /** The last stored event folded in: a replayed one at or before it is skipped. */
   lastSeq: number;
+  /** pi compacting the conversation: since when (epoch ms, when the event said), and whether the last one finished. */
+  compaction: { active: boolean; since: number | null; completed: boolean };
 }
 
-export const emptyTranscript: Transcript = { items: [], status: "unknown", prefill: null, route: null, dialogs: [], lastSeq: 0 };
+export const emptyTranscript: Transcript = {
+  items: [], status: "unknown", prefill: null, route: null, dialogs: [], lastSeq: 0,
+  compaction: { active: false, since: null, completed: true },
+};
 
 type Block = { type?: string; text?: string; thinking?: string };
 
@@ -121,7 +126,11 @@ export function foldEvent(state: Transcript, event: SessionEvent | StreamSignal)
       }) };
     }
     case "agent_settled":
-      return { ...state, prefill: null };
+      return { ...state, prefill: null, compaction: { ...state.compaction, active: false } };
+    case "compaction_start":
+      return { ...state, compaction: { active: true, since: event.at ?? null, completed: false } };
+    case "compaction_end":
+      return { ...state, compaction: { active: false, since: null, completed: !p.aborted && !p.errorMessage } };
     case "extension_ui_request":
       if (p.method === "notify") return { ...state, items: [...state.items, { kind: "notice", id: String(p.id), text: String(p.message ?? ""), error: p.notifyType === "error" }] };
       if (!["select", "confirm", "input", "editor"].includes(p.method)) return state;

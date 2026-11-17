@@ -24,6 +24,10 @@ import { instanceSoulRouter } from "./api/instance-soul.js";
 import { workspacesRouter } from "./api/workspaces.js";
 import { modelsRouter } from "./api/models.js";
 import { mountWebUi } from "./api/web-ui.js";
+import { voiceRouter } from "./api/voice.js";
+import { FakeVoiceSpeech, type VoiceSpeech } from "./voice/voice-speech.js";
+import { DEFAULT_VOICE_FLAGS } from "./voice/voice-config.js";
+import type { VoiceFlags } from "@deck/contract";
 import { daemonProxyRouter } from "./daemon-proxy.js";
 
 /** What the HTTP surface asks of the running Sessions (`SessionManager`, built by the composition). */
@@ -53,6 +57,8 @@ export interface DeckAppDeps {
   canvasActions: CanvasActions;
   /** The SOUL every member's Sessions load. */
   instanceSoul: InstanceSoul;
+  /** Speech for voice and the pipeline's switches; without it the Instance has no `stt` nor `tts`. */
+  voice?: { speech: VoiceSpeech; flags: VoiceFlags };
   /** The built web UI; without it the server is an API only. */
   webDist: string;
 }
@@ -67,7 +73,7 @@ export interface DeckAppDeps {
  *  3. `requireAuth` and the live identity every later route judges by (the Session routes refresh it
  *     before their handlers);
  *  4. the routers behind the login: retire, Sessions, their events and config, their Canvases,
- *     Appearance, the Instance SOUL, workspaces, Local models, and the pass-through to the daemon
+ *     Appearance, the Instance SOUL, voice, workspaces, Local models, and the pass-through to the daemon
  *     last among them;
  *  5. the web UI, for every path that is not `/api`.
  */
@@ -88,6 +94,7 @@ export function createDeckApp(deps: DeckAppDeps): Express {
   app.use("/api", canvasesRouter({ store, canvases: deps.canvases, actions: deps.canvasActions, allowed: (req) => refreshSessionReader(req, identity) }));
   app.use("/api", appearanceRouter(store.settings));
   app.use("/api", instanceSoulRouter(deps.instanceSoul));
+  app.use("/api", voiceRouter({ store, ...(deps.voice ?? { speech: new FakeVoiceSpeech({ stt: false, tts: false }), flags: DEFAULT_VOICE_FLAGS }) }));
   app.use("/api", workspacesRouter({ roots, identity }));
   app.use("/api", modelsRouter({ daemon, routing, generating: () => sessions.anyGenerating() }));
   app.use("/api", daemonProxyRouter(daemon));

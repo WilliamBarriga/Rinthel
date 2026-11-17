@@ -17,6 +17,10 @@ import { LlamaSlotStore } from "./session-slots/llama-slot-store.js";
 import { SessionSlots } from "./session-slots/session-slots.js";
 import { ensureDir, gracefulShutdown, loadTls, serve } from "./startup.js";
 import { openStore } from "./store/index.js";
+import { setTimeout as delay } from "node:timers/promises";
+import { voiceFirstSettings } from "./pi/voice-first.js";
+import { DirectVoiceSpeech } from "./voice/direct-voice-speech.js";
+import { voiceFlagsFromEnv } from "./voice/voice-config.js";
 
 /**
  * The server, composed: what the environment says (`config.ts`), the adapters it picks, and the
@@ -49,7 +53,13 @@ const proxy = new SessionProxy({
   onProgress: (sessionId, prefill) => sessions.reportPrefill(sessionId, prefill),
   onRoute: (sessionId, route) => sessions.reportRoute(sessionId, route),
 });
-sessions = new SessionManager({ store, identity, proxy, roots, canvases, instanceSoulFile: instanceSoul.path, hostExec: config.hostExec, launch: (opts) => SdkPiClient.create(opts) });
+sessions = new SessionManager({ store, identity, proxy, roots, canvases, instanceSoulFile: instanceSoul.path, hostExec: config.hostExec, voice: voiceFirstSettings(process.env), launch: (opts) => SdkPiClient.create(opts) });
+
+// Voice: straight to whisper-server and audiocpp-server on the daemon's route; a busy TTS is waited for.
+const voice = {
+  speech: new DirectVoiceSpeech({ routing, busy: { retryMs: 750, waitMs: 15000, sleep: (ms, signal) => delay(ms, undefined, { signal }) } }),
+  flags: voiceFlagsFromEnv(process.env),
+};
 
 const app = createDeckApp({
   store,
@@ -63,6 +73,7 @@ const app = createDeckApp({
   canvases,
   canvasActions,
   instanceSoul,
+  voice,
   webDist: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web/dist"),
 });
 

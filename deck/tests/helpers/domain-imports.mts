@@ -25,6 +25,8 @@ export const ADAPTERS = [
   'session-proxy.ts', 'pi/sdk-client.ts', 'pi/host-exec/','session-slots/llama-slot-store.ts', 'session-roots-fs.ts', 'workspaces-fs.ts',
   // The Instance SOUL is a file on Deck's volume.
   'instance-soul-fs.ts',
+  // Voice: HTTP straight to whisper-server and audiocpp-server.
+  'voice/direct-voice-speech.ts',
 ];
 
 /** A daemon adapter is named `daemon-*.ts`: the port lives in the file without the prefix. */

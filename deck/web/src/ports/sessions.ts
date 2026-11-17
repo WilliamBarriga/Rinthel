@@ -24,7 +24,8 @@ export interface SessionsApi {
   createAgent(title?: string): Promise<Session>;
   get(id: string): Promise<Session>;
   remove(id: string): Promise<void>;
-  prompt(id: string, message: string): Promise<PromptAccepted>;
+  /** `voice`: sent from voice mode, so the Agent's reply is spoken. */
+  prompt(id: string, message: string, options?: { voice?: boolean }): Promise<PromptAccepted>;
   abort(id: string): Promise<void>;
   config(id: string): Promise<SessionConfig>;
   answerDialog(id: string, dialog: string, answer: { value?: unknown; cancelled?: boolean }): Promise<void>;

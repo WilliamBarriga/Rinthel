@@ -13,6 +13,7 @@ import { isClosed, type ToolProfile } from "../tool-profile.js";
 import type { Canvases } from "../canvases.js";
 import { CanvasTools } from "./canvas-tools.js";
 import { hostExecExtension, type HostExecOptions } from "./host-exec/host-exec-tools.js";
+import { VoiceFirstTurn, audioMessage, audioSystemRules, voiceFirstSettings, type VoiceFirstSettings } from "./voice-first.js";
 
 /**
  * The Agent's own files: SOUL.md is who it is, PrimaryUser.md and MEMORY.md its owner's notes. Read
@@ -80,6 +81,8 @@ export interface SdkLaunch {
   instanceSoulFile?: string;
   /** hostexecd and the owner's live role: set for an admin's Session when Deck has a token, never for a closed profile. */
   hostExec?: HostExecOptions;
+  /** The `VOICE_*` switches of a voice Turn; the defaults when absent. */
+  voice?: VoiceFirstSettings;
 }
 
 /**
@@ -95,6 +98,9 @@ export class SdkPiClient extends EventEmitter implements PiClient {
   taint!: SessionTaint;
   /** The Agent's Canvas tools for this Session: they follow its events and are closed when it stops. */
   private canvasTools?: CanvasTools;
+  /** A voice Turn's thinking skip, and the switches its marker follows. */
+  private voiceFirst!: VoiceFirstTurn;
+  private voice!: VoiceFirstSettings;
 
   private constructor(private readonly session: any, readonly profile: ToolProfile) {
     super();
@@ -126,6 +132,10 @@ export class SdkPiClient extends EventEmitter implements PiClient {
     ];
     const canvasTools = opts.canvases ? new CanvasTools(opts.sessionId, opts.canvases) : undefined;
     if (canvasTools) factories.push({ name: "canvases", factory: canvasTools.extension });
+    // Any user talks to the Agent by voice in their own Sessions.
+    const voice = opts.voice ?? voiceFirstSettings({});
+    const voiceFirst = new VoiceFirstTurn(voice);
+    factories.push({ name: "voice-first", factory: voiceFirst.extension });
     const hostExec = closed ? undefined : opts.hostExec;
     // Built inside pi's loader, so a registration that throws is a load error of `host-exec`.
     if (hostExec) factories.push({ name: "host-exec", factory: (api: any) => hostExecExtension(hostExec)(api) });
@@ -133,7 +143,7 @@ export class SdkPiClient extends EventEmitter implements PiClient {
       agentsFilesOverride: (base: { agentsFiles: any[] }) => ({
         agentsFiles: [...base.agentsFiles, ...extraContextFiles(opts.cwd, opts.instanceSoulFile).map((f) => ({ path: f.path, content: f.content }))],
       }),
-      appendSystemPrompt: framing(opts.cwd, opts.instanceSoulFile),
+      appendSystemPrompt: [...framing(opts.cwd, opts.instanceSoulFile), ...audioSystemRules(voice)],
     };
     const resourceLoader = new pi.DefaultResourceLoader({
       cwd: opts.cwd,
@@ -184,6 +194,8 @@ export class SdkPiClient extends EventEmitter implements PiClient {
     const client = new SdkPiClient(session, opts.profile);
     client.taint = taint;
     client.canvasTools = canvasTools;
+    client.voiceFirst = voiceFirst;
+    client.voice = voice;
     // Notices wait until someone listens: an event emitted before the manager subscribes is lost.
     const onListener = (name: string | symbol) => {
       if (name !== "event") return;
@@ -266,11 +278,23 @@ export class SdkPiClient extends EventEmitter implements PiClient {
     return true;
   }
 
-  async prompt(message: string): Promise<void> {
-    await acceptPrompt(
-      (preflightResult) => this.session.prompt(message, { expandPromptTemplates: true, streamingBehavior: "followUp", preflightResult }),
-      (error) => this.emit("event", { type: "portal_notice", text: `El turno falló: ${error instanceof Error ? error.message : error}`, error: true }),
-    );
+  async prompt(message: string, options?: { voice?: boolean }): Promise<void> {
+    // A voice Turn that queues behind a run in course keeps that run's thinking.
+    if (options?.voice) this.voiceFirst.arm(this.isIdle());
+    else this.voiceFirst.reset();
+    const text = options?.voice ? audioMessage(message, this.voice) : message;
+    try {
+      await acceptPrompt(
+        (preflightResult) => this.session.prompt(text, { expandPromptTemplates: true, streamingBehavior: "followUp", preflightResult }),
+        (error) => {
+          if (options?.voice) this.voiceFirst.reset();
+          this.emit("event", { type: "portal_notice", text: `El turno falló: ${error instanceof Error ? error.message : error}`, error: true });
+        },
+      );
+    } catch (error) {
+      if (options?.voice) this.voiceFirst.reset();
+      throw error;
+    }
   }
 
   async abort(): Promise<void> {

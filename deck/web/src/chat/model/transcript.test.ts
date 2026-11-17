@@ -84,6 +84,13 @@ it("an extension's dialog waits until answered or cancelled", () => {
   expect(fold([live("extension_ui_cancel", { id: "d1" })], asked).dialogs).toEqual([]);
 });
 
+it("a compaction is known from its start to its end, and whether it finished", () => {
+  const started = fold([{ seq: ++seq, type: "compaction_start", at: 1000, payload: {} }]);
+  expect(started.compaction).toEqual({ active: true, since: 1000, completed: false });
+  expect(fold([stored("compaction_end", {})], started).compaction).toEqual({ active: false, since: null, completed: true });
+  expect(fold([stored("compaction_end", { aborted: true })], started).compaction.completed).toBe(false);
+});
+
 it("the window label reads the Local model's window, with what is used when known", () => {
   expect(windowLabel(null, null)).toBeNull();
   expect(windowLabel(null, 65536)).toBe("66k de contexto");
