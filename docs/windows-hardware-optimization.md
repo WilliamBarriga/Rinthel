@@ -11,7 +11,6 @@ Validated on 2026-09-20 with an AMD Ryzen 7 260, 31.31 GiB usable RAM and an
 NVIDIA GeForce RTX 5070 Laptop GPU with 8151 MiB VRAM:
 
 ```dotenv
-RINTHEL_CONTEXT_WINDOW=65536
 RINTHEL_N_CPU_MOE=34
 RINTHEL_UBATCH_SIZE=2048
 RINTHEL_BATCH_SIZE=2048
@@ -20,6 +19,12 @@ RINTHEL_CACHE_TYPE_K=q8_0
 RINTHEL_CACHE_TYPE_V=q8_0
 RINTHEL_MOE_CACHE_MIB=0
 ```
+
+plus a context window of 65,536 tokens. These values are no longer written
+to `.env`: they live once in `rinthel_tui/config.py::VALIDATED_PROFILES`
+(the context window in the default Local model INSTALL puts in the catalog),
+pinned with the exact `llama-server` argv by
+`rinthel/tests/models/test_validated_profile.py`.
 
 The model is `Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf`: 22.85 GB decimal
 (21.28 GiB), 35.5B total parameters, about 3B active parameters per token.

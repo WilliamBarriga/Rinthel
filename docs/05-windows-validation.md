@@ -37,6 +37,17 @@ en loopback, prepara permisos persistentes de `/data`, hace opcional
 `TS_AUTHKEY` y conserva los secretos existentes. Estas transformaciones son
 idempotentes.
 
+## Dónde vive el perfil
+
+Desde que el modelo es un Local model del catálogo, los valores de hardware
+del Validated profile de Windows viven en un solo lugar,
+`rinthel_tui/config.py::VALIDATED_PROFILES["windows"]`, y la ventana de 65,536
+tokens en la entrada por defecto que INSTALL escribe en `models.local.json`.
+`install.ps1` ya no escribe el perfil en `.env`. El argv de `llama-server`
+sigue siendo idéntico al validado y lo fija
+`rinthel/tests/models/test_validated_profile.py`; por eso este cambio no pide
+un benchmark nuevo. Cualquier cambio de ese argv sí lo pide.
+
 ## Problemas resueltos
 
 1. Rechazo temprano de PowerShell x86 y detección robusta de Python 3.13.
