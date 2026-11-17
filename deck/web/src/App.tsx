@@ -8,6 +8,8 @@ import { IsAdminContext } from "./auth/use-is-admin";
 import { SessionsPage } from "./sessions/SessionsPage";
 import { ChatPage } from "./chat/ChatPage";
 import { SettingsPage } from "./settings/SettingsPage";
+import { AppearanceProvider, AppearancePanel } from "./appearance/Appearance";
+import { InstanceSoulPanel } from "./instance-soul/InstanceSoulPanel";
 import { Sidebar } from "./shell/Sidebar";
 import { UsersPage } from "./users/UsersPage";
 import { NAVIGATION, canVisit, destinationFor, type NavigationEntry } from "./navigation";
@@ -53,6 +55,8 @@ export default function App({ navigation = NAVIGATION }: { navigation?: readonly
   const pages: Readonly<Record<string, ReactNode>> = {
     "/": <SessionsPage username={state.username} />,
     "/sessions/:id": <ChatPage />,
+    "/soul": <InstanceSoulPanel />,
+    "/appearance": <div className="px-5 py-5"><AppearancePanel /></div>,
     "/settings": <SettingsPage />,
     "/users": usersPage,
     "/users/new": usersPage,
@@ -61,7 +65,7 @@ export default function App({ navigation = NAVIGATION }: { navigation?: readonly
   const shell = { isAdmin: state.isAdmin, username: state.username, navigation, onLogout: () => void logout() };
 
   return (
-    <FailureProvider report={reportFailure}><IsAdminContext.Provider value={state.isAdmin}>
+    <FailureProvider report={reportFailure}><IsAdminContext.Provider value={state.isAdmin}><AppearanceProvider key={state.username} isAdmin={state.isAdmin}>
       <RouteGuard isAdmin={state.isAdmin} navigation={navigation}>
         <Routes>
           {Object.entries(pages).map(([path, page]) => (
@@ -70,7 +74,7 @@ export default function App({ navigation = NAVIGATION }: { navigation?: readonly
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </RouteGuard>
-    </IsAdminContext.Provider></FailureProvider>
+    </AppearanceProvider></IsAdminContext.Provider></FailureProvider>
   );
 }
 

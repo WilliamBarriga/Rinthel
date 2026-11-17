@@ -17,6 +17,8 @@ export interface DeckConfig {
   panelSecret: string;
   /** Deck's volume: Sessions' pi files, each owner's Agent home and workspaces. */
   dataDir: string;
+  /** The Instance SOUL, where INSTALL seeds it: `<data>/instance/SOUL.md`. */
+  instanceSoulFile: string;
   /** The Instance's workspaces, the admin's (`WORKSPACE_ROOT`). */
   workspaceRoot: string;
   /** llama-server's `--slot-save-path`, as this process sees it. */
@@ -44,6 +46,7 @@ export function deckConfigFromEnv(env: NodeJS.ProcessEnv): DeckConfig {
     tlsKeyPath: env.PORTAL_TLS_KEY,
     panelSecret,
     dataDir,
+    instanceSoulFile: path.join(dataDir, "instance", "SOUL.md"),
     workspaceRoot: path.resolve(env.WORKSPACE_ROOT || path.join(dataDir, "workspaces")),
     slotsDir: path.resolve(env.DECK_SLOTS_DIR || path.join(dataDir, "llama-slots")),
     slotsMaxBytes: Math.floor(slotsGb * 1024 ** 3),

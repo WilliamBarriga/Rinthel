@@ -2,6 +2,7 @@
 FROM node:22-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY shared/canvas-catalog/package.json shared/canvas-catalog/
 COPY server/package.json server/
 COPY web/package.json web/
 RUN npm ci
@@ -15,6 +16,7 @@ RUN npm run build
 FROM node:22-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY shared/canvas-catalog/package.json shared/canvas-catalog/
 COPY server/package.json server/
 COPY web/package.json web/
 RUN npm ci --omit=dev -w @deck/server
@@ -24,6 +26,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules node_modules
 COPY --from=deps /app/package.json package.json
 COPY server/package.json server/
+# The server's workspace dependencies: the canvas catalog (linked from node_modules) and the shared rules it imports built.
+COPY shared/canvas-catalog/package.json shared/canvas-catalog/
+COPY --from=build /app/shared/canvas-catalog/dist shared/canvas-catalog/dist
+COPY --from=build /app/shared/dist shared/dist
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/web/dist web/dist
 

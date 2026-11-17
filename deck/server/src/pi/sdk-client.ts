@@ -8,6 +8,8 @@ import { guardExtension, guardReporter, newTaint, type GuardTaint } from "./guar
 import { routedModel, rinthelProviderExtension } from "./rinthel-provider.js";
 import type { ModelAccess } from "../session-proxy.js";
 import { isClosed, type ToolProfile } from "../tool-profile.js";
+import type { Canvases } from "../canvases.js";
+import { CanvasTools } from "./canvas-tools.js";
 
 /**
  * The Agent's own files: SOUL.md is who it is, PrimaryUser.md and MEMORY.md its owner's notes. Read
@@ -16,10 +18,11 @@ import { isClosed, type ToolProfile } from "../tool-profile.js";
  */
 const CONTEXT_FILES = ["SOUL.md", "PrimaryUser.md", "MEMORY.md"];
 
-export function extraContextFiles(home: string): { name: string; path: string; content: string }[] {
+export function extraContextFiles(home: string, instanceSoulFile?: string): { name: string; path: string; content: string }[] {
   const out: { name: string; path: string; content: string }[] = [];
   for (const name of CONTEXT_FILES) {
-    const file = path.join(home, name);
+    // A member's SOUL.md is the Instance SOUL, never one in their home.
+    const file = name === "SOUL.md" && instanceSoulFile !== undefined ? instanceSoulFile : path.join(home, name);
     try {
       if (!lstatSync(file).isFile()) continue;
       out.push({ name, path: file, content: readFileSync(file, "utf8") });
@@ -34,8 +37,8 @@ export function extraContextFiles(home: string): { name: string; path: string; c
  * One line saying the files are the Agent's own: handed over as plain context files, pi presents them
  * as reference material and the model answers "who are you" from its base identity instead.
  */
-export function framing(home: string): string[] {
-  const present = extraContextFiles(home).map((file) => file.name);
+export function framing(home: string, instanceSoulFile?: string): string[] {
+  const present = extraContextFiles(home, instanceSoulFile).map((file) => file.name);
   return present.length
     ? [`${present.join(", ")} in your context are yours, not reference material about someone else. Each opens with a block saying what it is for; follow it.`]
     : [];
@@ -66,6 +69,10 @@ export interface SdkLaunch {
   profile: ToolProfile;
   /** The Deck Session id, for the Guard's log. */
   sessionId: string;
+  /** The Canvases the Agent writes in this Session; without them it has no canvas tools. */
+  canvases?: Canvases;
+  /** The Instance SOUL a member's Session loads in place of a SOUL.md of its home (set for a closed profile only). */
+  instanceSoulFile?: string;
 }
 
 /**
@@ -79,6 +86,8 @@ export class SdkPiClient extends EventEmitter implements PiClient {
   private unsubscribe: () => void = () => {};
   /** This Session's taint, shared with its Guard. */
   taint: GuardTaint = newTaint();
+  /** The Agent's Canvas tools for this Session: they follow its events and are closed when it stops. */
+  private canvasTools?: CanvasTools;
 
   private constructor(private readonly session: any, readonly profile: ToolProfile) {
     super();
@@ -107,11 +116,13 @@ export class SdkPiClient extends EventEmitter implements PiClient {
       { name: "guard", factory: guardExtension({ sessionId: opts.sessionId, report: guard.report, allowedTools, taint }) },
       { name: "rinthel-provider", factory: rinthelProviderExtension(opts.modelAccess, (model) => liveSession.setModel(model)) },
     ];
+    const canvasTools = opts.canvases ? new CanvasTools(opts.sessionId, opts.canvases) : undefined;
+    if (canvasTools) factories.push({ name: "canvases", factory: canvasTools.extension });
     const context = {
       agentsFilesOverride: (base: { agentsFiles: any[] }) => ({
-        agentsFiles: [...base.agentsFiles, ...extraContextFiles(opts.cwd).map((f) => ({ path: f.path, content: f.content }))],
+        agentsFiles: [...base.agentsFiles, ...extraContextFiles(opts.cwd, opts.instanceSoulFile).map((f) => ({ path: f.path, content: f.content }))],
       }),
-      appendSystemPrompt: framing(opts.cwd),
+      appendSystemPrompt: framing(opts.cwd, opts.instanceSoulFile),
     };
     const resourceLoader = new pi.DefaultResourceLoader({
       cwd: opts.cwd,
@@ -160,6 +171,7 @@ export class SdkPiClient extends EventEmitter implements PiClient {
     liveSession = session;
     const client = new SdkPiClient(session, opts.profile);
     client.taint = taint;
+    client.canvasTools = canvasTools;
     // Notices wait until someone listens: an event emitted before the manager subscribes is lost.
     const onListener = (name: string | symbol) => {
       if (name !== "event") return;
@@ -167,7 +179,7 @@ export class SdkPiClient extends EventEmitter implements PiClient {
       queueMicrotask(() => guard.attach((event) => client.emit("event", event)));
     };
     client.on("newListener", onListener);
-    const unsub = session.subscribe((event: any) => client.emit("event", event));
+    const unsub = session.subscribe((event: any) => { canvasTools?.observe(event); client.emit("event", event); });
     client.unsubscribe = typeof unsub === "function" ? unsub : () => {};
 
     try {
@@ -252,7 +264,7 @@ export class SdkPiClient extends EventEmitter implements PiClient {
   async abort(): Promise<void> {
     // Compaction runs on a controller of its own: session.abort() alone would leave it going.
     if (this.session.isCompacting) this.session.abortCompaction();
-    await this.session.abort();
+    try { await this.session.abort(); } finally { await this.canvasTools?.interrupt(); }
   }
 
   /** `isIdle` is a getter on pi's session, not a method. */
@@ -265,6 +277,7 @@ export class SdkPiClient extends EventEmitter implements PiClient {
     this.disposed = true;
     try { this.unsubscribe(); } catch { /* best effort */ }
     try { this.session.dispose?.(); } catch { /* best effort */ }
+    this.canvasTools?.interrupt().catch((e) => console.error("[canvas] could not interrupt writes:", e));
     this.emit("exit", { code: 0, signal: null });
   }
 

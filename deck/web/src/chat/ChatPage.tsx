@@ -5,12 +5,14 @@ import { useReportExpired } from "../failure-context";
 import { useIsAdmin } from "../auth/use-is-admin";
 import { ModelPicker } from "../models/ModelPicker";
 import { useActiveModel } from "../models/use-local-model";
+import { CanvasPanel } from "../canvas/CanvasPanel";
 import { useChat } from "./use-chat";
 import { windowLabel, type TranscriptItem, type UiDialog } from "./model/transcript";
 
 /** One Session's chat: the transcript, llama-server's prefill progress, and the composer. */
 export function ChatPage() {
   const { id = "" } = useParams();
+  const [canvasOpen, setCanvasOpen] = useState(false);
   const navigate = useNavigate();
   const isAdmin = useIsAdmin();
   const chat = useChat(id, { onFailure: useReportExpired() });
@@ -28,7 +30,7 @@ export function ChatPage() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-3 border-b border-line px-5 py-3">
         <button type="button" aria-label="Volver a Sesiones" onClick={() => navigate("/")} className="rounded-lg p-1 text-fg-muted hover:bg-fg/5"><LuArrowLeft className="h-4 w-4" /></button>
         <div className="min-w-0">
@@ -36,6 +38,7 @@ export function ChatPage() {
           <p className="truncate text-xs text-fg-subtle">{chat.session?.kind === "task" ? chat.session.workspace : "Chat con el Agente"}</p>
         </div>
       </header>
+      <CanvasPanel sessionId={id} open={canvasOpen} setOpen={setCanvasOpen} />
 
       <section aria-label="Transcripción" className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
         {chat.transcript.items.length === 0 && <p className="text-sm text-fg-subtle">Escribe para empezar.</p>}

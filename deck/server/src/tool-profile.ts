@@ -1,4 +1,5 @@
 import type { SessionIdentity } from "./session-identity.js";
+import { CANVAS_TOOLS } from "./pi/canvas-tools.js";
 
 /**
  * `ToolProfile`: what a Session's Agent may call, decided by the current role of the Session's owner,
@@ -14,8 +15,8 @@ import type { SessionIdentity } from "./session-identity.js";
  * Agent.
  */
 
-/** What a member's Agent may call. Empty for now: it chats; the canvas tools join it with the canvases. */
-export const MEMBER_TOOLS: readonly string[] = [];
+/** What a member's Agent may call: it chats and writes Canvases (documents and interfaces), nothing else. */
+export const MEMBER_TOOLS: readonly string[] = CANVAS_TOOLS;
 
 export type ToolProfile =
   | { readonly kind: "general" }

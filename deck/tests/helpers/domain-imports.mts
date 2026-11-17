@@ -23,6 +23,8 @@ export const ADAPTERS = [
   'session-owner.ts',
   // The chat: the model proxy (HTTP to llama-server), pi's SDK, and the filesystem behind slots and Session roots.
   'session-proxy.ts', 'pi/sdk-client.ts', 'session-slots/llama-slot-store.ts', 'session-roots-fs.ts', 'workspaces-fs.ts',
+  // The Instance SOUL is a file on Deck's volume.
+  'instance-soul-fs.ts',
 ];
 
 /** A daemon adapter is named `daemon-*.ts`: the port lives in the file without the prefix. */

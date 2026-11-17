@@ -62,7 +62,7 @@ export function SessionsPage({ username }: { username?: string }) {
 function SessionList({ rows, onOpen, onRemove, empty }: { rows: Session[]; onOpen: (id: string) => void; onRemove: (id: string) => void; empty: string }) {
   if (!rows.length) return <p className="text-xs text-fg-subtle">{empty}</p>;
   return (
-    <ul className="divide-y divide-line rounded-xl border border-line">
+    <ul className="deck-list divide-y divide-line rounded-xl border border-line">
       {rows.map((s) => (
         <li key={s.id} className="flex items-center gap-2 px-3 py-2">
           <button type="button" onClick={() => onOpen(s.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm text-fg">

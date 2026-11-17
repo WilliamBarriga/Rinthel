@@ -5,7 +5,7 @@ import type { SessionsApi, StreamEvent } from "../sessions";
 /** The browser's `EventSource`, injected so the adapter's requests can be checked without one. */
 export type EventSourceLike = (url: string) => { addEventListener(type: string, fn: (e: MessageEvent) => void): void; onmessage: ((e: MessageEvent) => void) | null; close(): void };
 
-const browserEventSource: EventSourceLike = (url) => new EventSource(url, { withCredentials: true });
+export const browserEventSource: EventSourceLike = (url) => new EventSource(url, { withCredentials: true });
 
 export function fetchSessionsApi(fetchImpl: FetchLike = globalFetch, openStream: EventSourceLike = browserEventSource): SessionsApi {
   const session = (id: string) => `/api/sessions/${encodeURIComponent(id)}`;

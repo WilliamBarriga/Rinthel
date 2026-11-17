@@ -6,6 +6,7 @@ import { PortsProvider } from "./ports/context";
 import { realPorts } from "./ports/real";
 import "./index.css";
 import "./base.css";
+import "./appearance/appearance.css";
 
 const router = createBrowserRouter([{ path: "*", element: <App /> }]);
 

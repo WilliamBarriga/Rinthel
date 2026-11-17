@@ -5,10 +5,11 @@ import type { SdkLaunch } from "./pi/sdk-client.js";
 import type { ModelAccess, Prefill } from "./session-proxy.js";
 import type { Route } from "./model-routing/model-routing.js";
 import type { PortalStore } from "./store/port.js";
+import type { Canvases } from "./canvases.js";
 import type { SessionIdentity } from "./session-identity.js";
 import { workspaceOf, type SessionRoots } from "./session-roots.js";
 import { LiveEvents } from "./live-events.js";
-import { sameProfile, toolProfileFor, type ToolProfile } from "./tool-profile.js";
+import { isClosed, sameProfile, toolProfileFor, type ToolProfile } from "./tool-profile.js";
 
 /**
  * Events delivered to whoever watches and never stored: extension dialogs (a stored one would reopen
@@ -29,6 +30,10 @@ export interface SessionManagerDeps {
   /** Every Session's only way to a model. */
   proxy: ModelProxy;
   roots: SessionRoots;
+  /** The Canvases the Agent writes in a Session; without them Sessions have no canvas tools. */
+  canvases?: Canvases;
+  /** Where the Instance SOUL is: a member's Session loads it as its SOUL. */
+  instanceSoulFile?: string;
   /** Starts a Session's pi; the SDK in production, a double in the tests. */
   launch: (opts: SdkLaunch) => Promise<PiClient>;
 }
@@ -49,6 +54,11 @@ export interface PromptAccepted {
 
 /** What the owner reads when the Session's previous pi file is gone and the Session starts afresh. */
 export const SESSION_FILE_GONE = "El historial anterior de esta Sesión ya no existe en el disco: la Sesión empieza de nuevo. Lo que se ve arriba es solo el registro de Deck; el modelo no lo recuerda.";
+
+/** What the Agent reads when the person used a button of one of its `ui` Canvases: what was sent, said once. */
+export function canvasNotesBlock(notes: string[]): string {
+  return ["[Messages the person sent from an interface Canvas, since your last turn:]", ...notes.map((note) => `- ${note}`)].join("\n");
+}
 
 interface LiveSession {
   client: PiClient;
@@ -175,6 +185,8 @@ export class SessionManager extends EventEmitter {
         modelAccess,
         profile,
         sessionId,
+        canvases: this.deps.canvases,
+        instanceSoulFile: isClosed(profile) ? this.deps.instanceSoulFile : undefined,
         thinkingLevel: session.thinking_level || undefined,
       });
     } catch (error) {
@@ -255,8 +267,16 @@ export class SessionManager extends EventEmitter {
       const client = await this.syncProfile(sessionId, await this.ensureClient(sessionId));
       const isCommand = await this.looksLikeCommand(client, message);
       const queued = !client.isIdle();
+      // What the person left through a Canvas since the last Turn reaches the Agent now, never starting one before.
+      const notes = isCommand ? [] : await this.store.sessions.takeNotes(sessionId);
       if (!isCommand) this.record(sessionId, "portal_prompt", { message, turn_id: turnId });
-      await client.prompt(options.framing && !isCommand ? `${options.framing}\n\n${message}` : message);
+      const framed = options.framing && !isCommand ? `${options.framing}\n\n${message}` : message;
+      try {
+        await client.prompt(notes.length ? `${canvasNotesBlock(notes)}\n\n${framed}` : framed);
+      } catch (e) {
+        for (const note of notes) await this.store.sessions.addNote(sessionId, note, false);
+        throw e;
+      }
       // A command that ran no agent turn leaves no agent_settled to clear the status.
       if (client.isIdle()) await this.mark(sessionId, "idle");
       return { queued, turnId };

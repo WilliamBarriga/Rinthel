@@ -1,6 +1,7 @@
 import { LuLogOut } from "react-icons/lu";
 import { navigationFor, type NavigationEntry } from "../navigation";
 import { ThemeSwitcher } from "../components/ThemeSwitcher";
+import { InstallationBrand } from "../appearance/Appearance";
 
 /**
  * The navigation column: the destinations of the registry the reader may visit, grouped, and who is
@@ -18,8 +19,7 @@ export function Sidebar({ navigation, current, isAdmin, username, onNavigate, on
   return (
     <nav aria-label="Navegación" className="sidebar-nav flex w-60 shrink-0 flex-col border-r border-line bg-canvas">
       <div className="flex items-center gap-2 px-4 py-4">
-        <img src="/logo-192.png" alt="" className="h-7 w-7 object-contain" draggable={false} />
-        <span className="text-sm font-semibold text-fg">Rinthel.Ai</span>
+        <InstallationBrand />
       </div>
       <div className="flex-1 space-y-4 overflow-y-auto px-2">
         {navigationFor(isAdmin ? "admin" : "usuario", navigation).map(({ group, entries }) => (

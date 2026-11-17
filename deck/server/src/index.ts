@@ -1,9 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createCanvasActions, storedSessionNotes } from "./canvas-actions.js";
+import { createCanvases } from "./canvases.js";
 import { createDeckApp } from "./app.js";
 import { deckConfigFromEnv } from "./config.js";
 import { daemonFromEnv, serviceSecretFromEnv } from "./daemon-access.js";
 import { daemonSessionIdentity } from "./daemon-session-identity.js";
+import { FsInstanceSoul } from "./instance-soul-fs.js";
 import { startEventRetention, eventRetentionDays } from "./event-retention.js";
 import { DaemonModelRouting } from "./model-routing/daemon-model-routing.js";
 import { SdkPiClient } from "./pi/sdk-client.js";
@@ -33,6 +36,11 @@ const routing = new DaemonModelRouting(daemon);
 const slots = new SessionSlots(new LlamaSlotStore(config.slotsDir), { maxBytes: config.slotsMaxBytes });
 const roots = new FsSessionRoots(config.dataDir, config.workspaceRoot);
 
+// What the Agent writes for the person (Canvases) and what every member's Agent is told it is.
+const canvases = createCanvases(store);
+const canvasActions = createCanvasActions({ canvases, notes: storedSessionNotes(store) });
+const instanceSoul = new FsInstanceSoul(config.instanceSoulFile);
+
 let sessions: SessionManager;
 const proxy = new SessionProxy({
   routing,
@@ -41,7 +49,7 @@ const proxy = new SessionProxy({
   onProgress: (sessionId, prefill) => sessions.reportPrefill(sessionId, prefill),
   onRoute: (sessionId, route) => sessions.reportRoute(sessionId, route),
 });
-sessions = new SessionManager({ store, identity, proxy, roots, launch: (opts) => SdkPiClient.create(opts) });
+sessions = new SessionManager({ store, identity, proxy, roots, canvases, instanceSoulFile: instanceSoul.path, launch: (opts) => SdkPiClient.create(opts) });
 
 const app = createDeckApp({
   store,
@@ -52,6 +60,9 @@ const app = createDeckApp({
   roots,
   slots,
   routing,
+  canvases,
+  canvasActions,
+  instanceSoul,
   webDist: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web/dist"),
 });
 

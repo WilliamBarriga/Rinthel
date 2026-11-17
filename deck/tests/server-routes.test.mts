@@ -26,8 +26,12 @@ const { createMemoryStore } = await import('../server/src/store/memory/index.ts'
 const { createDeckApp } = await import('../server/src/app.ts');
 const { ACCESS_COOKIE } = await import('../server/src/identity.ts');
 const { daemonSessionIdentity } = await import('../server/src/daemon-session-identity.ts');
+const { createCanvases } = await import('../server/src/canvases.ts');
+const { createCanvasActions, InMemorySessionNotes } = await import('../server/src/canvas-actions.ts');
+const { InMemoryInstanceSoul } = await import('../server/src/instance-soul.ts');
 
 const store = createMemoryStore();
+const canvases = createCanvases(store);
 const daemon = new FakeDaemon(SECRET);
 const ADMIN_ID = daemon.addUser('root', 'root-password', 'admin');
 const ANA_ID = daemon.addUser('ana', 'ana-password');
@@ -53,6 +57,9 @@ const app = createDeckApp({
   roots: new InMemorySessionRoots(),
   slots: { forget: async () => {} },
   routing: new InMemoryModelRouting(),
+  canvases,
+  canvasActions: createCanvasActions({ canvases, notes: new InMemorySessionNotes() }),
+  instanceSoul: new InMemoryInstanceSoul(),
   webDist,
 });
 const server = app.listen(0, '127.0.0.1');

@@ -9,12 +9,18 @@ import type { SessionManager } from "./session-manager.js";
 import type { SessionRoots } from "./session-roots.js";
 import type { SlotForgetter } from "./discard-session.js";
 import type { ModelRouting } from "./model-routing/model-routing.js";
+import type { Canvases } from "./canvases.js";
+import type { CanvasActions } from "./canvas-actions.js";
+import type { InstanceSoul } from "./instance-soul.js";
 import { authRouter } from "./api/auth.js";
 import { refreshSessionReader, sessionIdentityRouter } from "./api/session-identity.js";
 import { userSessionsRouter } from "./api/user-sessions.js";
 import { sessionsRouter } from "./api/sessions.js";
 import { sessionEventsRouter } from "./api/session-events.js";
 import { sessionConfigRouter } from "./api/session-config.js";
+import { canvasesRouter } from "./api/canvases.js";
+import { appearanceRouter } from "./api/appearance.js";
+import { instanceSoulRouter } from "./api/instance-soul.js";
 import { workspacesRouter } from "./api/workspaces.js";
 import { modelsRouter } from "./api/models.js";
 import { mountWebUi } from "./api/web-ui.js";
@@ -41,6 +47,12 @@ export interface DeckAppDeps {
   slots: SlotForgetter;
   /** The daemon's route to the Local model. */
   routing: ModelRouting;
+  /** The Canvases of the Sessions (the Agent writes them, the person reads them). */
+  canvases: Canvases;
+  /** What a click on a `ui` Canvas asks of the server: leave a message for the Agent. */
+  canvasActions: CanvasActions;
+  /** The SOUL every member's Sessions load. */
+  instanceSoul: InstanceSoul;
   /** The built web UI; without it the server is an API only. */
   webDist: string;
 }
@@ -54,8 +66,9 @@ export interface DeckAppDeps {
  *  2. login, logout and status, before the login is required;
  *  3. `requireAuth` and the live identity every later route judges by (the Session routes refresh it
  *     before their handlers);
- *  4. the routers behind the login: retire, Sessions, their events and config, workspaces, Local
- *     models, and the pass-through to the daemon last among them;
+ *  4. the routers behind the login: retire, Sessions, their events and config, their Canvases,
+ *     Appearance, the Instance SOUL, workspaces, Local models, and the pass-through to the daemon
+ *     last among them;
  *  5. the web UI, for every path that is not `/api`.
  */
 export function createDeckApp(deps: DeckAppDeps): Express {
@@ -72,6 +85,9 @@ export function createDeckApp(deps: DeckAppDeps): Express {
   app.use("/api", sessionsRouter({ store, runtime: sessions, slots, roots, identity }));
   app.use("/api", sessionEventsRouter({ store, runtime: sessions, allowed: (req) => refreshSessionReader(req, identity) }));
   app.use("/api", sessionConfigRouter({ store, runtime: sessions }));
+  app.use("/api", canvasesRouter({ store, canvases: deps.canvases, actions: deps.canvasActions, allowed: (req) => refreshSessionReader(req, identity) }));
+  app.use("/api", appearanceRouter(store.settings));
+  app.use("/api", instanceSoulRouter(deps.instanceSoul));
   app.use("/api", workspacesRouter({ roots, identity }));
   app.use("/api", modelsRouter({ daemon, routing, generating: () => sessions.anyGenerating() }));
   app.use("/api", daemonProxyRouter(daemon));

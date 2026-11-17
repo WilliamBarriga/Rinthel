@@ -2,7 +2,7 @@ import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { FakeDaemon } from './helpers/fake-daemon.mts';
@@ -32,6 +32,10 @@ const { SessionProxy } = await import('../server/src/session-proxy.ts');
 const { SessionManager } = await import('../server/src/session-manager.ts');
 const { SdkPiClient } = await import('../server/src/pi/sdk-client.ts');
 const { FsSessionRoots } = await import('../server/src/session-roots-fs.ts');
+const { createCanvases } = await import('../server/src/canvases.ts');
+const { createCanvasActions, storedSessionNotes } = await import('../server/src/canvas-actions.ts');
+const { MEMBER_TOOLS } = await import('../server/src/tool-profile.ts');
+const { FsInstanceSoul } = await import('../server/src/instance-soul-fs.ts');
 
 const slotsDir = path.join(root, 'data', 'llama-slots');
 const llama = await fakeLlama(slotsDir);
@@ -55,8 +59,10 @@ const proxy = new SessionProxy({
   onRoute: (id, route) => sessions.reportRoute(id, route),
 });
 await proxy.start();
-sessions = new SessionManager({ store, identity, proxy, roots, launch: (opts) => SdkPiClient.create(opts) });
-const app = createDeckApp({ store, daemon, identity, serviceSecret: 'svc', sessions, roots, slots, routing, webDist: path.join(root, 'no-web') });
+const canvases = createCanvases(store);
+const instanceSoul = new FsInstanceSoul(path.join(root, 'data', 'instance', 'SOUL.md'));
+sessions = new SessionManager({ store, identity, proxy, roots, canvases, instanceSoulFile: instanceSoul.path, launch: (opts) => SdkPiClient.create(opts) });
+const app = createDeckApp({ store, daemon, identity, serviceSecret: 'svc', sessions, roots, slots, routing, canvases, canvasActions: createCanvasActions({ canvases, notes: storedSessionNotes(store) }), instanceSoul, webDist: path.join(root, 'no-web') });
 const server = app.listen(0, '127.0.0.1');
 await once(server, 'listening');
 const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -111,8 +117,21 @@ test('a member chats in an agent Session: the turn goes to the Local model and i
   assert.deepEqual(assistantText(events), ['hola']);
   const body = llama.bodies.at(-1);
   assert.equal(body.model, 'qwen-a');
-  // A member's closed profile: no tool reaches the model.
-  assert.ok(!body.tools || body.tools.length === 0);
+  // A member's closed profile: only the canvas tools reach the model.
+  assert.deepEqual(body.tools.map((t: any) => t.function.name).sort(), [...MEMBER_TOOLS].sort());
+});
+
+test('a member\'s Session loads the Instance SOUL as its own, and never a SOUL.md of their home', async () => {
+  instanceSoul.write('# SOUL.md\nYou are Aria, the Agent of this Instance.');
+  const id = (await call('POST', '/api/agent/sessions', ANA, {})).body.id;
+  const home = roots.agentHome(ANA);
+  mkdirSync(home, { recursive: true });
+  writeFileSync(path.join(home, 'SOUL.md'), 'You are their own private SOUL.\n');
+  await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'quien eres' });
+  await settled(id, ANA);
+  const sent = promptText(llama.bodies.at(-1));
+  assert.match(sent, /You are Aria, the Agent of this Instance/);
+  assert.doesNotMatch(sent, /private SOUL/);
 });
 
 test('the staff framing (name and role) goes to the model in the first prompt of a Session, and only the first', async () => {

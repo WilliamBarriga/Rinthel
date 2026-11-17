@@ -6,6 +6,9 @@ import { fetchAuthApi } from '../web/src/ports/adapters/fetch-auth.ts';
 import { fetchUsersAdminApi } from '../web/src/ports/adapters/fetch-users-admin.ts';
 import { fetchSessionsApi } from '../web/src/ports/adapters/fetch-sessions.ts';
 import { fetchModelsApi } from '../web/src/ports/adapters/fetch-models.ts';
+import { fetchCanvasesApi } from '../web/src/ports/adapters/fetch-canvases.ts';
+import { fetchAppearanceApi } from '../web/src/ports/adapters/fetch-appearance.ts';
+import { fetchInstanceSoulApi } from '../web/src/ports/adapters/fetch-instance-soul.ts';
 
 /**
  * The `fetch` adapters of the front are tested against stand-in servers written by hand, so a route
@@ -82,6 +85,9 @@ for (const [name, make, minimum] of [
   // The event stream is opened as an `EventSource`; it is recorded here as the GET it is.
   ['sessions', (f: typeof fetch) => fetchSessionsApi(f, (url) => { void f(url); return { addEventListener() {}, onmessage: null, close() {} }; }), 13],
   ['models', fetchModelsApi, 3],
+  ['canvases', (f: typeof fetch) => fetchCanvasesApi(f, (url) => { void f(url); return { addEventListener() {}, onmessage: null, close() {} }; }), 3],
+  ['appearance', fetchAppearanceApi, 3],
+  ['instance-soul', fetchInstanceSoulApi, 2],
 ] as const) {
   test(`every request of the ${name} adapter is a route the real server or the daemon has`, async () => {
     const calls = await callsOf(make);
@@ -96,6 +102,11 @@ test('the anchor sees the routes it should: Node-owned and daemon-owned', () => 
   assert.ok(served.has('PATCH /api/identity/users/:p'));
   assert.ok(served.has('GET /api/sessions/:p/events'));
   assert.ok(served.has('POST /api/models/activate'));
+  assert.ok(served.has('POST /api/sessions/:p/canvases/:p/actions'));
+  assert.ok(served.has('PUT /api/agent/instance-soul'));
+  assert.ok(served.has('PUT /api/appearance/brand'));
+  // What left with the trimmed surfaces has no route.
+  for (const gone of ['GET /api/agent/legacy', 'POST /api/agent/legacy/migrate', 'GET /api/audit/guard', 'GET /api/sources']) assert.ok(!served.has(gone), gone);
   assert.ok(!served.has('GET /api/identity/groups'));
   assert.ok(!served.has('GET /api/nonexistent'));
 });
