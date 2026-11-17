@@ -13,6 +13,8 @@ import { isClosed, type ToolProfile } from "../tool-profile.js";
 import type { Canvases } from "../canvases.js";
 import { CanvasTools } from "./canvas-tools.js";
 import { hostExecExtension, type HostExecOptions } from "./host-exec/host-exec-tools.js";
+import { subagentExtension } from "./subagents/subagent-tool.js";
+import type { ChildTool } from "./subagents/child.js";
 
 /**
  * The Agent's own files: SOUL.md is who it is, PrimaryUser.md and MEMORY.md its owner's notes. Read
@@ -80,6 +82,8 @@ export interface SdkLaunch {
   instanceSoulFile?: string;
   /** hostexecd and the owner's live role: set for an admin's Session when Deck has a token, never for a closed profile. */
   hostExec?: HostExecOptions;
+  /** The owner's live role for `subagent`: set for an admin's Session, never for a closed profile. */
+  subagents?: { adminNow: () => Promise<boolean> };
 }
 
 /**
@@ -129,6 +133,15 @@ export class SdkPiClient extends EventEmitter implements PiClient {
     const hostExec = closed ? undefined : opts.hostExec;
     // Built inside pi's loader, so a registration that throws is a load error of `host-exec`.
     if (hostExec) factories.push({ name: "host-exec", factory: (api: any) => hostExecExtension(hostExec)(api) });
+    const subagents = closed ? undefined : opts.subagents;
+    if (subagents) {
+      // What a subagent's child gets beyond pi's built-ins and the agentDir; Memoria's query joins here.
+      const childTools: ChildTool[] = [];
+      factories.push({
+        name: "subagents",
+        factory: subagentExtension({ sessionId: opts.sessionId, agentDir: pi.getAgentDir(), modelAccess: opts.modelAccess, adminNow: subagents.adminNow, childTools }),
+      });
+    }
     const context = {
       agentsFilesOverride: (base: { agentsFiles: any[] }) => ({
         agentsFiles: [...base.agentsFiles, ...extraContextFiles(opts.cwd, opts.instanceSoulFile).map((f) => ({ path: f.path, content: f.content }))],
@@ -158,8 +171,8 @@ export class SdkPiClient extends EventEmitter implements PiClient {
     const loadErrors = resourceLoader.getExtensions().errors;
     if (loadErrors.length) {
       // The Guard and the provider are inline: a Session never runs without them. Host exec, given a
-      // token, registers or the Session does not start.
-      const inline = loadErrors.filter((e: any) => /guard|rinthel-provider|host-exec/.test(String(e?.path ?? e?.extensionPath ?? "")));
+      // token, and subagents register or the Session does not start.
+      const inline = loadErrors.filter((e: any) => /guard|rinthel-provider|host-exec|subagents/.test(String(e?.path ?? e?.extensionPath ?? "")));
       if (closed || inline.length) throw new Error("No se pudieron cargar las extensiones de la Sesión");
       for (const e of loadErrors) console.error(`[pi] extension failed to load: ${String(e?.error ?? e)}`);
     }

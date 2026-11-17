@@ -23,6 +23,8 @@ export const ADAPTERS = [
   'session-owner.ts',
   // The chat: the model proxy (HTTP to llama-server), pi's SDK, host exec (HTTP to hostexecd), and the filesystem behind slots and Session roots.
   'session-proxy.ts', 'pi/sdk-client.ts', 'pi/host-exec/','session-slots/llama-slot-store.ts', 'session-roots-fs.ts', 'workspaces-fs.ts',
+  // Subagents: pi's SDK for each child, and the agent types on disk (image and volume).
+  'pi/subagents/',
   // The Instance SOUL is a file on Deck's volume.
   'instance-soul-fs.ts',
 ];
