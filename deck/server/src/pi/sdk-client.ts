@@ -20,6 +20,7 @@ import { hostExecExtension, type HostExecAccess } from "./host-exec/host-exec-to
 import { VoiceFirstTurn, audioMessage, audioSystemRules, voiceFirstSettings, type VoiceFirstSettings } from "./voice-first.js";
 import { subagentExtension } from "./subagents/subagent-tool.js";
 import type { ChildTool } from "./subagents/child.js";
+import { shippedSkillsDir } from "./subagents/skills.js";
 import { memoriaExtension, MEMORIA_CHILD_TOOLS, type MemoriaAccess } from "./memoria/memoria-tools.js";
 import type { AdminToolAccess } from "./admin-tool.js";
 
@@ -212,6 +213,8 @@ export class SdkPiClient extends EventEmitter implements PiClient {
       }),
       appendSystemPrompt: [...framing(opts.cwd, opts.instanceSoulFile), ...(browser ? [BROWSER_READING_RULE, BROWSER_SCREENSHOT_RULE] : []), ...audioSystemRules(voice)],
     };
+    // The general Agent loads the skills Deck ships in its image (`deck/skills/`) next to the agentDir's.
+    const shippedSkills = closed ? undefined : shippedSkillsDir();
     const resourceLoader = new pi.DefaultResourceLoader({
       cwd: opts.cwd,
       extensionFactories: factories,
@@ -229,7 +232,7 @@ export class SdkPiClient extends EventEmitter implements PiClient {
             noContextFiles: true,
             systemPromptOverride: () => undefined,
           }
-        : { agentDir: pi.getAgentDir() }),
+        : { agentDir: pi.getAgentDir(), ...(shippedSkills ? { additionalSkillPaths: [shippedSkills] } : {}) }),
     });
     await resourceLoader.reload();
     const loadErrors = resourceLoader.getExtensions().errors;

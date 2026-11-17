@@ -32,6 +32,9 @@ COPY --from=build /app/shared/canvas-catalog/dist shared/canvas-catalog/dist
 COPY --from=build /app/shared/dist shared/dist
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/web/dist web/dist
+# The skills Deck ships: every admin Session loads them from here (read-only), next to the
+# agentDir's on the volume. Extras are pi packages an admin installs through /api/packages.
+COPY skills skills
 
 # HOME lives on the data volume, so pi's agentDir (~/.pi/agent) and its packages
 # survive image rebuilds. /data/bin is on PATH: a CLI dropped there survives a

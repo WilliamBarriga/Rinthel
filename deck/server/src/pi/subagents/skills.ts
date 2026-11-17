@@ -1,7 +1,17 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-/** The skills a child asked for, by name: in the Session's working directory, then in Deck's agentDir. */
+/**
+ * The skills Deck ships in its image (`deck/skills/`), next to the server: `server/{src,dist}/pi/subagents`
+ * is three levels below `deck/` both from source and built. `undefined` when the directory is not there.
+ */
+export function shippedSkillsDir(): string | undefined {
+  const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../skills");
+  return existsSync(dir) ? dir : undefined;
+}
+
+/** The skills a child asked for, by name: in the Session's working directory, in Deck's agentDir, then the shipped ones. */
 export interface ChildSkills {
   /** Directories the child loads on demand. */
   dirs: string[];
@@ -13,7 +23,8 @@ export interface ChildSkills {
 
 function find(name: string, cwd: string, agentDir: string): string | null {
   if (!/^[\w.-]+$/.test(name)) return null;
-  const roots = [path.join(cwd, ".pi", "skills"), path.join(cwd, ".agents", "skills"), path.join(agentDir, "skills")];
+  const shipped = shippedSkillsDir();
+  const roots = [path.join(cwd, ".pi", "skills"), path.join(cwd, ".agents", "skills"), path.join(agentDir, "skills"), ...(shipped ? [shipped] : [])];
   for (const root of roots) {
     const dir = path.join(root, name);
     if (existsSync(path.join(dir, "SKILL.md"))) return dir;

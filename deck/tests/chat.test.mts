@@ -206,6 +206,19 @@ test('the context window comes from the route: the composer reads the Local mode
   assert.equal(config.body.state.model.contextWindow, 65536);
 });
 
+test("an admin's Session loads the skills Deck ships in its image; a member's loads none", async () => {
+  const systemOf = (body: any): string => JSON.stringify((body.messages ?? []).filter((m: any) => m.role === 'system'));
+  const firstPrompt = async (as: number) => {
+    const id = (await call('POST', '/api/agent/sessions', as, {})).body.id;
+    const from = llama.bodies.length;
+    await call('POST', `/api/sessions/${id}/prompt`, as, { message: 'hola' });
+    await settled(id, as);
+    return systemOf(llama.bodies[from]);
+  };
+  assert.match(await firstPrompt(ADMIN), /skill-creator/);
+  assert.doesNotMatch(await firstPrompt(BEA), /skill-creator/);
+});
+
 test('the admin switches the Local model; a live Session moves to it on its next turn, with the new window', async () => {
   const id = (await call('POST', '/api/agent/sessions', ANA, {})).body.id;
   await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'antes' });
