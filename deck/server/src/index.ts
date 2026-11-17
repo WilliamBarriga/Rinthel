@@ -4,6 +4,14 @@ import { createDeckApp } from "./app.js";
 import { deckConfigFromEnv } from "./config.js";
 import { daemonFromEnv, serviceSecretFromEnv } from "./daemon-access.js";
 import { daemonSessionIdentity } from "./daemon-session-identity.js";
+import { startEventRetention, eventRetentionDays } from "./event-retention.js";
+import { DaemonModelRouting } from "./model-routing/daemon-model-routing.js";
+import { SdkPiClient } from "./pi/sdk-client.js";
+import { SessionManager } from "./session-manager.js";
+import { SessionProxy } from "./session-proxy.js";
+import { FsSessionRoots } from "./session-roots-fs.js";
+import { LlamaSlotStore } from "./session-slots/llama-slot-store.js";
+import { SessionSlots } from "./session-slots/session-slots.js";
 import { ensureDir, gracefulShutdown, loadTls, serve } from "./startup.js";
 import { openStore } from "./store/index.js";
 
@@ -18,33 +26,58 @@ const daemon = daemonFromEnv();
 
 // `deck.db`, opened and migrated here, once, and handed to every router that needs it.
 const store = openStore(config.databasePath, config.journalMode);
+const identity = daemonSessionIdentity(daemon);
 
-// No Session runs a pi yet: the chat brings the runtime that stops one before it is retired.
-const runtime = { stop: async () => {} };
+// The Local model: the daemon's route, straight to llama-server, each Session's slot kept on Deck's volume.
+const routing = new DaemonModelRouting(daemon);
+const slots = new SessionSlots(new LlamaSlotStore(config.slotsDir), { maxBytes: config.slotsMaxBytes });
+const roots = new FsSessionRoots(config.dataDir, config.workspaceRoot);
+
+let sessions: SessionManager;
+const proxy = new SessionProxy({
+  routing,
+  slots,
+  // How far llama-server has got through a prompt, which is otherwise a silent minute before the first token.
+  onProgress: (sessionId, prefill) => sessions.reportPrefill(sessionId, prefill),
+  onRoute: (sessionId, route) => sessions.reportRoute(sessionId, route),
+});
+sessions = new SessionManager({ store, identity, proxy, roots, launch: (opts) => SdkPiClient.create(opts) });
 
 const app = createDeckApp({
   store,
   daemon,
-  identity: daemonSessionIdentity(daemon),
+  identity,
   serviceSecret: serviceSecretFromEnv(),
-  runtime,
+  sessions,
+  roots,
+  slots,
+  routing,
   webDist: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web/dist"),
 });
 
 ensureDir(config.binDir);
+ensureDir(config.slotsDir);
 const tls = loadTls(config.tlsCertPath, config.tlsKeyPath);
 
+await proxy.start();
+startEventRetention(store, eventRetentionDays(process.env));
 // Before the first request: a write left in flight by the previous server is over.
 await store.canvases.interruptActiveWrites();
 await store.sessions.markOrphanedInterrupted();
 const server = serve(app, { port: config.port, tls }, () => {
   console.log(`deck listening on :${config.port}${tls ? " (https)" : ""}`);
-  console.log(`  store:    ${config.databasePath} (${config.journalMode})`);
-  console.log(`  auth:     panel token`);
+  console.log(`  store:      ${config.databasePath} (${config.journalMode})`);
+  console.log(`  workspaces: ${config.workspaceRoot}`);
+  console.log(`  slots:      ${config.slotsDir}`);
+  console.log(`  auth:       panel token`);
 });
 
 const shutdown = gracefulShutdown({
-  stop: () => store.close(),
+  stop: async () => {
+    await sessions.shutdown();
+    proxy.stop();
+    await store.close();
+  },
   server,
   exit: (code) => process.exit(code),
   log: console.log,

@@ -73,7 +73,7 @@ test('renaming a user field in the contract breaks the server tsc', () => {
 });
 
 test('the contract module holds only types: no runtime statements', () => {
-  for (const f of ['index.ts', 'sessions.ts', 'identity.ts']) {
+  for (const f of ['index.ts', 'sessions.ts', 'identity.ts', 'models.ts', 'events.ts']) {
     const text = readFileSync(path.join(CONTRACT, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     const stray = text.split('\n').filter((l) => /^(export\s+)?(const|let|var|function|class|enum)\b/.test(l.trim()));
     assert.deepEqual(stray, [], `${f} declares runtime values`);

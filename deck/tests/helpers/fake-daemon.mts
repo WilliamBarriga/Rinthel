@@ -4,7 +4,9 @@
  * everything Node does with the daemon's answers is real; only the daemon's side is scripted here,
  * with its rules: login, a refresh token that rotates on each use, logout that revokes it, the users
  * an admin manages (with the last-admin and self-lockout guards) and `session-principal` for the
- * service acting as a user.
+ * service acting as a user; and the Local models: the catalog and the switch (admin, `409
+ * lifecycle_busy`/`turns_in_flight` while `switchRefusal` says so) and `GET /model-provider/routing`
+ * (service), whose `llm` route points at `llamaUrl`.
  */
 import jwt from "jsonwebtoken";
 import { randomBytes } from "node:crypto";
@@ -31,6 +33,13 @@ export class FakeDaemon implements DaemonClient {
   down = false;
   /** Every call that reached the daemon, as `METHOD /path`. */
   readonly calls: string[] = [];
+  /** The Local model catalog (`llm` entries) and the active one. */
+  models: { id: string; context_window: number }[] = [];
+  activeModel: string | null = null;
+  /** Where the `llm` route points; without it there is no route. */
+  llamaUrl: string | null = null;
+  /** The daemon's own refusal of the next switches (`lifecycle_busy`, `turns_in_flight`). */
+  switchRefusal: string | null = null;
 
   constructor(private readonly panelSecret: string) {}
 
@@ -128,6 +137,27 @@ export class FakeDaemon implements DaemonClient {
       const user = who.actingAs === null ? undefined : this.users.get(who.actingAs);
       if (!user || user.disabled) return unauthorized(USER_NOT_AVAILABLE);
       return ok({ user_id: user.id, role: user.role });
+    }
+    if (method === "GET" && path === "/model-provider/routing") {
+      if (who.kind !== "service") return unauthorized("invalid or missing service secret");
+      const model = this.models.find((m) => m.id === this.activeModel);
+      return ok({ capabilities: model && this.llamaUrl ? { llm: { url: this.llamaUrl, model: model.id, context_window: model.context_window, reasoning_format: "qwen-chat-template" } } : {} });
+    }
+    if (path === "/models" || path === "/models/activate") {
+      const acting = this.admin(who);
+      if ("status" in acting) return acting;
+      if (method === "GET" && path === "/models") {
+        return ok({
+          active: { llm: this.activeModel, stt: null, tts: null },
+          models: this.models.map((m) => ({ id: m.id, name: m.id, capability: "llm", activable: true, problem: null, context_window: m.context_window, reasoning_format: "qwen-chat-template" })),
+        });
+      }
+      if (method === "POST" && path === "/models/activate") {
+        if (this.switchRefusal) return { status: 409, body: { detail: this.switchRefusal } };
+        if (!this.models.some((m) => m.id === body.id)) return { status: 404, body: { detail: "unknown_model" } };
+        this.activeModel = body.id;
+        return ok({ ok: true, active: body.id, rolled_back: null, results: [{ service: "llama-server", ok: true, message: "listo" }], warnings: [] });
+      }
     }
     if (!path.startsWith("/identity/users")) return { status: 404, body: { detail: "Not Found" } };
 

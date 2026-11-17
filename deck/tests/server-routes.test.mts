@@ -5,7 +5,11 @@ import type { AddressInfo } from 'node:net';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
 import { FakeDaemon } from './helpers/fake-daemon.mts';
+import type { DeckSessions } from '../server/src/app.ts';
+import { InMemorySessionRoots } from '../server/src/session-roots.ts';
+import { InMemoryModelRouting } from '../server/src/model-routing/model-routing.ts';
 
 /**
  * Deck's HTTP surface as the browser and the daemon reach it: the app `index.ts` serves
@@ -39,7 +43,16 @@ const app = createDeckApp({
   daemon,
   identity: daemonSessionIdentity(daemon),
   serviceSecret: SERVICE,
-  runtime: { stop: async (id: string) => void stopped.push(id) },
+  // Nothing here starts a pi: the Sessions only need to be stopped before they are retired.
+  sessions: Object.assign(new EventEmitter(), {
+    stop: async (id: string) => void stopped.push(id),
+    isRunning: () => false,
+    anyGenerating: () => false,
+    liveSnapshot: () => [],
+  }) as unknown as DeckSessions,
+  roots: new InMemorySessionRoots(),
+  slots: { forget: async () => {} },
+  routing: new InMemoryModelRouting(),
   webDist,
 });
 const server = app.listen(0, '127.0.0.1');

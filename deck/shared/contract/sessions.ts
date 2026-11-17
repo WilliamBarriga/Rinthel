@@ -25,3 +25,27 @@ export interface Session {
   thinking_level: string | null;
   kind?: SessionKind;
 }
+
+/** `GET /api/sessions`: the `task` Sessions the reader may see. */
+export interface SessionList {
+  sessions: Session[];
+}
+
+/** `GET /api/agent/sessions`: the reader's Agent home and the `agent` Sessions they may see. */
+export interface AgentSessionList {
+  agentHome: string;
+  sessions: Session[];
+}
+
+/** A directory a `task` Session may work in. */
+export interface Workspace {
+  name: string;
+  path: string;
+  isGit: boolean;
+}
+
+/** `GET /api/workspaces`: the reader's workspace root and what is under it. */
+export interface WorkspaceList {
+  root: string;
+  workspaces: Workspace[];
+}

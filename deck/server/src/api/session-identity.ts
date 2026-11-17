@@ -1,6 +1,6 @@
 import express, { type Request, type Router } from "express";
 import { accessStillValid, identityOf, isAdminIdentity, isServiceRequest } from "../identity.js";
-import type { SessionIdentity } from "../session-identity.js";
+import { IDENTITY_REFUSAL, identityAccess, type SessionIdentity } from "../session-identity.js";
 
 /** Re-read disabled/deleted users and stale admin roles. Service callers remain members. */
 export async function refreshSessionIdentity(req: Request, identity: SessionIdentity): Promise<boolean> {
@@ -45,8 +45,9 @@ export function stillAdmin(identity: SessionIdentity): (req: Request) => Promise
  * is called by the daemon exactly for users that are disabled, so a refresh would answer 401 and the user could not
  * be deleted.
  *
- * The Session routes (`/sessions`, `/agent`, `/workspaces`) add their own refresh before their handlers when they
- * arrive with the chat, since they judge the caller in many places and not only through `adminOnly`.
+ * The Session routes (`/sessions`, `/agent`, `/workspaces`) refresh here, before any of their handlers runs, since they
+ * judge the caller in many places and not only through `adminOnly`. Actions fail closed when the identity cannot be
+ * read; only a read of stored history goes on, with the reader as a member (`storedReadFallback`).
  */
 export function sessionIdentityRouter(identity: SessionIdentity): Router {
   const router = express.Router();
@@ -57,5 +58,38 @@ export function sessionIdentityRouter(identity: SessionIdentity): Router {
     }
     next();
   });
+  router.use(["/sessions", "/agent", "/workspaces"], async (req, res, next) => {
+    if (isServiceRequest(req)) return next();
+    const access = await identityAccess(() => currentIdentity(req));
+    if (access === 200) return next();
+    if (access === 502 && storedReadFallback(req)) return next();
+    res.status(access).json({ error: IDENTITY_REFUSAL[access as 401 | 502] });
+  });
   return router;
+}
+
+/**
+ * Whether a request reads stored history only: the Session lists, one Session, and its event log. Any other GET
+ * (config, commands) can start a runtime, and is an action.
+ */
+export function readsStoredHistory(req: Pick<Request, "method" | "originalUrl">): boolean {
+  const path = req.originalUrl.split("?")[0]!.replace(/^\/api(?=\/)/, "");
+  return req.method === "GET" && (path === "/agent/sessions" || /^\/sessions(?:\/[^/]+(?:\/events(?:\/before)?)?)?$/.test(path));
+}
+
+/**
+ * With the daemon down, a valid login still reads its own stored history, judged as a member: an admin sees only their
+ * own Sessions until the identity answers again.
+ */
+function storedReadFallback(req: Request): boolean {
+  const claims = identityOf(req);
+  if (!claims || !accessStillValid(req) || !readsStoredHistory(req)) return false;
+  claims.role = "miembro";
+  return true;
+}
+
+/** For a long stream: the login still valid and the identity still current; a daemon down falls back like a stored read. */
+export async function refreshSessionReader(req: Request, identity: SessionIdentity): Promise<boolean> {
+  try { return accessStillValid(req) && await refreshSessionIdentity(req, identity); }
+  catch { return storedReadFallback(req); }
 }

@@ -15,6 +15,14 @@ export interface DeckConfig {
   tlsKeyPath: string | undefined;
   /** Signs the Panel tokens; without it Deck does not start (there is no open mode). */
   panelSecret: string;
+  /** Deck's volume: Sessions' pi files, each owner's Agent home and workspaces. */
+  dataDir: string;
+  /** The Instance's workspaces, the admin's (`WORKSPACE_ROOT`). */
+  workspaceRoot: string;
+  /** llama-server's `--slot-save-path`, as this process sees it. */
+  slotsDir: string;
+  /** What the saved slots may hold in all (`DECK_SLOTS_MAX_GB`, 20 by default). */
+  slotsMaxBytes: number;
 }
 
 export function deckConfigFromEnv(env: NodeJS.ProcessEnv): DeckConfig {
@@ -25,6 +33,8 @@ export function deckConfigFromEnv(env: NodeJS.ProcessEnv): DeckConfig {
   if (!panelSecret) {
     throw new Error("RINTHEL_PANEL_SECRET is not set: Deck cannot validate Panel tokens. Run INSTALL on the daemon, which generates it in the root .env.");
   }
+  const slotsGb = Number(env.DECK_SLOTS_MAX_GB || 20);
+  if (!Number.isFinite(slotsGb) || slotsGb <= 0) throw new Error(`DECK_SLOTS_MAX_GB must be a positive number, got "${env.DECK_SLOTS_MAX_GB}"`);
   return {
     port: Number(env.PORT || 4200),
     databasePath: path.resolve(env.DECK_DB || path.join(dataDir, "deck.db")),
@@ -33,5 +43,9 @@ export function deckConfigFromEnv(env: NodeJS.ProcessEnv): DeckConfig {
     tlsCertPath: env.PORTAL_TLS_CERT,
     tlsKeyPath: env.PORTAL_TLS_KEY,
     panelSecret,
+    dataDir,
+    workspaceRoot: path.resolve(env.WORKSPACE_ROOT || path.join(dataDir, "workspaces")),
+    slotsDir: path.resolve(env.DECK_SLOTS_DIR || path.join(dataDir, "llama-slots")),
+    slotsMaxBytes: Math.floor(slotsGb * 1024 ** 3),
   };
 }

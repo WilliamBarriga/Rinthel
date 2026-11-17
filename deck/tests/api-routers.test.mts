@@ -31,7 +31,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use('/api', serviceCredential({ secret: 'svc' }));
 app.use('/api', requireAuth(daemon));
-app.use('/api', userSessionsRouter({ store, runtime: { stop: async () => {} } }));
+app.use('/api', userSessionsRouter({ store, runtime: { stop: async () => {} }, slots: { forget: async () => {} }, roots: { discard: async () => {} } }));
 app.use('/api', daemonProxyRouter(daemon));
 const server = app.listen(0, '127.0.0.1');
 await once(server, 'listening');
