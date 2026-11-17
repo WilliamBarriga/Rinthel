@@ -6,7 +6,7 @@
  * an admin manages (with the last-admin and self-lockout guards) and `session-principal` for the
  * service acting as a user; and the Local models: the catalog and the switch (admin, `409
  * lifecycle_busy`/`turns_in_flight` while `switchRefusal` says so) and `GET /model-provider/routing`
- * (service), whose `llm` route points at `llamaUrl`.
+ * (service), whose `llm` route points at `llamaUrl` and whose `understory_url` is `understoryUrl`.
  */
 import jwt from "jsonwebtoken";
 import { randomBytes } from "node:crypto";
@@ -38,6 +38,8 @@ export class FakeDaemon implements DaemonClient {
   activeModel: string | null = null;
   /** Where the `llm` route points; without it there is no route. */
   llamaUrl: string | null = null;
+  /** Where the routing says Understory is; `null` is Understory off. */
+  understoryUrl: string | null = null;
   /** The daemon's own refusal of the next switches (`lifecycle_busy`, `turns_in_flight`). */
   switchRefusal: string | null = null;
 
@@ -141,7 +143,7 @@ export class FakeDaemon implements DaemonClient {
     if (method === "GET" && path === "/model-provider/routing") {
       if (who.kind !== "service") return unauthorized("invalid or missing service secret");
       const model = this.models.find((m) => m.id === this.activeModel);
-      return ok({ capabilities: model && this.llamaUrl ? { llm: { url: this.llamaUrl, model: model.id, context_window: model.context_window, reasoning_format: "qwen-chat-template" } } : {} });
+      return ok({ capabilities: model && this.llamaUrl ? { llm: { url: this.llamaUrl, model: model.id, context_window: model.context_window, reasoning_format: "qwen-chat-template" } } : {}, understory_url: this.understoryUrl });
     }
     if (path === "/models" || path === "/models/activate") {
       const acting = this.admin(who);

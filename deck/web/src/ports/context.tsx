@@ -7,6 +7,7 @@ import type { CanvasesApi } from "./canvases";
 import type { AppearanceApi } from "./appearance";
 import type { InstanceSoulApi } from "./instance-soul";
 import type { VoiceSpeech } from "./voice-speech";
+import type { BrowserApi } from "./browser";
 
 /** Every port the front injects. Each port adds its own entry here. */
 export interface Ports {
@@ -18,6 +19,7 @@ export interface Ports {
   appearanceApi: AppearanceApi;
   instanceSoulApi: InstanceSoulApi;
   voiceSpeech: VoiceSpeech;
+  browserApi: BrowserApi;
 }
 
 const PortsContext = createContext<Ports | null>(null);
@@ -40,3 +42,4 @@ export const useCanvasesApi = () => usePort("canvasesApi");
 export const useAppearanceApi = () => usePort("appearanceApi");
 export const useInstanceSoulApi = () => usePort("instanceSoulApi");
 export const useVoiceSpeech = () => usePort("voiceSpeech");
+export const useBrowserApi = () => usePort("browserApi");

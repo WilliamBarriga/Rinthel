@@ -10,7 +10,15 @@ services:
     # The same uid/gid as the host user, so what Deck writes under data/deck stays
     # editable from outside the container. 1000:1000 when unset.
     user: "${PUID:-1000}:${PGID:-1000}"
+    # The host's docker group (written by INSTALL), for the Docker socket below;
+    # unset, the user's own group (and no docker mode for the browser).
+    group_add:
+      - "${DOCKER_GID:-${PGID:-1000}}"
     volumes:
+      # The Instance browser in docker mode: Deck installs, starts and stops the
+      # `deck-browser` container over the socket. Without it Deck falls back to a
+      # local Chrome, or to an external one with BROWSER_EXTERNAL=true.
+      - /var/run/docker.sock:/var/run/docker.sock
       # The volume of Deck: deck.db, the home of pi (HOME=/data/home, so the
       # agentDir is data/deck/home/.pi/agent), sessions and slots.
       - ../data/deck:/data
@@ -32,6 +40,13 @@ services:
       # hostexecd does not run it passes an empty token and Deck loads no such tools.
       RINTHEL_HOSTEXECD_URL: ${RINTHEL_HOSTEXECD_URL:-http://127.0.0.1:${RINTHEL_HOSTEXECD_PORT:-8766}}
       RINTHEL_HOSTEXECD_TOKEN: ${RINTHEL_HOSTEXECD_TOKEN:-}
+      # Understory's token, for an admin's Memoria tools. The daemon hands the
+      # URL per Platform (routing); without a token no Session has Memoria.
+      UNDERSTORY_TOKEN: ${UNDERSTORY_TOKEN:-}
+      # The Instance browser: its fixed CDP endpoint, and `true` for one started
+      # and stopped outside Deck (only found, never managed).
+      BROWSER_CDP_URL: ${BROWSER_CDP_URL:-http://127.0.0.1:9222}
+      BROWSER_EXTERNAL: ${BROWSER_EXTERNAL:-false}
       # `delete` where WAL cannot work on the bind mount (Windows).
       DECK_DB_JOURNAL_MODE: ${DECK_DB_JOURNAL_MODE:-wal}
       # Serve Deck over TLS when both are given.

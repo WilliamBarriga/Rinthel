@@ -148,6 +148,10 @@ propuesta.
 ## Límites pendientes
 
 - No se ha llenado ni validado el contexto completo de 65,536 tokens.
+- Memoria desde Deck sin validar en Windows: una Sesión de admin llega a
+  Understory por `http://understory:3800` (la red compartida Deck+Understory
+  del override de Windows) con `UNDERSTORY_TOKEN`; `understory_memory_query`
+  responde y un token equivocado da 401.
 - El margen de RAM y VRAM es reducido; aumentar contexto, batch, MTP o cache de
   expertos requiere un benchmark aislado.
 - Una respuesta fluida puede contener una inferencia incorrecta. Los flujos que

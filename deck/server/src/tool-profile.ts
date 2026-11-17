@@ -41,6 +41,14 @@ export function sameProfile(a: ToolProfile, b: ToolProfile): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/**
+ * Whether a Session with this profile gets the Instance browser's tools: only the general Agent (an
+ * admin's). Its gate still checks the owner's role at each call.
+ */
+export function instanceBrowserFor(profile: ToolProfile): boolean {
+  return profile.kind === "general";
+}
+
 /** Whether a user whose role now is `role` gets the general Agent (and the Instance's workspaces). */
 export function generalAgentFor(role: "admin" | "miembro" | null): boolean {
   return role === "admin";

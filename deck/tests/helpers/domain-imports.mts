@@ -23,10 +23,16 @@ export const ADAPTERS = [
   'session-owner.ts',
   // The chat: the model proxy (HTTP to llama-server), pi's SDK, host exec (HTTP to hostexecd), and the filesystem behind slots and Session roots.
   'session-proxy.ts', 'pi/sdk-client.ts', 'pi/host-exec/','session-slots/llama-slot-store.ts', 'session-roots-fs.ts', 'workspaces-fs.ts',
+  // Subagents: pi's SDK for each child, and the agent types on disk (image and volume).
+  'pi/subagents/',
+  // Memoria: HTTP to Understory's MCP endpoint.
+  'pi/memoria/',
   // The Instance SOUL is a file on Deck's volume.
   'instance-soul-fs.ts',
   // Voice: HTTP straight to whisper-server and audiocpp-server.
   'voice/direct-voice-speech.ts',
+  // The Instance browser: docker over its socket, a local Chrome, the MCP driver's processes, and its proxied view.
+  'extensions/', 'browser-proxy.ts',
 ];
 
 /** A daemon adapter is named `daemon-*.ts`: the port lives in the file without the prefix. */

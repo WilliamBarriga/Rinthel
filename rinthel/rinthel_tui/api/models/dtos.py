@@ -20,6 +20,8 @@ class CapabilityRoute(BaseModel):
 class Routing(BaseModel):
     # Only the Capabilities with an active Local model that can run.
     capabilities: dict[str, CapabilityRoute]
+    # Where Deck reaches Understory (Memoria); None when it is off.
+    understory_url: str | None
 
 
 class ModelEntry(BaseModel):

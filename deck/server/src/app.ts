@@ -29,6 +29,11 @@ import { FakeVoiceSpeech, type VoiceSpeech } from "./voice/voice-speech.js";
 import { DEFAULT_VOICE_FLAGS } from "./voice/voice-config.js";
 import type { VoiceFlags } from "@deck/contract";
 import { daemonProxyRouter } from "./daemon-proxy.js";
+import { browserRouter } from "./api/browser.js";
+import { mountBrowserProxy } from "./browser-proxy.js";
+import type { BrowserSettings } from "./browser-settings.js";
+import type { BrowserRuntime } from "./instance-browser.js";
+import type { BrowserViewers } from "./extensions/browser-frames.js";
 
 /** What the HTTP surface asks of the running Sessions (`SessionManager`, built by the composition). */
 export type DeckSessions = Pick<
@@ -61,6 +66,20 @@ export interface DeckAppDeps {
   voice?: { speech: VoiceSpeech; flags: VoiceFlags };
   /** The built web UI; without it the server is an API only. */
   webDist: string;
+  /** The Instance browser: its admin routes and its `/browser-ui` view. Without it the Instance has no browser. */
+  browser?: InstanceBrowserDeps;
+}
+
+/** What the Instance browser's routes and its view are served from. */
+export interface InstanceBrowserDeps {
+  settings: BrowserSettings;
+  runtime: BrowserRuntime;
+  /** Its fixed CDP endpoint. */
+  cdpUrl: string;
+  /** Where its view (KasmVNC) listens. */
+  uiHost: string;
+  /** The frame keeper, told when somebody opens the view. */
+  viewers?: BrowserViewers;
 }
 
 /**
@@ -73,9 +92,10 @@ export interface DeckAppDeps {
  *  3. `requireAuth` and the live identity every later route judges by (the Session routes refresh it
  *     before their handlers);
  *  4. the routers behind the login: retire, Sessions, their events and config, their Canvases,
- *     Appearance, the Instance SOUL, voice, workspaces, Local models, and the pass-through to the daemon
- *     last among them;
- *  5. the web UI, for every path that is not `/api`.
+ *     Appearance, the Instance SOUL, voice, workspaces, Local models, the Instance browser, and the
+ *     pass-through to the daemon last among them;
+ *  5. the Instance browser's view (`/browser-ui`), which judges its own caller;
+ *  6. the web UI, for every path that is not `/api`.
  */
 export function createDeckApp(deps: DeckAppDeps): Express {
   const { store, daemon, identity, sessions, roots, slots, routing } = deps;
@@ -97,8 +117,10 @@ export function createDeckApp(deps: DeckAppDeps): Express {
   app.use("/api", voiceRouter({ store, ...(deps.voice ?? { speech: new FakeVoiceSpeech({ stt: false, tts: false }), flags: DEFAULT_VOICE_FLAGS }) }));
   app.use("/api", workspacesRouter({ roots, identity }));
   app.use("/api", modelsRouter({ daemon, routing, generating: () => sessions.anyGenerating() }));
+  if (deps.browser) app.use("/api", browserRouter({ store, settings: deps.browser.settings, runtime: deps.browser.runtime, cdpUrl: deps.browser.cdpUrl }));
   app.use("/api", daemonProxyRouter(daemon));
 
+  if (deps.browser) mountBrowserProxy(app, { settings: deps.browser.settings, identity, host: deps.browser.uiHost, viewers: deps.browser.viewers });
   mountWebUi(app, deps.webDist);
   return app;
 }

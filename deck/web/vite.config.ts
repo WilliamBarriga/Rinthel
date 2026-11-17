@@ -24,5 +24,12 @@ export default defineConfig({
     },
   }],
   test: { environment: "jsdom", include: ["src/**/*.test.{ts,tsx}"] },
-  server: { port: 5190, proxy: { "/api": process.env.DECK_API_URL || "http://localhost:4100" } },
+  server: {
+    port: 5190,
+    proxy: {
+      "/api": process.env.DECK_API_URL || "http://localhost:4100",
+      // The Instance browser's view, and its websocket.
+      "/browser-ui": { target: process.env.DECK_API_URL || "http://localhost:4100", ws: true },
+    },
+  },
 });

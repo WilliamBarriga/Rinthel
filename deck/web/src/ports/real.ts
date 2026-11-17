@@ -7,11 +7,13 @@ import { fetchCanvasesApi } from "./adapters/fetch-canvases";
 import { fetchAppearanceApi } from "./adapters/fetch-appearance";
 import { fetchInstanceSoulApi } from "./adapters/fetch-instance-soul";
 import { fetchVoiceSpeech } from "./adapters/fetch-voice-speech";
+import { fetchBrowserApi } from "./adapters/fetch-browser";
 
 /** Composition root: the only place that picks the real adapters. */
 export function realPorts(): Ports {
   return {
     authApi: fetchAuthApi(), usersAdminApi: fetchUsersAdminApi(), sessionsApi: fetchSessionsApi(), modelsApi: fetchModelsApi(),
-    canvasesApi: fetchCanvasesApi(), appearanceApi: fetchAppearanceApi(), instanceSoulApi: fetchInstanceSoulApi(), voiceSpeech: fetchVoiceSpeech(),
+    canvasesApi: fetchCanvasesApi(), appearanceApi: fetchAppearanceApi(), instanceSoulApi: fetchInstanceSoulApi(),
+    browserApi: fetchBrowserApi(), voiceSpeech: fetchVoiceSpeech(),
   };
 }

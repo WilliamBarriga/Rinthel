@@ -50,7 +50,6 @@ from rinthel_tui.models.domain.errors import CatalogUnavailable
 PhaseFn = Callable[..., Coroutine[Any, Any, None]]
 
 _UNDERSTORY_BUNDLE_DIRS = ("agents", "extensions", "projects", "reference", "users")
-_UNDERSTORY_TOKENS = ("AUTH_TOKEN", "UNDERSTORY_TOKEN")
 
 _WINDOWS_TOOL_HINTS = {
     "git": "instala Git for Windows (winget install --id Git.Git -e)",
@@ -251,23 +250,16 @@ async def phase_install_model_catalog(host: Host, report: PhaseReport, *, task: 
 
 async def phase_install_setup_understory(host: Host, report: PhaseReport, *, task: UnderstoryInstall) -> None:
     """Prepara Understory, que corre desde su subtree con el compose raíz: un
-    solo token en el ``.env`` raíz (``AUTH_TOKEN`` lo exige Understory,
-    ``UNDERSTORY_TOKEN`` lo presenta quien lo llama; los dos iguales) y el
-    bundle vivo en ``data/understory``. Nunca pisa un token ni un archivo
-    del bundle que ya existan."""
+    solo token en el ``.env`` raíz, ``UNDERSTORY_TOKEN`` (el compose raíz se
+    lo pasa a Understory como ``AUTH_TOKEN`` y Deck lo presenta) y el bundle
+    vivo en ``data/understory``. Nunca pisa un token ni un archivo del bundle
+    que ya existan."""
     instance = task.instance
-    tokens = {key: instance.get(key) for key in _UNDERSTORY_TOKENS}
-    present = {value for value in tokens.values() if value}
-    if len(present) > 1:
-        report.error(f"{' y '.join(_UNDERSTORY_TOKENS)} difieren en {instance.env_path} — unificalos a mano")
-        raise PhaseError("understory: conflicting tokens")
-    token = next(iter(present), None) or secrets.token_hex(24)
-    missing = {key: token for key, value in tokens.items() if not value}
-    if missing:
-        update_env_file(instance.env_path, missing, seed_from=instance.env_example_path)
-        report.success(f"{', '.join(missing)} en {instance.env_path}")
-    else:
+    if instance.get("UNDERSTORY_TOKEN"):
         report.warn("token de Understory ya estaba seteado — omito")
+    else:
+        update_env_file(instance.env_path, {"UNDERSTORY_TOKEN": secrets.token_hex(24)}, seed_from=instance.env_example_path)
+        report.success(f"UNDERSTORY_TOKEN en {instance.env_path}")
     instance.env_path.chmod(0o600)
 
     bundle_dir = task.bundle_dir

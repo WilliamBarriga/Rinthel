@@ -20,8 +20,8 @@ export interface FakeLlama {
   bodies: any[];
   /** What each completion answers, word by word. */
   answer: string[];
-  /** Tool calls the next completions answer with, one per completion, before falling back to `answer`. */
-  toolCalls: { name: string; arguments: Record<string, unknown> }[];
+  /** Tool calls the next completions answer with, one per completion, before falling back to `answer`; a `null` answers `answer` for that one. */
+  toolCalls: ({ name: string; arguments: Record<string, unknown> } | null)[];
   /** Answer completions with this status instead (`null`: answer normally). */
   failWith: number | null;
   /** Keep every completion that starts from now on open until the returned function is called. */
@@ -39,7 +39,7 @@ export async function fakeLlama(slotDir: string, slotBytes = 64): Promise<FakeLl
     log: [] as string[],
     bodies: [] as any[],
     answer: ["hola"],
-    toolCalls: [] as { name: string; arguments: Record<string, unknown> }[],
+    toolCalls: [] as ({ name: string; arguments: Record<string, unknown> } | null)[],
     failWith: null as number | null,
   };
   let calls = 0;

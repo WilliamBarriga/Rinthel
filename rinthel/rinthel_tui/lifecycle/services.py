@@ -251,6 +251,23 @@ UNDERSTORY_SERVICE = DockerComposeService(
     ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.understory.port}/",
 )
 
+# The port Understory listens on inside its container, whatever the host
+# publishes it on (``understory/docker-compose.yml``).
+UNDERSTORY_CONTAINER_PORT = 3800
+
+
+def understory_url(cfg: RinthelConfig) -> str | None:
+    """How Deck reaches Understory for Memoria, per Platform: the published
+    port on the host loopback on Linux (Deck on the host network), the
+    service name on the network Deck and Understory share on Windows (Deck in
+    a bridge). ``None`` when Understory is off: no Session has Memoria."""
+    if not UNDERSTORY_SERVICE.enabled_of(cfg):
+        return None
+    if cfg.platform == "windows":
+        return f"http://understory:{UNDERSTORY_CONTAINER_PORT}"
+    return f"http://127.0.0.1:{cfg.understory.port}"
+
+
 # Deck, el portal web de la Instance.
 DECK_SERVICE = DockerComposeService(
     display_name="Deck",

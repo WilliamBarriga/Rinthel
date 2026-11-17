@@ -48,7 +48,7 @@ test("the model guard detects effects and ignores comments and type-only imports
 });
 
 test("presentation modules do not acquire ports or run asynchronous business actions", () => {
-  const views = ["App.tsx", "sessions/SessionsPage.tsx", "chat/ChatPage.tsx", "settings/SettingsPage.tsx", "models/ModelPicker.tsx", "shell/Sidebar.tsx", "users/UsersPage.tsx", "users/UsersTable.tsx", "users/UserDelete.tsx"];
+  const views = ["App.tsx", "sessions/SessionsPage.tsx", "chat/ChatPage.tsx", "settings/SettingsPage.tsx", "models/ModelPicker.tsx", "shell/Sidebar.tsx", "users/UsersPage.tsx", "users/UsersTable.tsx", "users/UserDelete.tsx", "browser/BrowserPage.tsx", "chat/SessionBrowser.tsx"];
   const failures: string[] = [];
   for (const file of views) {
     const visit = (node: ts.Node) => {

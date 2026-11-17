@@ -10,6 +10,7 @@ import { fetchCanvasesApi } from '../web/src/ports/adapters/fetch-canvases.ts';
 import { fetchAppearanceApi } from '../web/src/ports/adapters/fetch-appearance.ts';
 import { fetchInstanceSoulApi } from '../web/src/ports/adapters/fetch-instance-soul.ts';
 import { fetchVoiceSpeech } from '../web/src/ports/adapters/fetch-voice-speech.ts';
+import { fetchBrowserApi } from '../web/src/ports/adapters/fetch-browser.ts';
 
 /**
  * The `fetch` adapters of the front are tested against stand-in servers written by hand, so a route
@@ -95,6 +96,7 @@ for (const [name, make, minimum] of [
     const signal = new AbortController().signal;
     return { settings: () => voice.settings(), saveConfig: () => voice.saveConfig({ enabled: true }), speak: (id: string) => voice.speak(id, 'x', signal), transcribe: (id: string) => voice.transcribe(id, new Blob([]), signal) };
   }, 4],
+  ['browser', fetchBrowserApi, 9],
 ] as const) {
   test(`every request of the ${name} adapter is a route the real server or the daemon has`, async () => {
     const calls = await callsOf(make);

@@ -27,9 +27,9 @@ model {
     }
   }
 
-  servicio docker "Docker services" "Root docker-compose.yaml (name rinthel-general); Deck, Understory and deck-browser are compose services" {
+  servicio docker "Docker services" "Root docker-compose.yaml (name rinthel-general): Deck and Understory; deck-browser is installed by Deck over the Docker socket" {
     source { path "docker-compose.yaml" }
-    servicio deck-browser "deck-browser" "The Instance browser: one Chromium with a fixed CDP endpoint"
+    servicio deck-browser "deck-browser" "The Instance browser: one Chromium with a fixed CDP endpoint, its profile volume keeps the logins; started and stopped by an admin"
   }
 
   externo huggingface "Hugging Face" "GGUF models, pinned by revision and sha256"

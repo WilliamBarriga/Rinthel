@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -b tsconfig.json",
+    "build": "tsc -b tsconfig.json && node -e \"require('node:fs').cpSync('src/pi/subagents/agents', 'dist/pi/subagents/agents', { recursive: true })\"",
     "test": "node --test test/*.test.mjs",
     "dev": "tsx watch src/index.ts"
   },

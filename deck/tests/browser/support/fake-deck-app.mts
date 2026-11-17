@@ -5,7 +5,9 @@
  *
  * Real: login and the Panel token, users, Sessions and their events, Canvases and their actions,
  * Appearance, the Instance SOUL (a file in a temp root), workspaces (in memory) and the Local model
- * routes. Doubled, because they need pi: the Sessions' runtime. `ScriptedSessions` answers a prompt
+ * routes, and the Instance browser's admin routes (over an in-memory runtime and a fake CDP endpoint;
+ * its `/browser-ui` view answers 502, and a spec routes the frame itself). Doubled, because they need
+ * pi: the Sessions' runtime. `ScriptedSessions` answers a prompt
  * the way the Agent would, writing events and a `ui` Canvas through the real store and Canvases.
  */
 import { EventEmitter } from "node:events";
@@ -78,6 +80,10 @@ export async function buildFakeDeck() {
   const { FsInstanceSoul } = await import("../../../server/src/instance-soul-fs.ts");
   const { InMemorySessionRoots } = await import("../../../server/src/session-roots.ts");
   const { InMemoryModelRouting } = await import("../../../server/src/model-routing/model-routing.ts");
+  const { browserSettings } = await import("../../../server/src/browser-settings.ts");
+  const { InMemoryBrowserRuntime } = await import("../../../server/src/instance-browser.ts");
+  // @ts-expect-error: a plain-JS double shared with the server's own tests.
+  const { fakeCdp } = await import("../../../server/test/helpers/fake-cdp.mjs");
 
   const daemon = new FakeDaemon(PANEL_SECRET);
   daemon.addUser(DEMO_USER.username, DEMO_USER.password, "admin");
@@ -105,6 +111,13 @@ export async function buildFakeDeck() {
     canvasActions: createCanvasActions({ canvases, notes: storedSessionNotes(store) }),
     instanceSoul: new FsInstanceSoul(soulFile),
     webDist: path.join(root, "no-web"),
+    // Installed and running, with its password: what an admin finds once it was set up.
+    browser: {
+      settings: browserSettings(store.settings, { password: "browser-spec-password", httpsPort: "1" }),
+      runtime: new InMemoryBrowserRuntime({ container: "running" }),
+      cdpUrl: (await fakeCdp()).url,
+      uiHost: "127.0.0.1",
+    },
   });
   return { app, daemon, store };
 }

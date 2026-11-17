@@ -14,6 +14,8 @@ export interface CapabilityRoute {
 /** `GET /model-provider/routing` (service): only the Capabilities with an active Local model that can run. */
 export interface Routing {
   capabilities: Partial<Record<"llm" | "stt" | "tts", CapabilityRoute>>;
+  /** Where Deck reaches Understory for Memoria, per Platform; `null` when it is off. */
+  understory_url: string | null;
 }
 
 /** One catalog entry, valid or not. */

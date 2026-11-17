@@ -29,8 +29,12 @@ Lo que el Agente lee una sola vez, en el primer prompt de toda Sesión con dueñ
 _Avoid_: Encuadre de Grupo.
 
 **Guard**:
-La política que corre en toda Sesión, en cada resultado y cada llamada a una herramienta. Envuelve como no confiable lo que trae palabras ajenas (comandos de red en `bash` o `rinthel_host_exec`, MCP, el browser propio de la Sesión, la respuesta de un subagent) antes de que el modelo lo lea, y deja la Sesión contaminada. Decide solo, con reglas fijas, sin aprobaciones ni reglas por usuario. Cada llamada que revisa queda como evento `portal_guard` (`allow` o `deny`) en el historial de su Sesión; el transcript muestra los rechazos. No hay otro registro.
+La política que corre en toda Sesión, en cada resultado y cada llamada a una herramienta. Envuelve como no confiable lo que trae palabras ajenas (comandos de red en `bash` o `rinthel_host_exec`, MCP, el Instance browser, la respuesta de un subagent) antes de que el modelo lo lea, y deja la Sesión contaminada. Decide solo, con reglas fijas, sin aprobaciones ni reglas por usuario. Cada llamada que revisa queda como evento `portal_guard` (`allow` o `deny`) en el historial de su Sesión; el transcript muestra los rechazos. No hay otro registro.
 _Avoid_: Registro del Guard (ya no existe), filtro, sandbox (el Guard limita lo que hace un turno, no lo aísla del sistema).
+
+**Instance browser**:
+El único navegador de la Instance, con sus sesiones iniciadas guardadas en su perfil: un contenedor `deck-browser` que Deck instala por el socket de Docker, un Chrome local o uno externo (`BROWSER_EXTERNAL`). Solo el Admin lo instala, lo arranca, lo detiene y lo configura (contraseña de su vista, dominios permitidos), y solo lo usa una Sesión cuyo dueño es Admin y que lo tiene activado; el rol se comprueba en cada llamada y, si no se puede leer, se rechaza. Todas esas Sesiones comparten el mismo navegador y sus pestañas, sin turnos. Nunca se apaga por inactividad: corre hasta que el Admin lo detiene. Lo que devuelve es palabra ajena y contamina la Sesión.
+_Avoid_: Browser personal (ya no existe), navegador del Usuario, browser de la Sesión (la Sesión solo lo usa).
 
 **Sesión contaminada**:
 Una Sesión que leyó palabras ajenas. Lo es para siempre: la marca se guarda en `deck.db` y sobrevive a relanzar la Sesión, reiniciar Deck o perder el archivo de pi; al arrancar, la Sesión cuenta como contaminada hasta que el Guard la reconstruye. Pierde del todo host-exec, `subagent` y la escritura en Memoria, y se le rechazan las formas peligrosas de una llamada (publicar, subir datos, programar trabajo, escribir en el PATH, leer credenciales, reescribir los archivos propios del Agente).
@@ -39,6 +43,14 @@ _Avoid_: Sesión sucia, taint a secas.
 **Slot de la Sesión**:
 El estado del Local model que Deck guarda por Sesión en el disco de `llama-server` (`data/deck/llama-slots`): se restaura antes de cada llamada al modelo y se guarda después, así volver a una Sesión no relee todo su historial. Es de un dueño, un Local model y una Sesión; se va con la Sesión y, pasado el tope de bytes, se borra el usado hace más tiempo.
 _Avoid_: Caché de sesión, KV cache a secas.
+
+**Subagent**:
+Un agente hijo al que el Agente de un admin le delega una tarea con la herramienta `subagent`. Corre en un contexto propio, en memoria, y se va al responder; usa el Local model de su padre y comparte el Slot de la Sesión, una petición a la vez. Nunca tiene `subagent`, host-exec ni escritura en Memoria. Su respuesta es palabras ajenas: deja la Sesión contaminada. Sus tipos (`scout`, `worker`, `reviewer`…) vienen en la imagen de Deck y el volumen puede sumar o reemplazar alguno.
+_Avoid_: Sub-sesión, agente secundario.
+
+**Memoria**:
+Lo que la Instance recuerda entre Sesiones, guardado en Understory: una por Instance, compartida entre los Admins. Solo las Sesiones de un Admin la consultan y la escriben, con `understory_memory_query`, `understory_memory_add` y `understory_memory_update`, y solo las Sesiones limpias la escriben: una Sesión contaminada conserva la consulta y pierde la escritura. Leerla no contamina. Un Subagent solo la consulta.
+_Avoid_: Memoria de pi, `MEMORY.md` (las notas del dueño en la casa del Agente), MCP a secas.
 
 **Canvas**:
 Un documento que el Agente escribe para la persona dentro de una Sesión; la persona lo lee, lo descarga y no lo edita. Es de uno de dos tipos: `markdown` (texto) o `ui` (una interfaz armada con un catálogo cerrado de componentes: encabezados, texto, tablas, tarjetas, botones y campos de formulario). Vive en memoria hasta que se guarda en `deck.db`. En un `ui`, filtrar y rellenar campos es local al navegador; la única acción que sale es «preguntar al agente».

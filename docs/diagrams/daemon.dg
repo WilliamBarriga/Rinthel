@@ -49,7 +49,7 @@ model {
       source { path "rinthel/rinthel_tui/models" }
       modulo mod-catalogo "catalog" "models.local.json (hand-written, untracked) and the Validated profile of the Platform"
       proceso mod-cambio "switch" "kill, spawn, ready, rollback on failure, under the global lifecycle lock; voice also turns off (stt, tts)"
-      modulo mod-ruta "routing" "URL, id, context window and reasoning format of each active model (llm, and stt/tts on Linux); the active ids live in instance.toml"
+      modulo mod-ruta "routing" "URL, id, context window and reasoning format of each active model (llm, and stt/tts on Linux), and Understory's URL per Platform (understory_url); the active ids live in instance.toml"
       puerto mod-puertos "ports" "Catalog, ActiveModels, ModelService, Turns"
       adaptador mod-archivos "json_catalog / toml_active / llama_slots / lifecycle_service" "Catalog file, instance.toml, llama-server /slots and the restart and stop plans of each Capability's service"
       adaptador mod-memoria "memory" "Doubles with a contract suite"

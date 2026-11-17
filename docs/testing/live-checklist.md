@@ -191,9 +191,19 @@ interface with the real daemon, model and host, and how it looks.
   changes the next Session of the member; `miembro` reads it read-only. After
   a fresh INSTALL `data/deck/instance/SOUL.md` exists, and a second INSTALL
   leaves an edited one alone.
-- [ ] **Agent browser.** *Manual (2 and 1): it creates real Docker
-  containers.* Only `admin` sees Browser; the Agent navigates a page and the
-  capture shows.
+- [ ] **Instance browser.** *Manual (2 and 1): it pulls and runs the real
+  `deck-browser` container and a real Chromium.* Only `admin` sees Instance
+  browser. Installing without a password is refused; with one (suggested is
+  fine) it runs, and the live view opens over HTTPS (or on localhost). In an
+  admin Session with the browser on, the Agent navigates a page (the first
+  call fetches `@playwright/mcp`), a snapshot and a screenshot come back, and
+  clicking and typing work with the view closed (the frame keeper keeps it
+  rendering). With the toggle off, or in a `miembro` Session, the call is
+  refused and nothing reaches the browser. Two admin Sessions see the same
+  tabs. Left alone for an hour it is still running; Stop and Start keep the
+  logins. Optional: `BROWSER_EXTERNAL=true` against a Chrome started by hand
+  with `--remote-debugging-port=9222` shows as external and cannot be stopped
+  from Deck.
 - [ ] **Terminal (admin only).** *Manual (2): it opens a real pty on the host.*
   The Session terminal opens, takes commands and closes without leaving the
   process. `miembro` does not see it.

@@ -6,6 +6,7 @@ import { useIsAdmin } from "../auth/use-is-admin";
 import { ModelPicker } from "../models/ModelPicker";
 import { useActiveModel } from "../models/use-local-model";
 import { CanvasPanel } from "../canvas/CanvasPanel";
+import { SessionBrowser } from "./SessionBrowser";
 import { useChat } from "./use-chat";
 import { VoiceControl } from "../voice/VoiceControl";
 import type { WorkPhase } from "../voice/ActivityProgress";
@@ -18,7 +19,8 @@ export function ChatPage() {
   const [canvasOpen, setCanvasOpen] = useState(false);
   const navigate = useNavigate();
   const isAdmin = useIsAdmin();
-  const chat = useChat(id, { onFailure: useReportExpired() });
+  const reportExpired = useReportExpired();
+  const chat = useChat(id, { onFailure: reportExpired });
   const active = useActiveModel();
   const model = chat.transcript.route?.model ?? active.model;
   const contextWindow = chat.window ?? active.contextWindow;
@@ -48,6 +50,8 @@ export function ChatPage() {
       </header>
       <CanvasPanel sessionId={id} open={canvasOpen} setOpen={setCanvasOpen} />
 
+      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* Voice mode takes the chat's place: the stage goes here, the dialogs stay below it. */}
       <div ref={setStage} className={voiceMode ? "flex min-h-0 flex-1 flex-col" : "hidden"} />
       {voiceMode && chat.transcript.dialogs.length > 0 && (
@@ -97,6 +101,9 @@ export function ChatPage() {
           </div>
         </div>
       </form>
+      </div>
+      {isAdmin && <SessionBrowser key={id} sessionId={id} onFailure={reportExpired} />}
+      </div>
     </div>
   );
 }
