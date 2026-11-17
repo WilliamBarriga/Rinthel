@@ -29,6 +29,7 @@ Everything Deck keeps lives in `data/deck/`, mounted at `/data`:
 - `sessions/<id>/`: each Session's pi files, so a Session reopens its exact conversation after a restart. Deleted with the Session.
 - `users/<id>/agent/`: an owner's Agent home, where their `agent` Sessions work; `SOUL.md`, `PrimaryUser.md` and `MEMORY.md` there are the Agent's own context.
 - `users/<id>/workspaces/`: a member's workspaces. An admin's task Sessions use the Instance's (`WORKSPACE_ROOT`, `data/deck/workspaces`).
+- `instance/SOUL.md`: the Instance SOUL, the `SOUL.md` every member's Sessions load as their own (read-only for them, edited by an admin from the SOUL screen). INSTALL seeds it from a template once and never overwrites it; an admin's own `SOUL.md`, in their Agent home, is not touched.
 - `llama-slots/`: llama-server's `--slot-save-path` (the daemon passes it). Deck restores a Session's slot before each call to the model and saves it after; the files are named by owner, Local model and Session, and go with the Session.
 
 Users are not in `deck.db`: they live in the daemon's `rinthel.db`. A Session keeps its owner's id as a plain column, and the daemon calls `POST /api/agent/retire-sessions` before deleting a user (ADR 0007).
@@ -39,8 +40,14 @@ A user logs in with their username and password; the daemon checks them and issu
 
 ## Chat
 
-Each Session runs pi in Deck's process through pi's SDK. An admin's Agent is the general one (pi's built-in tools, and the extensions and skills of the `agentDir`); a member's is closed: nothing of pi is loaded from disk and it has no tools yet. Every Session runs with the Guard, which marks a Session tainted after it reads untrusted output (network commands, MCP) and then refuses the dangerous shapes of a call; a refusal is a `portal_guard` event in the transcript. The taint lives in memory: a Session that restarts starts clean.
+Each Session runs pi in Deck's process through pi's SDK. An admin's Agent is the general one (pi's built-in tools, and the extensions and skills of the `agentDir`); a member's is closed: nothing of pi is loaded from disk and its only tools are the canvas ones (`canvas_list`, `canvas_create`, `canvas_read`, `canvas_write`, `canvas_delete`), and its SOUL is the Instance SOUL. Every Session runs with the Guard, which marks a Session tainted after it reads untrusted output (network commands, MCP) and then refuses the dangerous shapes of a call; a refusal is a `portal_guard` event in the transcript. The taint lives in memory: a Session that restarts starts clean.
 
 The model is the Instance's Local model (ADR 0008). On every call the Session's proxy asks the daemon for the route (`GET /model-provider/routing`) and goes straight to llama-server, asking for prefill progress. The context window pi plans by comes from the route. At its first prompt a Session with an owner tells the Agent who it belongs to (name and role), or that an admin supervises it.
 
 Only an admin changes the Local model, from the composer or from Ajustes. Deck refuses with `409` while any Session is generating, and the daemon refuses with its own `409` while another lifecycle command runs or llama-server is processing. A Session finds out on its next call: the proxy answers `wrong_model`, and the turn goes on with the new model.
+
+## Surfaces
+
+The Agent writes Canvases for the person, who only reads them: a `markdown` canvas is a document and a `ui` canvas is an interface built from a closed catalog (headings, text, tables, cards, buttons and form fields). Filters, fields and `setState` are local to the browser; the only action that leaves it is `askAgent`, which leaves a message in the Session that the Agent reads with the next prompt (a click never starts a turn). Canvases stay in memory until stored, and a write in flight when the server dies is marked interrupted on the next start.
+
+Appearance and Personalization (style, reading, panels, saved profiles per user; brand and shared palette for admins) are stored in `deck.db` settings. The SOUL screen shows the Instance SOUL to everyone and lets only an admin edit it.

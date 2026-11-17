@@ -31,3 +31,19 @@ _Avoid_: Encuadre de Grupo.
 **Slot de la Sesión**:
 El estado del Local model que Deck guarda por Sesión en el disco de `llama-server` (`data/deck/llama-slots`): se restaura antes de cada llamada al modelo y se guarda después, así volver a una Sesión no relee todo su historial. Es de un dueño, un Local model y una Sesión; se va con la Sesión y, pasado el tope de bytes, se borra el usado hace más tiempo.
 _Avoid_: Caché de sesión, KV cache a secas.
+
+**Canvas**:
+Un documento que el Agente escribe para la persona dentro de una Sesión; la persona lo lee, lo descarga y no lo edita. Es de uno de dos tipos: `markdown` (texto) o `ui` (una interfaz armada con un catálogo cerrado de componentes: encabezados, texto, tablas, tarjetas, botones y campos de formulario). Vive en memoria hasta que se guarda en `deck.db`. En un `ui`, filtrar y rellenar campos es local al navegador; la única acción que sale es «preguntar al agente».
+_Avoid_: Artefacto, página, documento a secas.
+
+**Preguntar al agente** (`askAgent`):
+La acción de un Canvas `ui` que deja un mensaje en la Sesión. El clic no inicia un turno: el Agente lo lee junto con el siguiente prompt de la persona.
+_Avoid_: Llamar herramienta (un Canvas ya no ejecuta herramientas).
+
+**SOUL de la Instance**:
+El `SOUL.md` que dice quién es el Agente para todos los Miembros: sus Sesiones lo cargan como su SOUL, de solo lectura, y solo el Admin lo edita. INSTALL la siembra con una plantilla, porque una SOUL vacía deja al Agente sin identidad. El Admin conserva además un `SOUL.md` propio, en su casa del Agente, para sus Sesiones.
+_Avoid_: SOUL global, SOUL de la empresa.
+
+**Apariencia**:
+Cómo se ve Deck: el estilo de distribución, la densidad, la lectura y los paneles, que cada Usuario elige y guarda (con hasta diez perfiles). La **Marca** (nombre, logo, paleta y tema base) es de toda la Instance y solo la cambia el Admin.
+_Avoid_: Tema a secas, skin.

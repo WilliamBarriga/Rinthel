@@ -167,6 +167,15 @@ interface with the real daemon, model and host, and how it looks.
   course and nothing changes. Switch again once it ends: the member's next
   message is answered by the new model, and the window under the composer
   changes. The same switch from Ajustes; `miembro` sees neither.
+- [ ] **Canvases and the Instance SOUL.** *Manual (1 and 3): the Agent writes
+  with the real model, and what it builds is looked at.* In a `miembro` Session
+  ask for a document and then for a form: the panel opens by itself, the
+  `ui` canvas takes typed fields and its button leaves a message that the next
+  answer takes into account (the click alone starts no turn). The Agent of that
+  Session answers as the Instance SOUL says, and as `admin` editing the SOUL
+  changes the next Session of the member; `miembro` reads it read-only. After
+  a fresh INSTALL `data/deck/instance/SOUL.md` exists, and a second INSTALL
+  leaves an edited one alone.
 - [ ] **Agent browser.** *Manual (2 and 1): it creates real Docker
   containers.* Only `admin` sees Browser; the Agent navigates a page and the
   capture shows.

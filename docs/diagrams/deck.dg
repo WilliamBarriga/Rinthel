@@ -9,10 +9,10 @@ model {
       modulo web-home "home / shell" "Home and workspace shell"
       modulo web-sesiones "sessions / terminal" "Sessions, transcript, terminal"
       modulo web-chat "chat" "Transcript and prompt box"
-      modulo web-canvas "canvas" "Canvases (markdown and ui)"
+      modulo web-canvas "canvas" "Canvases: markdown and ui (local actions and askAgent)"
       modulo web-voz "voice" "VAD, STT/TTS, hands-free (opt-in)"
       modulo web-usuarios "users" "Users screen (admin only)"
-      modulo web-ajustes "settings / appearance" "General, Appearance, Instance SOUL"
+      modulo web-ajustes "settings / appearance" "Local model, Appearance and Personalization, Instance SOUL"
       puerto web-puertos "ports" "Contract towards the server: one port per area"
       adaptador web-adaptadores "ports/adapters" "HTTP + SSE"
       adaptador web-fakes "ports/fakes" "Test doubles"
@@ -20,7 +20,7 @@ model {
 
     servicio deck-server "Deck server" "Node + Express; owner of the pi runs and of deck.db" {
       source { path "deck/server/src" }
-      ruta srv-api "api" "Routes /api/*: sessions, agent, workspaces, models, canvases, voice, settings, browser, memory" {
+      ruta srv-api "api" "Routes /api/*: sessions, agent (instance-soul), workspaces, models, canvases, appearance, voice, browser, memory" {
         source { path "deck/server/src/api" }
       }
       modulo srv-auth "auth / tool-profile" "Login against the daemon; current role of the owner; tool profile by role" {
@@ -37,7 +37,11 @@ model {
         source { path "deck/server/src/session-slots" }
       }
       modulo srv-daemon "daemon-client" "Client of the daemon: login, session-principal, model route"
-      modulo srv-recursos "user-resources" "users/<id>/: agent home, workspaces, files with quota, Instance SOUL"
+      modulo srv-recursos "user-resources" "users/<id>/: agent home and workspaces"
+      modulo srv-alma "instance-soul" "The SOUL every member Session loads: read by all, replaced by an admin; a file on the volume seeded by INSTALL" {
+        source { path "deck/server/src/instance-soul.ts" }
+      }
+      modulo srv-apariencia "appearance" "Appearance and brand over the settings of deck.db"
       modulo srv-voz "voice" "STT/TTS direct to whisper-server and audiocpp-server (DirectVoiceSpeech)"
       modulo srv-browser "browser" "Instance browser: CDP driver, admin only, shared between Sessions"
       modulo srv-executors "executors" "host executor: pi runs in the server process"
@@ -54,7 +58,7 @@ model {
         modulo pi-subagent "subagent tool" "Child agent that shares the slot of its parent; lost when tainted"
         modulo pi-memoria "memory tools" "understory_memory_query / add / update (admin only); a child gets query only"
         modulo pi-browser "browser tools" "Instance browser tools"
-        modulo pi-canvas "canvas tools"
+        modulo pi-canvas "canvas tools" "canvas_list / create / read / write / delete: the only tools of a member"
       }
     }
   }
