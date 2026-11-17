@@ -54,7 +54,9 @@ model {
         modulo pi-sdk "sdk-client" "Talks to pi"
         modulo pi-provider "provider" "pi model provider: goes to the session-proxy"
         modulo pi-guard "guard / session-taint" "Fixed RULES and a persisted Session taint; every decision is a portal_guard event in the Session log"
-        modulo pi-hostexec "host-exec tool" "rinthel_host_exec: admin only, Linux only; lost when the Session is tainted"
+        modulo pi-hostexec "host-exec tools" "rinthel_host_exec and its history: loaded with a token in admin Sessions only, role checked on every call; lost when the Session is tainted" {
+          source { path "deck/server/src/pi/host-exec/host-exec-tools.ts" }
+        }
         modulo pi-subagent "subagent tool" "Child agent that shares the slot of its parent; lost when tainted"
         modulo pi-memoria "memory tools" "understory_memory_query / add / update (admin only); a child gets query only"
         modulo pi-browser "browser tools" "Instance browser tools"
