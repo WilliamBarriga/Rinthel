@@ -1,7 +1,9 @@
-"""Ejemplo de la categoría 'config' — parseo de env vars y defaults.
+"""The 'config' category: env var parsing and defaults.
 
-Estilo de mocking: acá no hay subprocess/red, solo os.environ, así que
-usamos monkeypatch.setenv/delenv de pytest directamente, sin mocks de objetos.
+Mocking style: no subprocess or network here, only os.environ, so the tests
+use pytest's monkeypatch.setenv/delenv directly, without object mocks. Every
+config is built on an Instance in ``tmp_path`` (the testing-policy ADR): never the repo's
+own ``.env``.
 """
 
 import dataclasses
@@ -44,49 +46,49 @@ def test_bool_env_default_when_unset(monkeypatch):
     assert _bool_env("RINTHEL_TEST_BOOL", False) is False
 
 
-def test_default_config_respects_port_override(monkeypatch):
+def test_default_config_respects_port_override(monkeypatch, tmp_path):
     monkeypatch.setenv("RINTHEL_LLAMA_PORT", "9999")
-    cfg = default_config()
+    cfg = default_config(Instance(tmp_path), platform="linux")
     assert cfg.llama.port == 9999
 
 
 @pytest.mark.parametrize("platform,address", [("linux", "127.0.0.1"), ("windows", "host.docker.internal")])
-def test_deck_host_address_defaults_per_platform(monkeypatch, platform, address):
+def test_deck_host_address_defaults_per_platform(monkeypatch, tmp_path, platform, address):
     monkeypatch.delenv("RINTHEL_DECK_HOST_ADDRESS", raising=False)
-    assert default_config(platform=platform).deck.host_address == address
+    assert default_config(Instance(tmp_path), platform=platform).deck.host_address == address
 
 
-def test_deck_host_address_can_be_set(monkeypatch):
+def test_deck_host_address_can_be_set(monkeypatch, tmp_path):
     monkeypatch.setenv("RINTHEL_DECK_HOST_ADDRESS", "10.0.0.5")
-    assert default_config(platform="windows").deck.host_address == "10.0.0.5"
+    assert default_config(Instance(tmp_path), platform="windows").deck.host_address == "10.0.0.5"
 
 
 # ── RinthelConfig.validate()──────────────────────────────────────────────
 
 
-def test_validate_raises_on_duplicate_ports():
-    base = default_config()
+def test_validate_raises_on_duplicate_ports(cfg):
+    base = cfg
     cfg = dataclasses.replace(base, understory=dataclasses.replace(base.understory, port=base.llama.port))
     with pytest.raises(ConfigError, match="choca con"):
         cfg.validate()
 
 
-def test_validate_raises_on_port_out_of_range():
-    base = default_config()
+def test_validate_raises_on_port_out_of_range(cfg):
+    base = cfg
     cfg = dataclasses.replace(base, deck=dataclasses.replace(base.deck, port=70000))
     with pytest.raises(ConfigError, match="fuera de rango"):
         cfg.validate()
 
 
-def test_validate_raises_on_non_positive_numeric_field():
-    base = default_config()
+def test_validate_raises_on_non_positive_numeric_field(cfg):
+    base = cfg
     cfg = dataclasses.replace(base, llama=dataclasses.replace(base.llama, threads=0))
     with pytest.raises(ConfigError, match="llama.threads"):
         cfg.validate()
 
 
-def test_validate_warns_on_missing_paths_but_does_not_raise():
-    base = default_config()
+def test_validate_warns_on_missing_paths_but_does_not_raise(cfg):
+    base = cfg
     cfg = dataclasses.replace(
         base, llama=dataclasses.replace(base.llama, bin=base.llama.bin.parent / "no-existe-seguro")
     )
@@ -138,8 +140,8 @@ def test_a_model_override_tunes_its_own_sampling(cfg):
 # ── enabled ────────────────────────────────────────────────────────────────
 
 
-def test_default_config_enables_all_services_by_default():
-    cfg = default_config()
+def test_default_config_enables_all_services_by_default(tmp_path):
+    cfg = default_config(Instance(tmp_path), platform="linux")
     assert cfg.llama.enabled is True
     assert cfg.understory.enabled is True
     assert cfg.deck.enabled is True
@@ -153,9 +155,9 @@ def test_default_config_enables_all_services_by_default():
         ("RINTHEL_DECK_ENABLED", "deck"),
     ],
 )
-def test_enabled_can_be_disabled_per_service(monkeypatch, env_var, attr):
+def test_enabled_can_be_disabled_per_service(monkeypatch, tmp_path, env_var, attr):
     monkeypatch.setenv(env_var, "false")
-    cfg = default_config()
+    cfg = default_config(Instance(tmp_path), platform="linux")
     assert getattr(cfg, attr).enabled is False
 
 
@@ -254,16 +256,16 @@ def test_kind_names_cover_every_field_kind_in_use():
     assert KIND_NAMES == {bool: "bool", int: "int", float: "float", str: "str", Path: "path"}
 
 
-def test_legacy_fork_env_vars_warn(monkeypatch):
+def test_legacy_fork_env_vars_warn(monkeypatch, tmp_path):
     monkeypatch.setenv("RINTHEL_MOE_CACHE_SLOTS", "16")
     monkeypatch.setenv("RINTHEL_SCHED_ASYNC_CPU", "false")
-    warnings = default_config(platform="linux").validate()
+    warnings = default_config(Instance(tmp_path), platform="linux").validate()
     assert any("RINTHEL_MOE_CACHE_SLOTS" in w and "RINTHEL_MOE_CACHE_MIB" in w for w in warnings)
     assert any("RINTHEL_SCHED_ASYNC_CPU" in w for w in warnings)
 
 
-def test_default_paths_are_not_machine_specific():
-    cfg = default_config(platform="linux")
+def test_default_paths_are_not_machine_specific(tmp_path):
+    cfg = default_config(Instance(tmp_path), platform="linux")
     for path in (cfg.llama.bin, cfg.install.llamacpp_repo_dir, cfg.whisper.bin, cfg.audiocpp.bin):
         assert not str(path).startswith("/rinthel-disk")
 

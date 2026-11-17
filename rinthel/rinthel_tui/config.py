@@ -28,8 +28,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from dotenv import dotenv_values
-
 from rinthel_tui.instance import Instance
 from rinthel_tui.lifecycle.domain.types import Platform
 from rinthel_tui.models.adapters.json_catalog import JsonCatalog
@@ -722,16 +720,14 @@ def with_voice_from_instance(cfg: RinthelConfig) -> RinthelConfig:
     return replace(cfg, **models, voice_warnings=tuple(warnings))
 
 
-def default_config(instance: Instance | None = None, *, platform: Platform | None = None) -> RinthelConfig:
-    """Config construida desde el ``.env`` de ``instance`` (default:
-    ``Instance.discover()``), leído del archivo en cada llamada — sin
-    ``load_dotenv`` al importar. Las ``RINTHEL_*`` del shell ganan.
-    ``platform`` (la del proceso por defecto) elige el Validated profile. El
-    Local model activo sale del catálogo y de ``instance.toml``."""
-    instance = instance or Instance.discover()
-    platform = platform or ("windows" if os.name == "nt" else "linux")
-    file_env = {k: v for k, v in dotenv_values(instance.env_path).items() if v is not None}
-    env = {**file_env, **os.environ}
+def default_config(instance: Instance, *, platform: Platform) -> RinthelConfig:
+    """Config built from the ``.env`` of ``instance``, read from the file on
+    every call (no ``load_dotenv`` at import time). The shell's ``RINTHEL_*``
+    win. ``platform`` picks the Validated profile; the caller takes it from
+    ``HostInfo.platform()`` (ports-and-adapters ADR: only the composition
+    looks at the OS). The active Local model comes from the catalog and
+    ``instance.toml``."""
+    env = {**instance.env_file(), **os.environ}
     active = resolve(JsonCatalog(instance.models_catalog_path), TomlActiveModels(instance.instance_toml_path), "llm")
     return with_voice_from_instance(RinthelConfig(
         instance=instance,

@@ -346,7 +346,7 @@ async def phase_install_host_exec_token(host: Host, report: PhaseReport, *, task
         report.warn("host exec es solo de Linux — omito el token en esta Platform")
         return
     try:
-        generated = prepare_host_exec(task.instance.root)
+        generated = prepare_host_exec(task.instance)
     except ValueError as exc:
         report.error(str(exc))
         raise PhaseError("host exec token conflict") from exc

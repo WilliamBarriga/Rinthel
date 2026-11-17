@@ -7,6 +7,7 @@ path comes from here; nobody else recomputes the root.
 """
 
 import argparse
+import json
 import os
 import secrets
 import sys
@@ -109,13 +110,18 @@ class Instance:
         """Understory's live bundle, bind-mounted into its container."""
         return self.data_dir / "understory"
 
-    def get(self, key: str) -> str | None:
-        """Reads ``key`` from the ``.env`` on disk, uncached: a ``.env`` edited by
-        hand after the daemon started is seen here without a restart. Missing,
-        empty or no file are the same case: ``None``."""
+    def env_file(self) -> dict[str, str]:
+        """Every variable of the ``.env`` on disk, uncached: a ``.env`` edited
+        by hand after the daemon started is seen here without a restart. No
+        file is an empty mapping; a key without a value is left out."""
         if not self.env_path.exists():
-            return None
-        return dotenv_values(self.env_path).get(key) or None
+            return {}
+        return {k: v for k, v in dotenv_values(self.env_path).items() if v is not None}
+
+    def get(self, key: str) -> str | None:
+        """Reads ``key`` from the ``.env`` on disk (see ``env_file``). Missing,
+        empty or no file are the same case: ``None``."""
+        return self.env_file().get(key) or None
 
     def variable(self, name: str, shell: Mapping[str, str] | None = None) -> str | None:
         """The single rule to read an Instance variable: the shell (``shell``,
@@ -123,24 +129,29 @@ class Instance:
         ``.env``. Missing in both: ``None``."""
         return (os.environ if shell is None else shell).get(name) or self.get(name)
 
-    def ensure_secret(self, key: str) -> bool:
+    def ensure_secret(self, key: str, *, adopt: str | None = None) -> bool:
         """Generates ``key`` in the ``.env`` if missing (seeding the ``.env``
-        from ``.env.example`` when it does not exist). Idempotent: returns
-        ``True`` only when it generated it. Always leaves the ``.env`` at
-        ``0600``: boot calls it on every start and is what guarantees that mode."""
-        generated = not self.get(key)
-        if generated:
-            self._write_secret(key)
+        from ``.env.example`` when it does not exist); ``adopt`` is written
+        instead of a fresh value (a secret already exported in the shell).
+        Idempotent: returns ``True`` only when it wrote it. Always leaves the
+        ``.env`` at ``0600``: boot calls it on every start and is what
+        guarantees that mode."""
+        written = not (self.get(key) or "").strip()
+        if written:
+            self._write_secret(key, adopt)
         self.env_path.chmod(0o600)
-        return generated
+        return written
 
     def rotate_secret(self, key: str) -> None:
         if key not in RotatableSecret:
             raise ValueError(f"{key} no es rotable (solo {', '.join(RotatableSecret)})")
         self._write_secret(key)
 
-    def _write_secret(self, key: str) -> None:
-        update_env_file(self.env_path, {key: secrets.token_hex(32)}, seed_from=self.env_example_path)
+    def _write_secret(self, key: str, value: str | None = None) -> None:
+        # A generated value is hex and goes bare; an adopted one may hold
+        # anything (``#``, spaces), so it is quoted.
+        line = json.dumps(value, ensure_ascii=False) if value else secrets.token_hex(32)
+        update_env_file(self.env_path, {key: line}, seed_from=self.env_example_path)
 
 
 def main(argv: list[str] | None = None) -> int:

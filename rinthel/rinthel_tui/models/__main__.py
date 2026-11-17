@@ -18,6 +18,7 @@ from pathlib import Path
 
 from rinthel_tui.config import RinthelConfig, default_config
 from rinthel_tui.instance import Instance
+from rinthel_tui.lifecycle.composition import real_host_info
 from rinthel_tui.lifecycle.adapters.socket_probe import SocketProbe
 from rinthel_tui.lifecycle.domain.ports import Probe
 from rinthel_tui.lifecycle.domain.types import Platform
@@ -44,7 +45,7 @@ def main(argv: list[str] | None = None, *, probe: Probe | None = None, platform:
     try:
         if args.command == "list":
             return _list(catalog, active)
-        cfg = default_config(instance, platform=platform)
+        cfg = default_config(instance, platform=platform or real_host_info().platform())
         if args.command == "off":
             return _off(cfg, active, args.capability, probe or SocketProbe())
         return _use(cfg, catalog, active, args.id, probe or SocketProbe())

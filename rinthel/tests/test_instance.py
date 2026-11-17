@@ -53,7 +53,7 @@ def test_config_reads_the_instance_env(tmp_path, monkeypatch):
     (tmp_path / ".env").write_text("RINTHEL_LLAMA_PORT=18099\n")
     instance = Instance(tmp_path)
 
-    cfg = default_config(instance)
+    cfg = default_config(instance, platform="linux")
 
     assert cfg.llama.port == 18099
     assert cfg.instance is instance
@@ -63,14 +63,14 @@ def test_shell_env_wins_over_the_instance_env(tmp_path, monkeypatch):
     (tmp_path / ".env").write_text("RINTHEL_LLAMA_PORT=18099\n")
     monkeypatch.setenv("RINTHEL_LLAMA_PORT", "18100")
 
-    assert default_config(Instance(tmp_path)).llama.port == 18100
+    assert default_config(Instance(tmp_path), platform="linux").llama.port == 18100
 
 
 def test_config_layout_defaults_come_from_the_instance(tmp_path, monkeypatch):
     for var in ("RINTHEL_UNDERSTORY_DIR", "RINTHEL_DECK_DIR", "RINTHEL_LLAMA_LOG_PATH"):
         monkeypatch.delenv(var, raising=False)
 
-    cfg = default_config(Instance(tmp_path))
+    cfg = default_config(Instance(tmp_path), platform="linux")
 
     assert cfg.understory.dir == tmp_path / "understory"
     assert cfg.deck.dir == tmp_path / "deck"

@@ -24,6 +24,7 @@ from rinthel_tui.code_version import running_code_version
 from rinthel_tui.config import RinthelConfig, default_config
 from rinthel_tui.identity.adapters.sqlite import SqliteIdentity
 from rinthel_tui.instance import Instance
+from rinthel_tui.lifecycle.composition import real_host_info
 
 
 def startup_line(now: datetime, pid: int, version: str) -> str:
@@ -54,7 +55,7 @@ def open_identity(instance: Instance) -> None:
 
 def main() -> None:
     instance = Instance.discover()
-    run(instance, default_config(instance))
+    run(instance, default_config(instance, platform=real_host_info().platform()))
 
 
 def run(instance: Instance, cfg: RinthelConfig, *, create_app: Callable[..., FastAPI] = create_app) -> None:

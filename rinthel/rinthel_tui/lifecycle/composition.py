@@ -1,6 +1,7 @@
-"""La composición de lifecycle (ADR 0004): arma el ``Host`` con el adapter real
-de cada puerto. Lo llaman los puntos de entrada — ``Adapters.from_cfg`` — y
-nadie más elige un adapter."""
+"""The lifecycle composition (ports-and-adapters ADR): builds the ``Host``
+with the real adapter of each port. The entry points call it
+(``Adapters.from_cfg``, the daemon and CLI ``main``s) and nobody else picks
+an adapter."""
 
 import os
 
@@ -15,6 +16,13 @@ from rinthel_tui.lifecycle.adapters.socket_probe import SocketProbe
 from rinthel_tui.lifecycle.adapters.windows_host_info import WindowsHostInfo
 from rinthel_tui.lifecycle.adapters.windows_processes import WindowsProcesses, WindowsRunner
 from rinthel_tui.lifecycle.domain.host import Host
+from rinthel_tui.lifecycle.domain.ports import HostInfo
+
+
+def real_host_info(os_name: str = os.name) -> HostInfo:
+    """The ``HostInfo`` of this machine: what ``default_config`` takes its
+    Platform from."""
+    return WindowsHostInfo() if os_name == "nt" else SystemHostInfo()
 
 
 def real_host(os_name: str = os.name) -> Host:
@@ -29,7 +37,7 @@ def real_host(os_name: str = os.name) -> Host:
         compose=DockerCompose(runner),
         probe=SocketProbe(),
         clock=SystemClock(),
-        host_info=WindowsHostInfo() if windows else SystemHostInfo(),
+        host_info=real_host_info(os_name),
         registry=NpmRegistry(),
         data_dirs=SystemDataDirs(),
     )

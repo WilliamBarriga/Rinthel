@@ -38,6 +38,7 @@ from rinthel_tui.config import LLAMA_FIELDS, RinthelConfig, default_config
 from rinthel_tui.identity import tokens as identity_tokens
 from rinthel_tui.identity.adapters.sqlite import SqliteIdentity
 from rinthel_tui.instance import Instance
+from rinthel_tui.lifecycle.composition import real_host_info
 from rinthel_tui.lifecycle.services import LLAMA_SERVICE
 from rinthel_tui.models.adapters.json_catalog import write_catalog
 from rinthel_tui.models.adapters.toml_active import TomlActiveModels
@@ -100,7 +101,7 @@ def _free_port() -> int:
 def real_cfg() -> RinthelConfig:
     """The config of the real Instance, only read: the llama-server binary,
     its hardware tuning and the active Local model."""
-    return default_config(Instance.discover())
+    return default_config(Instance.discover(), platform=real_host_info().platform())
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -309,7 +310,7 @@ def real_llama(request, real_cfg):
 
     def start(live: LiveDaemon) -> None:
         with mock.patch.dict(os.environ, _clean_env(live.root), clear=True):
-            cfg = default_config(Instance(live.root))
+            cfg = default_config(Instance(live.root), platform=real_host_info().platform())
         try:
             stack.enter_context(running_model_services(cfg, [LLAMA_SERVICE], allow_llm=True))
         except RuntimeError as exc:
