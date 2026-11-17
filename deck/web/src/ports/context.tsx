@@ -1,11 +1,15 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { AuthApi } from "./auth";
 import type { UsersAdminApi } from "./users-admin";
+import type { SessionsApi } from "./sessions";
+import type { ModelsApi } from "./models";
 
 /** Every port the front injects. Each port adds its own entry here. */
 export interface Ports {
   authApi: AuthApi;
   usersAdminApi: UsersAdminApi;
+  sessionsApi: SessionsApi;
+  modelsApi: ModelsApi;
 }
 
 const PortsContext = createContext<Ports | null>(null);
@@ -22,3 +26,5 @@ function usePort<K extends keyof Ports>(name: K): Ports[K] {
 
 export const useAuthApi = () => usePort("authApi");
 export const useUsersAdminApi = () => usePort("usersAdminApi");
+export const useSessionsApi = () => usePort("sessionsApi");
+export const useModelsApi = () => usePort("modelsApi");

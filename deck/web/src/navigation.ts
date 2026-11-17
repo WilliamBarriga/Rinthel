@@ -1,5 +1,5 @@
 import type { IconType } from "react-icons";
-import { LuHouse, LuUsers } from "react-icons/lu";
+import { LuMessagesSquare, LuSettings, LuUsers } from "react-icons/lu";
 import { matchPath } from "react-router-dom";
 
 export type Role = "usuario" | "admin";
@@ -10,21 +10,24 @@ export interface NavigationEntry {
   icon: IconType;
   group: "principal" | "administración";
   audience: "todos" | "admin";
+  /** A destination reached from another screen (a Session's chat), not listed in the Sidebar. */
+  hidden?: boolean;
 }
 
 /**
  * The destinations of the Sidebar, and who may visit each: the one registry `App` builds its routes
- * and `RouteGuard` from. A later slice adds its row here and its screen in `App` (the chat adds
- * Sesiones and the Espacio de trabajo).
+ * and `RouteGuard` from. A later slice adds its row here and its screen in `App`.
  */
 export const NAVIGATION: readonly NavigationEntry[] = [
-  { id: "home", path: "/", label: "Inicio", icon: LuHouse, group: "principal", audience: "todos" },
+  { id: "sessions", path: "/", label: "Sesiones", icon: LuMessagesSquare, group: "principal", audience: "todos" },
+  { id: "chat", path: "/sessions/:id", label: "Chat", icon: LuMessagesSquare, group: "principal", audience: "todos", hidden: true },
   { id: "users", path: "/users", label: "Usuarios", icon: LuUsers, group: "administración", audience: "admin" },
+  { id: "settings", path: "/settings", label: "Ajustes", icon: LuSettings, group: "administración", audience: "admin" },
 ];
 
 export function navigationFor(role: Role, entries = NAVIGATION) {
   return (["principal", "administración"] as const)
-    .map(group => ({ group, entries: entries.filter(row => row.group === group && visibleTo(role, row)) }))
+    .map(group => ({ group, entries: entries.filter(row => row.group === group && !row.hidden && visibleTo(role, row)) }))
     .filter(group => group.entries.length > 0);
 }
 

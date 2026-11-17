@@ -4,6 +4,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fetchAuthApi } from '../web/src/ports/adapters/fetch-auth.ts';
 import { fetchUsersAdminApi } from '../web/src/ports/adapters/fetch-users-admin.ts';
+import { fetchSessionsApi } from '../web/src/ports/adapters/fetch-sessions.ts';
+import { fetchModelsApi } from '../web/src/ports/adapters/fetch-models.ts';
 
 /**
  * The `fetch` adapters of the front are tested against stand-in servers written by hand, so a route
@@ -77,6 +79,9 @@ const served = new Set([...serverRoutes(), ...daemonRoutes()]);
 for (const [name, make, minimum] of [
   ['auth', fetchAuthApi, 3],
   ['users-admin', fetchUsersAdminApi, 4],
+  // The event stream is opened as an `EventSource`; it is recorded here as the GET it is.
+  ['sessions', (f: typeof fetch) => fetchSessionsApi(f, (url) => { void f(url); return { addEventListener() {}, onmessage: null, close() {} }; }), 13],
+  ['models', fetchModelsApi, 3],
 ] as const) {
   test(`every request of the ${name} adapter is a route the real server or the daemon has`, async () => {
     const calls = await callsOf(make);
@@ -89,6 +94,8 @@ test('the anchor sees the routes it should: Node-owned and daemon-owned', () => 
   assert.ok(served.has('POST /api/agent/retire-sessions'));
   assert.ok(served.has('GET /api/auth/status'));
   assert.ok(served.has('PATCH /api/identity/users/:p'));
+  assert.ok(served.has('GET /api/sessions/:p/events'));
+  assert.ok(served.has('POST /api/models/activate'));
   assert.ok(!served.has('GET /api/identity/groups'));
   assert.ok(!served.has('GET /api/nonexistent'));
 });

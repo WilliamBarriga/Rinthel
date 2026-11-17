@@ -5,7 +5,9 @@ import { Login } from "./components/Login";
 import { ThemeSwitcher } from "./components/ThemeSwitcher";
 import { useAuthSession } from "./auth/use-auth-session";
 import { IsAdminContext } from "./auth/use-is-admin";
-import { HomePage } from "./home/HomePage";
+import { SessionsPage } from "./sessions/SessionsPage";
+import { ChatPage } from "./chat/ChatPage";
+import { SettingsPage } from "./settings/SettingsPage";
 import { Sidebar } from "./shell/Sidebar";
 import { UsersPage } from "./users/UsersPage";
 import { NAVIGATION, canVisit, destinationFor, type NavigationEntry } from "./navigation";
@@ -49,7 +51,9 @@ export default function App({ navigation = NAVIGATION }: { navigation?: readonly
   // The registry owns the rows; each slice owns its screen. `/users/:id` also covers `/users/new`.
   const usersPage = <UsersPage onFailure={reportFailure} username={state.username} />;
   const pages: Readonly<Record<string, ReactNode>> = {
-    "/": <HomePage username={state.username} isAdmin={state.isAdmin} />,
+    "/": <SessionsPage username={state.username} />,
+    "/sessions/:id": <ChatPage />,
+    "/settings": <SettingsPage />,
     "/users": usersPage,
     "/users/new": usersPage,
     "/users/:id": usersPage,

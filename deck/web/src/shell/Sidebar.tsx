@@ -4,7 +4,7 @@ import { ThemeSwitcher } from "../components/ThemeSwitcher";
 
 /**
  * The navigation column: the destinations of the registry the reader may visit, grouped, and who is
- * logged in with the way out. The chat adds its Sesiones list above the destinations.
+ * logged in with the way out.
  */
 export function Sidebar({ navigation, current, isAdmin, username, onNavigate, onLogout }: {
   navigation: readonly NavigationEntry[];

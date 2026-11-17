@@ -4,10 +4,12 @@ import { PortsProvider, type Ports } from "./context";
 import { IsAdminContext } from "../auth/use-is-admin";
 import { fakeAuthApi } from "./fakes/auth";
 import { fakeUsersAdminApi } from "./fakes/users-admin";
+import { fakeSessionsApi } from "./fakes/sessions";
+import { fakeModelsApi } from "./fakes/models";
 
 /** Fakes for every port; a test overrides only the ones it cares about. */
 export function fakePorts(overrides: Partial<Ports> = {}): Ports {
-  return { authApi: fakeAuthApi(), usersAdminApi: fakeUsersAdminApi(), ...overrides };
+  return { authApi: fakeAuthApi(), usersAdminApi: fakeUsersAdminApi(), sessionsApi: fakeSessionsApi(), modelsApi: fakeModelsApi(), ...overrides };
 }
 
 /** `isAdmin` is the reader's role as `App` provides it; a test is an admin unless it says otherwise. */
