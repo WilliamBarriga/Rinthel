@@ -3,7 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { fakePorts, renderWithPorts } from "../ports/testing";
 import { fakeSessionsApi, sessionFixture } from "../ports/fakes/sessions";
-import { fakeModelsApi } from "../ports/fakes/models";
+import { fakeModelsApi, modelFixture, voiceFixture } from "../ports/fakes/models";
 import { ChatPage } from "./ChatPage";
 import { SessionsPage } from "../sessions/SessionsPage";
 import { SettingsPage } from "../settings/SettingsPage";
@@ -105,5 +105,27 @@ describe("Sesiones and Ajustes", () => {
     fireEvent.change(await screen.findByRole("combobox", { name: "Local model" }), { target: { value: "qwen-b" } });
     fireEvent.click(screen.getByRole("button", { name: "Cambiar modelo" }));
     await waitFor(() => expect(models.activated).toEqual(["qwen-b"]));
+  });
+
+  it("the admin turns the Instance's voice on and off in Ajustes, apart from the Local model", async () => {
+    const models = fakeModelsApi({
+      models: [modelFixture("qwen-a"), voiceFixture("whisper", "stt"), voiceFixture("pocket", "tts")],
+      voice: { stt: null, tts: "pocket" },
+    });
+    renderWithPorts(<SettingsPage />, fakePorts({ modelsApi: models }));
+    const llm = await screen.findByRole("combobox", { name: "Local model" });
+    expect(within(llm).queryByRole("option", { name: /whisper|pocket/ })).toBeNull();
+
+    const stt = screen.getByRole("group", { name: "Reconocimiento de voz (stt)" });
+    expect(within(stt).getByText("Apagado")).toBeTruthy();
+    expect(within(stt).getByRole("button", { name: "Apagar" })).toHaveProperty("disabled", true);
+    fireEvent.click(within(stt).getByRole("button", { name: "Activar" }));
+    await waitFor(() => expect(models.activated).toEqual(["whisper"]));
+    await waitFor(() => expect(within(stt).getByText("Activo: whisper")).toBeTruthy());
+
+    const tts = screen.getByRole("group", { name: "Síntesis de voz (tts)" });
+    fireEvent.click(within(tts).getByRole("button", { name: "Apagar" }));
+    await waitFor(() => expect(models.turnedOff).toEqual(["tts"]));
+    await waitFor(() => expect(within(tts).getByText("Apagado")).toBeTruthy());
   });
 });

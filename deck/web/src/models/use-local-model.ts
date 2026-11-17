@@ -2,6 +2,8 @@ import { useCallback, useState } from "react";
 import { useModelsApi } from "../ports/context";
 import { useRemote } from "../use-remote";
 import { messageOf } from "../ports/http-errors";
+import type { ActivateResult } from "@deck/contract";
+import type { VoiceCapability } from "../ports/models";
 
 /** The Local model every Session talks to now, for the composer's pill. */
 export function useActiveModel() {
@@ -53,5 +55,47 @@ export function useLocalModelSwitch({ onSwitched }: { onSwitched?: () => void } 
     switching,
     error,
     activate,
+  };
+}
+
+/**
+ * Controller of the Instance's voice (admin): per Capability (`stt`, `tts`), its catalog entries and
+ * the active one, `activate` to turn it on with an entry and `off` to turn it off. The daemon starts or
+ * stops the voice service; a refusal stays on screen as `error`.
+ */
+export function useVoiceModels() {
+  const api = useModelsApi();
+  const read = useCallback(() => api.list(), [api]);
+  const remote = useRemote(read);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = useCallback(async (change: () => Promise<ActivateResult>): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await change();
+      if (!result.ok) setError(`La voz no cambió: ${result.results.map((r) => r.message).join(" — ") || "sin detalle"}`);
+      await remote.reload();
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [remote.reload]);
+
+  const capability = (name: VoiceCapability) => ({
+    models: (remote.data?.models ?? []).filter((m) => m.capability === name),
+    active: remote.data?.active[name] ?? null,
+  });
+  return {
+    status: remote.status,
+    loadError: remote.status === "error" ? messageOf(remote.error) : null,
+    stt: capability("stt"),
+    tts: capability("tts"),
+    busy,
+    error,
+    activate: (id: string) => run(() => api.activate(id)),
+    off: (name: VoiceCapability) => run(() => api.off(name)),
   };
 }

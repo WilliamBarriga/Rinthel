@@ -86,7 +86,7 @@ for (const [name, make, minimum] of [
   ['users-admin', fetchUsersAdminApi, 4],
   // The event stream is opened as an `EventSource`; it is recorded here as the GET it is.
   ['sessions', (f: typeof fetch) => fetchSessionsApi(f, (url) => { void f(url); return { addEventListener() {}, onmessage: null, close() {} }; }), 13],
-  ['models', fetchModelsApi, 3],
+  ['models', fetchModelsApi, 4],
   ['canvases', (f: typeof fetch) => fetchCanvasesApi(f, (url) => { void f(url); return { addEventListener() {}, onmessage: null, close() {} }; }), 3],
   ['appearance', fetchAppearanceApi, 3],
   ['instance-soul', fetchInstanceSoulApi, 2],

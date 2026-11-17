@@ -18,7 +18,10 @@ const REFUSED: Readonly<Record<string, string>> = {
  * - `GET /models` (admin): the daemon's catalog, as the daemon answers it.
  * - `POST /models/activate` (admin): refused here with `409 turns_in_flight` while any Session of this
  *   Deck is generating; otherwise the daemon switches (kill, spawn, ready, rollback) under its own lock
- *   and may refuse with its own 409. Sessions find out on their next call (`wrong_model`).
+ *   and may refuse with its own 409. Sessions find out on their next call (`wrong_model`). An `stt` or
+ *   `tts` id turns voice on with that model.
+ * - `POST /models/off` (admin): turns `stt` or `tts` off (the daemon stops its service); the `llm` is
+ *   never off, so anything else is a `400` that never reaches the daemon.
  */
 export function modelsRouter(deps: { daemon: DaemonClient; routing: ModelRouting; generating: () => boolean }): Router {
   const { daemon, routing } = deps;
@@ -46,6 +49,16 @@ export function modelsRouter(deps: { daemon: DaemonClient; routing: ModelRouting
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id }),
+    }));
+  });
+
+  router.post("/models/off", admin, async (req, res) => {
+    const capability = req.body?.capability;
+    if (capability !== "stt" && capability !== "tts") return res.status(400).json({ error: "capability must be stt or tts: the llm is never off" });
+    await relay(res, () => daemon.withPanelToken(accessTokenOf(req) ?? "").fetch("/models/off", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ capability }),
     }));
   });
 

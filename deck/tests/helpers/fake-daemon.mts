@@ -4,8 +4,8 @@
  * everything Node does with the daemon's answers is real; only the daemon's side is scripted here,
  * with its rules: login, a refresh token that rotates on each use, logout that revokes it, the users
  * an admin manages (with the last-admin and self-lockout guards) and `session-principal` for the
- * service acting as a user; and the Local models: the catalog and the switch (admin, `409
- * lifecycle_busy`/`turns_in_flight` while `switchRefusal` says so) and `GET /model-provider/routing`
+ * service acting as a user; and the Local models: the catalog, the switch and turning `stt`/`tts`
+ * off (admin, `409 lifecycle_busy`/`turns_in_flight` while `switchRefusal` says so) and `GET /model-provider/routing`
  * (service), whose `llm` route points at `llamaUrl` and whose `understory_url` is `understoryUrl`.
  */
 import jwt from "jsonwebtoken";
@@ -33,9 +33,11 @@ export class FakeDaemon implements DaemonClient {
   down = false;
   /** Every call that reached the daemon, as `METHOD /path`. */
   readonly calls: string[] = [];
-  /** The Local model catalog (`llm` entries) and the active one. */
-  models: { id: string; context_window: number }[] = [];
+  /** The Local model catalog (`llm` unless an entry says otherwise) and the active `llm`. */
+  models: { id: string; context_window: number; capability?: "llm" | "stt" | "tts" }[] = [];
   activeModel: string | null = null;
+  /** The active voice models; the routing does not carry them (no voice service behind this fake). */
+  activeVoice: { stt: string | null; tts: string | null } = { stt: null, tts: null };
   /** Where the `llm` route points; without it there is no route. */
   llamaUrl: string | null = null;
   /** Where the routing says Understory is; `null` is Understory off. */
@@ -145,20 +147,29 @@ export class FakeDaemon implements DaemonClient {
       const model = this.models.find((m) => m.id === this.activeModel);
       return ok({ capabilities: model && this.llamaUrl ? { llm: { url: this.llamaUrl, model: model.id, context_window: model.context_window, reasoning_format: "qwen-chat-template" } } : {}, understory_url: this.understoryUrl });
     }
-    if (path === "/models" || path === "/models/activate") {
+    if (path === "/models" || path === "/models/activate" || path === "/models/off") {
       const acting = this.admin(who);
       if ("status" in acting) return acting;
       if (method === "GET" && path === "/models") {
         return ok({
-          active: { llm: this.activeModel, stt: null, tts: null },
-          models: this.models.map((m) => ({ id: m.id, name: m.id, capability: "llm", activable: true, problem: null, context_window: m.context_window, reasoning_format: "qwen-chat-template" })),
+          active: { llm: this.activeModel, ...this.activeVoice },
+          models: this.models.map((m) => ({ id: m.id, name: m.id, capability: m.capability ?? "llm", activable: true, problem: null, context_window: m.context_window, reasoning_format: "qwen-chat-template" })),
         });
       }
       if (method === "POST" && path === "/models/activate") {
         if (this.switchRefusal) return { status: 409, body: { detail: this.switchRefusal } };
-        if (!this.models.some((m) => m.id === body.id)) return { status: 404, body: { detail: "unknown_model" } };
-        this.activeModel = body.id;
-        return ok({ ok: true, active: body.id, rolled_back: null, results: [{ service: "llama-server", ok: true, message: "listo" }], warnings: [] });
+        const model = this.models.find((m) => m.id === body.id);
+        if (!model) return { status: 404, body: { detail: "unknown_model" } };
+        const capability = model.capability ?? "llm";
+        if (capability === "llm") this.activeModel = body.id;
+        else this.activeVoice[capability] = body.id;
+        return ok({ ok: true, active: body.id, rolled_back: null, results: [{ service: capability === "llm" ? "llama-server" : capability, ok: true, message: "listo" }], warnings: [] });
+      }
+      if (method === "POST" && path === "/models/off") {
+        if (body.capability !== "stt" && body.capability !== "tts") return { status: 422, body: { detail: "capability must be stt or tts" } };
+        if (this.switchRefusal) return { status: 409, body: { detail: this.switchRefusal } };
+        this.activeVoice[body.capability as "stt" | "tts"] = null;
+        return ok({ ok: true, active: null, rolled_back: null, results: [], warnings: [] });
       }
     }
     if (!path.startsWith("/identity/users")) return { status: 404, body: { detail: "Not Found" } };

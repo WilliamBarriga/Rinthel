@@ -21,7 +21,7 @@ export function VoicePage() {
       {voice.loadError && <p role="alert" className="text-xs text-red-500">{voice.loadError}</p>}
       {instance && !(instance.stt && instance.tts) && (
         <p role="note" className="rounded-lg border border-line px-3 py-2 text-xs text-fg-muted">
-          La Instance no tiene la voz activa ({[!instance.stt && "stt", !instance.tts && "tts"].filter(Boolean).join(" y ")}): un admin puede activarla. Mientras tanto, la voz no aparece en las Sesiones.
+          La Instance no tiene la voz activa ({[!instance.stt && "stt", !instance.tts && "tts"].filter(Boolean).join(" y ")}): un admin puede activarla en Ajustes. Mientras tanto, la voz no aparece en las Sesiones.
         </p>
       )}
       {config && (

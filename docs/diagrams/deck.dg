@@ -14,7 +14,7 @@ model {
         source { path "deck/web/src/voice" }
       }
       modulo web-usuarios "users" "Users screen (admin only)"
-      modulo web-ajustes "settings / appearance" "Local model, Appearance and Personalization, Instance SOUL"
+      modulo web-ajustes "settings / appearance" "Local model and the Instance's voice (stt/tts on or off), Appearance and Personalization, Instance SOUL"
       modulo web-browser "browser" "Instance browser screen (admin): install, start, stop, password, allowlist, live view; a Session's browser panel" {
         source { path "deck/web/src/browser" }
       }

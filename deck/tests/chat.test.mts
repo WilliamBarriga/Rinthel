@@ -257,6 +257,35 @@ test('only the admin lists and switches Local models', async () => {
   assert.equal(daemon.activeModel, 'qwen-a');
 });
 
+test('the admin turns voice on and off through Deck: stt and tts go to the daemon, llm is never off, a member cannot', async () => {
+  const voice = [{ id: 'whisper-base', context_window: 0, capability: 'stt' as const }, { id: 'pocket', context_window: 0, capability: 'tts' as const }];
+  daemon.models.push(...voice);
+  try {
+    const on = await call('POST', '/api/models/activate', ADMIN, { id: 'whisper-base' });
+    assert.deepEqual([on.status, on.body.ok], [200, true]);
+    assert.deepEqual((await call('GET', '/api/models', ADMIN)).body.active, { llm: 'qwen-a', stt: 'whisper-base', tts: null });
+
+    assert.equal((await call('POST', '/api/models/off', ANA, { capability: 'stt' })).status, 403);
+    const before = daemon.calls.length;
+    for (const capability of ['llm', 'nope', undefined]) {
+      assert.equal((await call('POST', '/api/models/off', ADMIN, { capability })).status, 400, String(capability));
+    }
+    assert.deepEqual(daemon.calls.slice(before).filter((c) => c.includes('/models/off')), []);
+
+    const off = await call('POST', '/api/models/off', ADMIN, { capability: 'stt' });
+    assert.deepEqual([off.status, off.body.ok], [200, true]);
+    assert.deepEqual((await call('GET', '/api/models', ADMIN)).body.active, { llm: 'qwen-a', stt: null, tts: null });
+    assert.equal(daemon.activeModel, 'qwen-a');
+
+    daemon.switchRefusal = 'lifecycle_busy';
+    const busy = await call('POST', '/api/models/off', ADMIN, { capability: 'tts' });
+    daemon.switchRefusal = null;
+    assert.deepEqual([busy.status, busy.body.code], [409, 'lifecycle_busy']);
+  } finally {
+    daemon.models.splice(daemon.models.length - voice.length, voice.length);
+  }
+});
+
 test('a deleted Session takes its pi files and its saved slots with it', async () => {
   const id = (await call('POST', '/api/agent/sessions', BEA, {})).body.id;
   await call('POST', `/api/sessions/${id}/prompt`, BEA, { message: 'hola' });
