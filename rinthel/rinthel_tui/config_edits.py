@@ -12,6 +12,7 @@ from rinthel_tui.instance import RotatableSecret
 from rinthel_tui.lifecycle.services import (
     AUDIOCPP_SERVICE,
     DECK_SERVICE,
+    HOSTEXECD_SERVICE,
     LLAMA_SERVICE,
     UNDERSTORY_SERVICE,
     WHISPER_SERVICE,
@@ -26,6 +27,7 @@ _DISPLAY_NAMES = {
     "deck": DECK_SERVICE.display_name,
     "whisper": WHISPER_SERVICE.display_name,
     "audiocpp": AUDIOCPP_SERVICE.display_name,
+    "hostexecd": HOSTEXECD_SERVICE.display_name,
 }
 
 

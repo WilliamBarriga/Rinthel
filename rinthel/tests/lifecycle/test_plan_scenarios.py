@@ -39,16 +39,17 @@ async def test_boot_with_docker_down_stops_at_the_first_failure_and_starts_nothi
 
 async def test_boot_spawns_llama_server_with_its_argv_and_brings_up_the_docker_services(cfg, host, lifecycle):
     host.runner.script(INFO, rc=0)
-    host.probe.script_http(services.LLAMA_SERVICE.ready_url_of(cfg), True)
-    for svc in services.DOCKER_SERVICES:
+    for svc in (*services.LOCAL_SERVICES, *services.DOCKER_SERVICES):
         host.probe.script_http(svc.ready_url_of(cfg), True)
     cfg.instance.root.mkdir(exist_ok=True)
 
     outcomes = await lifecycle.boot()
 
     assert all(o.ok for o in outcomes), outcomes
-    (spawn,) = host.processes.spawns
-    assert list(spawn.argv) == services.LLAMA_SERVICE.build_argv(cfg)
+    llama, hostexecd = host.processes.spawns
+    assert list(llama.argv) == services.LLAMA_SERVICE.build_argv(cfg)
+    assert list(hostexecd.argv) == services.HOSTEXECD_SERVICE.build_argv(cfg)
+    assert hostexecd.env["RINTHEL_INSTANCE_ROOT"] == str(cfg.instance.root)
     assert {call[1] for call in host.compose.calls if call[0] == "up"} == {"understory", "deck"}
 
 

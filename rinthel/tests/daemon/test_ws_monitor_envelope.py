@@ -60,8 +60,12 @@ def test_every_telemetry_message_keeps_the_envelope_the_clients_read(
     adapters.models.active.set("llm", daemon_cfg.local_model.id)
     adapters.models.active.set("stt", "whisper-base")
     adapters.models.active.set("tts", "pocket-tts-es")
-    # Only Understory among the managed services, as in the shared fixture: Deck off.
-    cfg = dataclasses.replace(daemon_cfg, deck=dataclasses.replace(daemon_cfg.deck, enabled=False))
+    # Only Understory among the managed services, as in the shared fixture: Deck and hostexecd off.
+    cfg = dataclasses.replace(
+        daemon_cfg,
+        deck=dataclasses.replace(daemon_cfg.deck, enabled=False),
+        hostexecd=dataclasses.replace(daemon_cfg.hostexecd, enabled=False),
+    )
     telemetry = real_telemetry(lambda: app.state.cfg, host, adapters.models)
     app = create_app(cfg, adapters=dataclasses.replace(adapters, telemetry=telemetry))
     token = service_headers["x-rinthel-service-secret"]

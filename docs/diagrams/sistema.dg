@@ -45,5 +45,6 @@ model {
   daemon -> modelos.llama-server "starts, stops, switches the Local model"
   daemon -> modelos.whisper-server "opt-in (stt)"
   daemon -> modelos.audiocpp-server "opt-in (tts)"
+  daemon -> modelos.hostexecd "starts, stops; token and port by env (Linux only)"
   daemon -> docker "docker compose up / down"
 }

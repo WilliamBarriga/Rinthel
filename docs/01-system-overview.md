@@ -15,10 +15,11 @@ opened with `scripts/diagrams.sh dev`).
 | `llama-server` (CUDA, local process) | Serves the active Local model | `8080` |
 | Deck (Docker, host network on Linux) | Web portal: login, Sessions, chat | `4100` |
 | Understory (Docker) | MCP memory layer | `3800` |
-| `hostexecd` (local process) | Runs shell commands on the host for an admin | `8766` (loopback) |
+| `hostexecd` (local process, Linux only) | Runs shell commands on the host for an admin's Session | `8766` (loopback) |
 
 `llama-server` and the daemon run as local processes (GPU access, host
-lifecycle). Deck and Understory are services of the single root compose
+lifecycle); the daemon starts and stops `llama-server` and `hostexecd` as its
+managed services (see [`07-host-exec.md`](07-host-exec.md)). Deck and Understory are services of the single root compose
 project (`docker-compose.yaml`, `name: rinthel-general`): Deck enters by
 `include: deck/docker-compose.yml`, Understory by `extends:`. There is one
 `.env`, at the root.
@@ -69,9 +70,9 @@ The live bundle is `data/understory`.
 
 ## Lifecycle
 
-`rinthel/rinthel-boot.sh` (or `.ps1`) ensures the service secret and the
-host-exec token in the root `.env`, autostarts the daemon and `hostexecd`
-(pidfiles, they survive the TUI closing) and launches the Rust client, which
+`rinthel/rinthel-boot.sh` (or `.ps1`) ensures the service secret in the root
+`.env`, autostarts the daemon (pidfile, it survives the TUI closing) and
+launches the Rust client, which
 drives everything over the daemon's HTTP/WS API — see
 [`adr/0001-daemon-protocol-shape.md`](adr/0001-daemon-protocol-shape.md).
 Every route has an access policy (`public`, `service`, `service_as_user`,
@@ -99,7 +100,7 @@ Rinthel Daemon (FastAPI, persistent)
        │                  host-exec token, PUID/PGID/DOCKER_GID) → identity (rinthel.db,
        │                  first admin) → Deck (Instance SOUL) → Understory (token, bundle)
        │                  [→ voice: whisper.cpp, audio.cpp, models, stt/tts active and started]
-       ├── BOOT       ──▶ docker → llama-server [→ whisper-server → audiocpp-server] → understory → deck
+       ├── BOOT       ──▶ docker → llama-server [→ whisper-server → audiocpp-server] → hostexecd (Linux) → understory → deck
        ├── RELOAD     ──▶ 3 batches (phase_batch over WS): shutdown → boot → rebuild
        └── TERMINATE  ──▶ full shutdown (keeps going if a unit fails)
 ```
@@ -117,7 +118,6 @@ recovery. After BOOT, log in to Deck on `http://127.0.0.1:4100` with it.
 
 ```
 docker-compose.yaml          # root compose: include deck/, extends understory/
-compose/                     # compose overrides
 .env.example                 # the single .env, documented
 data/                        # state (git-ignored): rinthel.db, instance.toml, deck/, understory/
 logs/                        # daemon, hostexecd and llama-server logs (git-ignored)

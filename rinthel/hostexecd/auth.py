@@ -1,6 +1,6 @@
-"""Chequeo de token compartido para hostexecd — mismo criterio que
-UNDERSTORY_TOKEN: un secreto en un header de cada request, generado por
-INSTALL o el boot en el ``.env`` raíz y comparado en tiempo constante."""
+"""The shared token of ``hostexecd``: written by INSTALL in the root ``.env``,
+handed to this process by the daemon that starts it, sent by Deck in a header
+of every request and compared in constant time."""
 
 from __future__ import annotations
 
@@ -11,21 +11,18 @@ TOKEN_HEADER = "X-Rinthel-Token"
 
 
 def expected_token() -> str | None:
-    """El token configurado, o None si no hay ninguno seteado."""
+    """The configured token, or ``None`` when there is none."""
     token = os.getenv("RINTHEL_HOSTEXECD_TOKEN", "").strip()
     return token or None
 
 
 def check_token(received: str | None) -> bool:
-    """True solo si ``received`` matchea el token esperado. Comparación en
-    tiempo constante (``hmac.compare_digest``) para no filtrar el valor
-    correcto por timing.
+    """True only when ``received`` matches the expected token
+    (``hmac.compare_digest``, so timing does not leak it).
 
-    Sin ``RINTHEL_HOSTEXECD_TOKEN`` seteado, falla cerrado: nunca autentica,
-    ni con header vacío — un daemon sin secreto propio en la máquina
-    equivocada no debe quedar abierto por accidente: los contenedores de la
-    Instance llegan al host, así que sin token este daemon sería alcanzable
-    desde cualquiera de ellos, no solo desde la sesión de Rinthel)."""
+    Without a configured token it fails closed and never authenticates, not
+    even an empty header: the Instance's containers reach the host loopback,
+    so an open ``hostexecd`` would answer any of them."""
     expected = expected_token()
     if expected is None or not received:
         return False

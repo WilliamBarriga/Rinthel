@@ -28,7 +28,7 @@ def _llama_fields(body: dict) -> dict:
 
 def test_get_config_lists_every_sub_config_including_install(get_config):
     attrs = [s["attr"] for s in get_config()["services"]]
-    assert attrs == ["llama", "moe", "understory", "deck", "install", "whisper", "audiocpp"]
+    assert attrs == ["llama", "moe", "understory", "deck", "hostexecd", "install", "whisper", "audiocpp"]
 
 
 def test_get_config_names_the_voice_services(get_config):

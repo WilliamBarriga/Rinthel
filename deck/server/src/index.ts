@@ -49,7 +49,7 @@ const proxy = new SessionProxy({
   onProgress: (sessionId, prefill) => sessions.reportPrefill(sessionId, prefill),
   onRoute: (sessionId, route) => sessions.reportRoute(sessionId, route),
 });
-sessions = new SessionManager({ store, identity, proxy, roots, canvases, instanceSoulFile: instanceSoul.path, launch: (opts) => SdkPiClient.create(opts) });
+sessions = new SessionManager({ store, identity, proxy, roots, canvases, instanceSoulFile: instanceSoul.path, hostExec: config.hostExec, launch: (opts) => SdkPiClient.create(opts) });
 
 const app = createDeckApp({
   store,

@@ -26,3 +26,12 @@ test("Sessions, workspaces and llama-server's saved slots live on the data volum
   assert.equal(tuned.slotsMaxBytes, 2 * 1024 ** 3);
   assert.throws(() => deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's', DECK_SLOTS_MAX_GB: '0' }), /DECK_SLOTS_MAX_GB/);
 });
+
+test('hostexecd comes from what the daemon hands Deck, and only with a token', () => {
+  assert.equal(deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's' }).hostExec, undefined);
+  assert.equal(deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's', RINTHEL_HOSTEXECD_URL: 'http://127.0.0.1:8766', RINTHEL_HOSTEXECD_TOKEN: ' ' }).hostExec, undefined);
+  assert.deepEqual(
+    deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's', RINTHEL_HOSTEXECD_URL: 'http://127.0.0.1:8766', RINTHEL_HOSTEXECD_TOKEN: 'tok' }).hostExec,
+    { url: 'http://127.0.0.1:8766', token: 'tok' },
+  );
+});

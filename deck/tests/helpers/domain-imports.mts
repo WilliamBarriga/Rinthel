@@ -21,8 +21,8 @@ export const ADAPTERS = [
   'daemon-client.ts', 'daemon-access.ts', 'identity.ts', 'service-credential.ts',
   // Who reaches a Session, judged on the HTTP request and its login (identity.ts).
   'session-owner.ts',
-  // The chat: the model proxy (HTTP to llama-server), pi's SDK, and the filesystem behind slots and Session roots.
-  'session-proxy.ts', 'pi/sdk-client.ts', 'session-slots/llama-slot-store.ts', 'session-roots-fs.ts', 'workspaces-fs.ts',
+  // The chat: the model proxy (HTTP to llama-server), pi's SDK, host exec (HTTP to hostexecd), and the filesystem behind slots and Session roots.
+  'session-proxy.ts', 'pi/sdk-client.ts', 'pi/host-exec/','session-slots/llama-slot-store.ts', 'session-roots-fs.ts', 'workspaces-fs.ts',
   // The Instance SOUL is a file on Deck's volume.
   'instance-soul-fs.ts',
 ];

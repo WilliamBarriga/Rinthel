@@ -39,6 +39,17 @@ def test_deck_listens_on_the_port_the_daemon_expects_as_the_host_user(config, tm
     assert deck["user"] == "${PUID:-1000}:${PGID:-1000}"
 
 
+def test_deck_reaches_hostexecd_by_what_the_daemon_passes_with_no_extension_mounts(config, tmp_path):
+    deck = config["services"]["deck"]
+    port = default_config(Instance(tmp_path), platform="linux").hostexecd.port
+
+    assert deck["environment"]["RINTHEL_HOSTEXECD_TOKEN"] == "${RINTHEL_HOSTEXECD_TOKEN:-}"
+    assert deck["environment"]["RINTHEL_HOSTEXECD_URL"] == (
+        "${RINTHEL_HOSTEXECD_URL:-http://127.0.0.1:${RINTHEL_HOSTEXECD_PORT:-%d}}" % port
+    )
+    assert not any("extension" in str(volume) for volume in deck.get("volumes", []))
+
+
 def test_understory_keeps_its_fixed_network_and_bundle(config):
     understory = config["services"]["understory"]
     mounts = {volume["target"]: volume for volume in understory["volumes"]}

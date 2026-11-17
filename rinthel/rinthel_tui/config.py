@@ -394,6 +394,31 @@ AUDIOCPP_FIELDS: list[Field] = [
     Field("threads", "RINTHEL_AUDIOCPP_THREADS", int, 4, positive=True, group="compute"),
 ]
 
+@dataclass(frozen=True)
+class HostExecConfig:
+    """``hostexecd``, the daemon-managed process that runs an admin's commands
+    on the host (Linux only). ``token`` is the one INSTALL writes in the root
+    ``.env``; like ``Secrets`` it never goes through ``GET /config``."""
+
+    port: int
+    enabled: bool
+    token: str = ""
+
+
+HOSTEXECD_FIELDS: list[Field] = [
+    Field("port", "RINTHEL_HOSTEXECD_PORT", int, 8766, port=True),
+    Field("enabled", "RINTHEL_HOSTEXECD_ENABLED", bool, True),
+]
+
+# Host exec is Linux only: off by default on Windows, and never started there
+# whatever the ``.env`` says (``HOSTEXECD_SERVICE.enabled_of``).
+_HOSTEXECD_DEFAULTS: dict[Platform, dict[str, Any]] = {
+    "linux": {},
+    "windows": {"enabled": False},
+}
+
+HOSTEXECD_TOKEN_ENV = "RINTHEL_HOSTEXECD_TOKEN"
+
 
 @dataclass(frozen=True)
 class Secrets:
@@ -455,6 +480,7 @@ _ENTRIES: list[tuple[str, list[Field]]] = [
     ("moe", MOE_FIELDS),
     ("understory", UNDERSTORY_FIELDS),
     ("deck", DECK_FIELDS),
+    ("hostexecd", HOSTEXECD_FIELDS),
     ("install", INSTALL_FIELDS),
     ("whisper", WHISPER_FIELDS),
     ("audiocpp", AUDIOCPP_FIELDS),
@@ -476,6 +502,7 @@ class RinthelConfig:
     install: InstallConfig
     whisper: WhisperConfig
     audiocpp: AudioCppConfig
+    hostexecd: HostExecConfig = HostExecConfig(8766, True)
     secrets: Secrets = Secrets("", "")
     identity: IdentityConfig = IdentityConfig()
     # Las variables legacy presentes al construir el cfg (shell o ``.env``).
@@ -715,6 +742,10 @@ def default_config(instance: Instance | None = None, *, platform: Platform | Non
         deck=_load(DeckConfig, DECK_FIELDS, env, instance, defaults=_DECK_DEFAULTS[platform]),
         whisper=_load(WhisperConfig, WHISPER_FIELDS, env, instance),
         audiocpp=_load(AudioCppConfig, AUDIOCPP_FIELDS, env, instance),
+        hostexecd=replace(
+            _load(HostExecConfig, HOSTEXECD_FIELDS, env, instance, defaults=_HOSTEXECD_DEFAULTS[platform]),
+            token=_str_env(HOSTEXECD_TOKEN_ENV, "", env).strip(),
+        ),
         secrets=Secrets(**{attr: _str_env(name, "", env) for attr, name in SECRET_ENVS.items()}),
         identity=_load(IdentityConfig, IDENTITY_FIELDS, env, instance),
         legacy_env=tuple(name for name in _LEGACY_ENV if name in env),
