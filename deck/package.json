@@ -13,9 +13,11 @@
     "test:guards": "node --import tsx --test tests/*.test.mts",
     "dev:server": "npm run dev -w @deck/server",
     "dev:web": "npm run dev -w @deck/web",
-    "start": "node server/dist/index.js"
+    "start": "node server/dist/index.js",
+    "test:browser": "npm run build -w @deck/canvas-catalog && npm run build -w @deck/server && playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "tsx": "^4.19.2",
     "typescript": "^5.9.3"
   }

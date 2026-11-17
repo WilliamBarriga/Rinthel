@@ -53,8 +53,9 @@ added here: a test is written instead.
 # 1. Python suite: contract and HTTP/WS tests, no real processes (live is excluded)
 cd rinthel && python -m pytest -q
 
-# 2. Deck: unit tests and browser tests against the fake Deck server
-cd deck && node --test && npx playwright test
+# 2. Deck: unit tests, then browser tests against the fake Deck server
+#    (headless Chromium, free ports, no daemon and no model; `npx playwright install chromium` once)
+cd deck && npm test && npm run test:browser
 
 # 3. Live: the real daemon, by hand
 cd rinthel && python -m pytest -m live                  # daemon only, no model
