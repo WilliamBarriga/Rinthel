@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from rinthel_tui.lifecycle.adapters.asyncio_runner import AsyncioRunner
+from rinthel_tui.lifecycle.adapters.windows_processes import WindowsRunner
 from rinthel_tui.lifecycle.domain.types import RunResult
 from tests.lifecycle.fakes import FakeRunner
 
@@ -18,10 +19,12 @@ class World:
     given: object  # (cmd, rc, output) -> None: el fake lo escribe en su guion; el real ya lo hace el comando
 
 
-@pytest.fixture(params=["asyncio", "fake"])
+@pytest.fixture(params=["asyncio", "windows", "fake"])
 def world(request):
-    if request.param == "asyncio":
-        return World(AsyncioRunner(), lambda path: None, lambda cmd, rc, output: None)
+    if request.param in ("asyncio", "windows"):
+        # creationflags=0: the Windows flag does not exist on the Linux that runs the suite.
+        runner = AsyncioRunner() if request.param == "asyncio" else WindowsRunner(creationflags=0)
+        return World(runner, lambda path: None, lambda cmd, rc, output: None)
     fake = FakeRunner()
     return World(
         fake,

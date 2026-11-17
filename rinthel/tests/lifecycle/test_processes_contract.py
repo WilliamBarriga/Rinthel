@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import pytest
 
 from rinthel_tui.lifecycle.adapters.asyncio_processes import AsyncioProcesses
+from rinthel_tui.lifecycle.adapters.windows_processes import WindowsProcesses
 from rinthel_tui.lifecycle.domain.errors import SpawnFailed
 from rinthel_tui.lifecycle.domain.types import ProcessHandle
 from tests.lifecycle.fakes import FakeProcesses
@@ -24,6 +25,19 @@ class _Tracking(AsyncioProcesses):
 
     def __init__(self) -> None:
         super().__init__()
+        self.handles: list[ProcessHandle] = []
+
+    async def spawn(self, *args, **kwargs) -> ProcessHandle:
+        handle = await super().spawn(*args, **kwargs)
+        self.handles.append(handle)
+        return handle
+
+
+class _TrackingWindows(WindowsProcesses):
+    """El adapter Windows con ``creationflags=0``: en Linux el flag de Windows no existe."""
+
+    def __init__(self) -> None:
+        super().__init__(creationflags=0)
         self.handles: list[ProcessHandle] = []
 
     async def spawn(self, *args, **kwargs) -> ProcessHandle:
@@ -58,7 +72,7 @@ def _port_open(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
-@pytest.fixture(params=["asyncio", "fake"])
+@pytest.fixture(params=["asyncio", "windows", "fake"])
 async def world(request, tmp_path):
     if request.param == "fake":
         fake = FakeProcesses()
@@ -72,7 +86,7 @@ async def world(request, tmp_path):
 
         yield World(fake, fake.script, fake_serve)
         return
-    real = _Tracking()
+    real = _Tracking() if request.param == "asyncio" else _TrackingWindows()
 
     async def real_serve(port: int, *, ignore_term: bool = False) -> ProcessHandle:
         handle = await real.spawn(_listener_argv(port, ignore_term=ignore_term), log=tmp_path / "listener.log")

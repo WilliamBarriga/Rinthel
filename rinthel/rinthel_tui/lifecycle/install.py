@@ -141,29 +141,22 @@ async def phase_install_clone_llamacpp(host: Host, report: PhaseReport, *, task:
     report.success(f"llama.cpp clonado en {task.repo_dir}")
 
 
-def _llama_server_binary(build_dir: Path) -> Path:
-    candidates = (
-        build_dir / "bin" / "llama-server",
-        build_dir / "bin" / "llama-server.exe",
-        build_dir / "bin" / "Release" / "llama-server.exe",
-    )
-    return next((candidate for candidate in candidates if candidate.exists()), candidates[0])
-
-
 async def phase_install_build_llamacpp(host: Host, report: PhaseReport, *, task: LlamaCppInstall) -> None:
     build_dir = task.repo_dir / "build-cuda"
-    existing = _llama_server_binary(build_dir)
-    if existing.exists():
+    existing = host.host_info.find_llama_server(build_dir)
+    if existing is not None:
         report.warn(f"{existing} ya existe — omito build")
         return
 
     nvcc = _require_nvcc(host, report)
+    # Where cmake lives is the host's business (Visual Studio bundles its own).
+    cmake = host.host_info.which("cmake") or "cmake"
     report.warn("Compilando llama.cpp con CUDA — puede tardar 10-30 minutos")
     await _run_or_fail(
         host,
         report,
         [
-            "cmake", "-B", str(build_dir),
+            cmake, "-B", str(build_dir),
             "-DGGML_CUDA=ON",
             f"-DCMAKE_CUDA_COMPILER={nvcc}",
             "-DCMAKE_BUILD_TYPE=Release",
@@ -179,7 +172,7 @@ async def phase_install_build_llamacpp(host: Host, report: PhaseReport, *, task:
         host,
         report,
         [
-            "cmake", "--build", str(build_dir),
+            cmake, "--build", str(build_dir),
             # `--config Release`: los generadores multi-config (Visual Studio)
             # lo necesitan; los de un solo config lo ignoran.
             "--config", "Release",

@@ -57,8 +57,12 @@ class HostInfo(Protocol):
     ``which`` y ``find_nvcc`` devuelven la ruta o ``None`` si no está;
     ``cpu_count`` cuántos jobs paralelos aguanta un build (al menos 1);
     ``sha256`` el digest hex de un archivo ya bajado; ``platform`` la
-    Platform del host. Nunca levantan salvo ``sha256`` sobre un archivo que
-    no se puede leer (``OSError``)."""
+    Platform del host; ``find_llama_server`` el ``llama-server`` que dejó un
+    build en ``build_dir`` (o ``None`` si no hay): dónde lo deja el build
+    depende de la Platform. ``which`` también conoce dónde instala cada
+    Platform sus herramientas de build (CMake de Visual Studio en Windows).
+    Nunca levantan salvo ``sha256`` sobre un archivo que no se puede leer
+    (``OSError``)."""
 
     def platform(self) -> Platform: ...
     def which(self, name: str) -> str | None: ...
@@ -67,6 +71,7 @@ class HostInfo(Protocol):
         ...
 
     def cpu_count(self) -> int: ...
+    def find_llama_server(self, build_dir: Path) -> Path | None: ...
     async def sha256(self, path: Path) -> str: ...
 
 
