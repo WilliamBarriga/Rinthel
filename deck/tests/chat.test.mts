@@ -1,0 +1,405 @@
+import { after, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { FakeDaemon } from './helpers/fake-daemon.mts';
+import { fakeLlama } from './helpers/fake-llama.mts';
+
+/**
+ * The chat end to end at Deck's HTTP surface (`createDeckApp`), composed as `index.ts` composes it:
+ * the real Session manager running pi's SDK in this process, the real proxy and slot store, and the
+ * daemon's route read over the daemon client. Only the daemon and llama-server are fakes (llama over
+ * real HTTP, its slots on a temporary `--slot-save-path`).
+ */
+const SECRET = 'chat-test-secret';
+process.env.RINTHEL_PANEL_SECRET = SECRET;
+const root = mkdtempSync(path.join(tmpdir(), 'deck-chat-'));
+// pi's own directory: nothing of the host's pi is read.
+process.env.PI_CODING_AGENT_DIR = path.join(root, 'pi-agent');
+mkdirSync(process.env.PI_CODING_AGENT_DIR, { recursive: true });
+
+const { createMemoryStore } = await import('../server/src/store/memory/index.ts');
+const { createDeckApp } = await import('../server/src/app.ts');
+const { ACCESS_COOKIE } = await import('../server/src/identity.ts');
+const { daemonSessionIdentity } = await import('../server/src/daemon-session-identity.ts');
+const { DaemonModelRouting } = await import('../server/src/model-routing/daemon-model-routing.ts');
+const { SessionSlots } = await import('../server/src/session-slots/session-slots.ts');
+const { LlamaSlotStore } = await import('../server/src/session-slots/llama-slot-store.ts');
+const { SessionProxy } = await import('../server/src/session-proxy.ts');
+const { SessionManager } = await import('../server/src/session-manager.ts');
+const { SdkPiClient } = await import('../server/src/pi/sdk-client.ts');
+const { FsSessionRoots } = await import('../server/src/session-roots-fs.ts');
+const { createCanvases } = await import('../server/src/canvases.ts');
+const { createCanvasActions, storedSessionNotes } = await import('../server/src/canvas-actions.ts');
+const { MEMBER_TOOLS } = await import('../server/src/tool-profile.ts');
+const { FsInstanceSoul } = await import('../server/src/instance-soul-fs.ts');
+const { InMemoryPiPackages } = await import('../server/src/pi-packages.ts');
+
+const slotsDir = path.join(root, 'data', 'llama-slots');
+const llama = await fakeLlama(slotsDir);
+const daemon = new FakeDaemon(SECRET);
+const ADMIN = daemon.addUser('root', 'root-password', 'admin');
+const ANA = daemon.addUser('ana', 'ana-password');
+const BEA = daemon.addUser('bea', 'bea-password');
+daemon.models = [{ id: 'qwen-a', context_window: 65536 }, { id: 'qwen-b', context_window: 131072 }];
+daemon.activeModel = 'qwen-a';
+daemon.llamaUrl = llama.url;
+
+const store = createMemoryStore();
+const identity = daemonSessionIdentity(daemon);
+const routing = new DaemonModelRouting(daemon);
+const slots = new SessionSlots(new LlamaSlotStore(slotsDir), { maxBytes: 1_000_000 });
+const roots = new FsSessionRoots(path.join(root, 'data'), path.join(root, 'data', 'workspaces'));
+let sessions: InstanceType<typeof SessionManager>;
+const proxy = new SessionProxy({
+  routing, slots,
+  onProgress: (id, prefill) => sessions.reportPrefill(id, prefill),
+  onRoute: (id, route) => sessions.reportRoute(id, route),
+});
+await proxy.start();
+const canvases = createCanvases(store);
+const instanceSoul = new FsInstanceSoul(path.join(root, 'data', 'instance', 'SOUL.md'));
+sessions = new SessionManager({ store, identity, proxy, roots, canvases, instanceSoulFile: instanceSoul.path, launch: (opts) => SdkPiClient.create(opts) });
+// No real package is ever installed: the pi CLI is a double here.
+const packages = new InMemoryPiPackages();
+const piSettingsFile = path.join(process.env.PI_CODING_AGENT_DIR!, 'settings.json');
+const app = createDeckApp({ store, daemon, identity, serviceSecret: 'svc', sessions, roots, slots, routing, canvases, canvasActions: createCanvasActions({ canvases, notes: storedSessionNotes(store) }), instanceSoul, webDist: path.join(root, 'no-web'), packages: { packages, settingsFile: piSettingsFile } });
+const server = app.listen(0, '127.0.0.1');
+await once(server, 'listening');
+const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+after(async () => {
+  await sessions.shutdown();
+  proxy.stop();
+  server.closeAllConnections();
+  await new Promise<void>((r) => server.close(() => r()));
+  await llama.close();
+  rmSync(root, { recursive: true, force: true });
+});
+
+const cookie = (id: number) => `${ACCESS_COOKIE}=${daemon.accessToken(id)}`;
+async function call(method: string, url: string, as: number, body?: unknown) {
+  const res = await fetch(`${base}${url}`, {
+    method,
+    headers: { 'content-type': 'application/json', cookie: cookie(as) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let json: any = text;
+  try { json = JSON.parse(text); } catch { /* not JSON */ }
+  return { status: res.status, body: json };
+}
+
+/** Polls until the Session is idle again after a prompt, then returns its stored events. */
+async function settled(id: string, as: number) {
+  for (let i = 0; i < 200; i++) {
+    const s = await call('GET', `/api/sessions/${id}`, as);
+    if (s.body.status === 'idle' || s.body.status === 'error') break;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  await slots.idle();
+  return (await call('GET', `/api/sessions/${id}/events/before?before=999999999`, as)).body.events as { type: string; payload: any }[];
+}
+
+const assistantText = (events: { type: string; payload: any }[]) => events
+  .filter((e) => e.type === 'message_end' && e.payload.message?.role === 'assistant')
+  .map((e) => e.payload.message.content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join(''));
+
+const promptText = (body: any) => JSON.stringify(body.messages);
+
+test('a member chats in an agent Session: the turn goes to the Local model and its answer reaches the transcript', async () => {
+  const created = await call('POST', '/api/agent/sessions', ANA, {});
+  assert.equal(created.status, 200);
+  assert.equal(created.body.kind, 'agent');
+  const id = created.body.id;
+  const sent = await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'hola' });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  const events = await settled(id, ANA);
+  assert.deepEqual(events.filter((e) => e.type === 'portal_prompt').map((e) => e.payload.message), ['hola']);
+  assert.deepEqual(assistantText(events), ['hola']);
+  const body = llama.bodies.at(-1);
+  assert.equal(body.model, 'qwen-a');
+  // A member's closed profile: only the canvas tools reach the model.
+  assert.deepEqual(body.tools.map((t: any) => t.function.name).sort(), [...MEMBER_TOOLS].sort());
+});
+
+test('a voice Turn reaches the Local model with the audio marker and without thinking; a typed one does not', async () => {
+  const id = (await call('POST', '/api/agent/sessions', ANA, {})).body.id;
+  // A Session that thinks: the voice Turn's first call is the one that does not.
+  assert.equal((await call('POST', `/api/sessions/${id}/config`, ANA, { thinkingLevel: 'high' })).status, 200);
+  await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'dime la hora', voice: true });
+  const events = await settled(id, ANA);
+  assert.deepEqual(events.filter((e) => e.type === 'portal_prompt').map((e) => [e.payload.message, e.payload.voice]), [['dime la hora', true]]);
+  const spoken = llama.bodies.at(-1);
+  // The marker opens the message, before the staff framing of a first prompt.
+  assert.match(JSON.stringify(spoken.messages.at(-1)), /"text":"\[Audio mode\]\\n[^"]*dime la hora"/);
+  assert.match(promptText(spoken), /prefixes user requests sent in voice mode/);
+  assert.equal(spoken.chat_template_kwargs?.enable_thinking, false);
+  await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'escrito' });
+  await settled(id, ANA);
+  const typed = llama.bodies.at(-1);
+  assert.doesNotMatch(JSON.stringify(typed.messages.at(-1)), /Audio mode/);
+  assert.notEqual(typed.chat_template_kwargs?.enable_thinking, false);
+});
+
+test('a member\'s Session loads the Instance SOUL as its own, and never a SOUL.md of their home', async () => {
+  instanceSoul.write('# SOUL.md\nYou are Aria, the Agent of this Instance.');
+  const id = (await call('POST', '/api/agent/sessions', ANA, {})).body.id;
+  const home = roots.agentHome(ANA);
+  mkdirSync(home, { recursive: true });
+  writeFileSync(path.join(home, 'SOUL.md'), 'You are their own private SOUL.\n');
+  await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'quien eres' });
+  await settled(id, ANA);
+  const sent = promptText(llama.bodies.at(-1));
+  assert.match(sent, /You are Aria, the Agent of this Instance/);
+  assert.doesNotMatch(sent, /private SOUL/);
+});
+
+test('the staff framing (name and role) goes to the model in the first prompt of a Session, and only the first', async () => {
+  const id = (await call('POST', '/api/agent/sessions', ANA, {})).body.id;
+  await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'primero' });
+  await settled(id, ANA);
+  assert.match(promptText(llama.bodies.at(-1)), /staff-framing[^]*ana \(miembro\)/);
+  await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'segundo' });
+  const events = await settled(id, ANA);
+  const last = promptText(llama.bodies.at(-1));
+  assert.equal(last.match(/staff-framing>/g)?.length, 2, 'the opening and closing tag of the first prompt, once');
+  assert.ok(!JSON.stringify(events.filter((e) => e.type === 'portal_prompt')).includes('staff-framing'), 'the transcript shows what the person wrote');
+});
+
+test('an admin writing in a member\'s Session supervises: the framing says the Session acts for its owner', async () => {
+  const id = (await call('POST', '/api/agent/sessions', ANA, {})).body.id;
+  await call('POST', `/api/sessions/${id}/prompt`, ADMIN, { message: 'reviso' });
+  await settled(id, ADMIN);
+  assert.match(promptText(llama.bodies.at(-1)), /administrador supervisa/);
+});
+
+test('an admin chats in a task Session on a workspace, with the general Agent and its tools', async () => {
+  const ws = await call('POST', '/api/workspaces', ADMIN, { name: 'Proyecto Uno' });
+  assert.equal(ws.body.name, 'proyecto-uno');
+  const created = await call('POST', '/api/sessions', ADMIN, { workspace: 'proyecto-uno' });
+  assert.equal(created.status, 200, JSON.stringify(created.body));
+  await call('POST', `/api/sessions/${created.body.id}/prompt`, ADMIN, { message: 'lista archivos' });
+  const events = await settled(created.body.id, ADMIN);
+  assert.deepEqual(assistantText(events), ['hola']);
+  assert.ok(llama.bodies.at(-1).tools.some((t: any) => t.function?.name === 'bash'));
+  // A member does not see the admin's workspaces nor Sessions.
+  assert.deepEqual((await call('GET', '/api/workspaces', BEA)).body.workspaces, []);
+  assert.equal((await call('GET', `/api/sessions/${created.body.id}`, BEA)).status, 403);
+  assert.ok(!(await call('GET', '/api/sessions', BEA)).body.sessions.some((s: any) => s.id === created.body.id));
+});
+
+test('each call restores the Session\'s slot before it and saves it after', async () => {
+  const id = (await call('POST', '/api/agent/sessions', BEA, {})).body.id;
+  const from = llama.log.length;
+  await call('POST', `/api/sessions/${id}/prompt`, BEA, { message: 'hola' });
+  await settled(id, BEA);
+  assert.deepEqual(llama.log.slice(from).map((l) => l.split(' ')[0]), ['restore', 'completion', 'save']);
+});
+
+test('the context window comes from the route: the composer reads the Local model, and pi plans by it', async () => {
+  assert.deepEqual((await call('GET', '/api/models/llm', BEA)).body, { model: 'qwen-a', context_window: 65536 });
+  const id = (await call('POST', '/api/agent/sessions', BEA, {})).body.id;
+  await call('POST', `/api/sessions/${id}/prompt`, BEA, { message: 'hola' });
+  await settled(id, BEA);
+  const config = await call('GET', `/api/sessions/${id}/config`, BEA);
+  assert.equal(config.body.live, true);
+  assert.equal(config.body.state.model.id, 'qwen-a');
+  assert.equal(config.body.state.model.contextWindow, 65536);
+});
+
+test("an admin's Session loads the skills Deck ships in its image; a member's loads none", async () => {
+  const systemOf = (body: any): string => JSON.stringify((body.messages ?? []).filter((m: any) => m.role === 'system'));
+  const firstPrompt = async (as: number) => {
+    const id = (await call('POST', '/api/agent/sessions', as, {})).body.id;
+    const from = llama.bodies.length;
+    await call('POST', `/api/sessions/${id}/prompt`, as, { message: 'hola' });
+    await settled(id, as);
+    return systemOf(llama.bodies[from]);
+  };
+  assert.match(await firstPrompt(ADMIN), /skill-creator/);
+  assert.doesNotMatch(await firstPrompt(BEA), /skill-creator/);
+});
+
+test('the admin switches the Local model; a live Session moves to it on its next turn, with the new window', async () => {
+  const id = (await call('POST', '/api/agent/sessions', ANA, {})).body.id;
+  await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'antes' });
+  await settled(id, ANA);
+  assert.equal((await call('GET', '/api/models', ADMIN)).body.active.llm, 'qwen-a');
+  const switched = await call('POST', '/api/models/activate', ADMIN, { id: 'qwen-b' });
+  assert.deepEqual([switched.status, switched.body.active], [200, 'qwen-b']);
+  await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'después' });
+  const events = await settled(id, ANA);
+  assert.equal(llama.bodies.at(-1).model, 'qwen-b');
+  assert.equal(assistantText(events).at(-1), 'hola');
+  assert.equal((await call('GET', `/api/sessions/${id}/config`, ANA)).body.state.model.contextWindow, 131072);
+  await call('POST', '/api/models/activate', ADMIN, { id: 'qwen-a' });
+});
+
+test('a switch while a turn is in course is a 409 the admin reads, from Deck or from the daemon', async () => {
+  const id = (await call('POST', '/api/agent/sessions', ANA, {})).body.id;
+  const release = llama.hold();
+  await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'largo' });
+  for (let i = 0; i < 100 && !llama.log.at(-1)?.startsWith('completion'); i++) await new Promise((r) => setTimeout(r, 20));
+  const busy = await call('POST', '/api/models/activate', ADMIN, { id: 'qwen-b' });
+  release();
+  await settled(id, ANA);
+  assert.equal(busy.status, 409);
+  assert.equal(busy.body.code, 'turns_in_flight');
+  assert.match(busy.body.error, /turnos en curso/);
+  assert.equal(daemon.activeModel, 'qwen-a');
+
+  daemon.switchRefusal = 'lifecycle_busy';
+  const daemonBusy = await call('POST', '/api/models/activate', ADMIN, { id: 'qwen-b' });
+  daemon.switchRefusal = null;
+  assert.deepEqual([daemonBusy.status, daemonBusy.body.code], [409, 'lifecycle_busy']);
+  assert.match(daemonBusy.body.error, /ocupado/);
+});
+
+test("a Session whose owner is gone does not start, not even for an admin, and nothing falls back to the general Agent", async () => {
+  const carl = daemon.addUser('carl', 'carl-password');
+  const id = (await call('POST', '/api/agent/sessions', carl, {})).body.id;
+  daemon.disable(carl);
+  const before = llama.bodies.length;
+  const refused = await call('POST', `/api/sessions/${id}/prompt`, ADMIN, { message: 'hola' });
+  assert.deepEqual([refused.status, refused.body.code], [409, 'owner_gone']);
+  assert.equal(llama.bodies.length, before);
+});
+
+test('only the admin lists and switches Local models', async () => {
+  assert.equal((await call('GET', '/api/models', ANA)).status, 403);
+  assert.equal((await call('POST', '/api/models/activate', ANA, { id: 'qwen-b' })).status, 403);
+  assert.equal(daemon.activeModel, 'qwen-a');
+});
+
+test('the admin turns voice on and off through Deck: stt and tts go to the daemon, llm is never off, a member cannot', async () => {
+  const voice = [{ id: 'whisper-base', context_window: 0, capability: 'stt' as const }, { id: 'pocket', context_window: 0, capability: 'tts' as const }];
+  daemon.models.push(...voice);
+  try {
+    const on = await call('POST', '/api/models/activate', ADMIN, { id: 'whisper-base' });
+    assert.deepEqual([on.status, on.body.ok], [200, true]);
+    assert.deepEqual((await call('GET', '/api/models', ADMIN)).body.active, { llm: 'qwen-a', stt: 'whisper-base', tts: null });
+
+    assert.equal((await call('POST', '/api/models/off', ANA, { capability: 'stt' })).status, 403);
+    const before = daemon.calls.length;
+    for (const capability of ['llm', 'nope', undefined]) {
+      assert.equal((await call('POST', '/api/models/off', ADMIN, { capability })).status, 400, String(capability));
+    }
+    assert.deepEqual(daemon.calls.slice(before).filter((c) => c.includes('/models/off')), []);
+
+    const off = await call('POST', '/api/models/off', ADMIN, { capability: 'stt' });
+    assert.deepEqual([off.status, off.body.ok], [200, true]);
+    assert.deepEqual((await call('GET', '/api/models', ADMIN)).body.active, { llm: 'qwen-a', stt: null, tts: null });
+    assert.equal(daemon.activeModel, 'qwen-a');
+
+    daemon.switchRefusal = 'lifecycle_busy';
+    const busy = await call('POST', '/api/models/off', ADMIN, { capability: 'tts' });
+    daemon.switchRefusal = null;
+    assert.deepEqual([busy.status, busy.body.code], [409, 'lifecycle_busy']);
+  } finally {
+    daemon.models.splice(daemon.models.length - voice.length, voice.length);
+  }
+});
+
+test('the admin installs, lists, updates and removes pi packages; a member is refused before pi runs', async () => {
+  for (const [method, url, body] of [['GET', '/api/packages'], ['POST', '/api/packages', { spec: 'npm:pi-web@1.0.0' }], ['DELETE', '/api/packages', { spec: 'npm:pi-web@1.0.0' }], ['POST', '/api/packages/update'], ['GET', '/api/pi-settings'], ['PUT', '/api/pi-settings', { content: '{}' }]] as const) {
+    assert.equal((await call(method, url, BEA, body)).status, 403, `${method} ${url}`);
+  }
+  assert.deepEqual(packages.calls, []);
+
+  for (const spec of ['pi-web; rm -rf /', '--global', 'npm:x y', '', undefined]) {
+    assert.equal((await call('POST', '/api/packages', ADMIN, { spec })).status, 400, String(spec));
+    assert.equal((await call('DELETE', '/api/packages', ADMIN, { spec })).status, 400, String(spec));
+  }
+  assert.deepEqual(packages.calls, []);
+
+  const installed = await call('POST', '/api/packages', ADMIN, { spec: 'npm:pi-web@1.0.0' });
+  assert.deepEqual([installed.status, installed.body.ok], [200, true]);
+  assert.match((await call('GET', '/api/packages', ADMIN)).body.output, /npm:pi-web@1.0.0/);
+  assert.equal((await call('POST', '/api/packages/update', ADMIN)).status, 200);
+  assert.equal((await call('DELETE', '/api/packages', ADMIN, { spec: 'npm:pi-web@1.0.0' })).status, 200);
+  assert.deepEqual(packages.calls, ['install npm:pi-web@1.0.0', 'list', 'update', 'remove npm:pi-web@1.0.0']);
+
+  packages.failWith = 'npm ERR! 404 not found';
+  const failed = await call('POST', '/api/packages', ADMIN, { spec: 'npm:nope' });
+  packages.failWith = null;
+  assert.equal(failed.status, 502);
+  assert.match(failed.body.error, /404 not found/);
+});
+
+test("the admin edits pi's settings file; what pi could not parse is refused and never written", async () => {
+  assert.deepEqual((await call('GET', '/api/pi-settings', ADMIN)).body.content.trim(), '{}');
+  const saved = await call('PUT', '/api/pi-settings', ADMIN, { content: '{"theme":"dark"}\n' });
+  assert.equal(saved.status, 200);
+  assert.equal(readFileSync(piSettingsFile, 'utf8'), '{"theme":"dark"}\n');
+  assert.equal((await call('PUT', '/api/pi-settings', ADMIN, { content: '{broken' })).status, 400);
+  assert.equal((await call('PUT', '/api/pi-settings', ADMIN, {})).status, 400);
+  assert.equal(readFileSync(piSettingsFile, 'utf8'), '{"theme":"dark"}\n');
+  assert.equal((await call('GET', '/api/pi-settings', ADMIN)).body.content, '{"theme":"dark"}\n');
+  rmSync(piSettingsFile, { force: true });
+});
+
+test('a deleted Session takes its pi files and its saved slots with it', async () => {
+  const id = (await call('POST', '/api/agent/sessions', BEA, {})).body.id;
+  await call('POST', `/api/sessions/${id}/prompt`, BEA, { message: 'hola' });
+  await settled(id, BEA);
+  const before = readdirSync(slotsDir).length;
+  assert.ok(existsSync(path.join(root, 'data', 'sessions', id)));
+  assert.equal((await call('DELETE', `/api/sessions/${id}`, BEA)).status, 200);
+  assert.equal(readdirSync(slotsDir).length, before - 1);
+  assert.ok(!existsSync(path.join(root, 'data', 'sessions', id)));
+  assert.equal((await call('GET', `/api/sessions/${id}`, BEA)).status, 404);
+});
+
+test('the event stream replays what was stored and then goes on live, ending the replay with caught-up', async () => {
+  const id = (await call('POST', '/api/agent/sessions', ANA, {})).body.id;
+  await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'uno' });
+  await settled(id, ANA);
+  const controller = new AbortController();
+  const res = await fetch(`${base}/api/sessions/${id}/events`, { headers: { cookie: cookie(ANA) }, signal: controller.signal });
+  const reader = res.body!.getReader();
+  let text = '';
+  const until = async (pattern: RegExp) => {
+    while (!pattern.test(text)) text += new TextDecoder().decode((await reader.read()).value);
+  };
+  await until(/event: caught-up/);
+  assert.match(text, /"type":"portal_prompt"[^\n]*"uno"/);
+  await call('POST', `/api/sessions/${id}/prompt`, ANA, { message: 'dos' });
+  await until(/"type":"portal_prompt"[^\n]*"dos"[^]*"type":"agent_settled"/);
+  controller.abort();
+});
+
+const guardVerdicts = (events: { type: string; payload: any }[]) =>
+  events.filter((e) => e.type === 'portal_guard').map((e) => [e.payload.tool, e.payload.verdict]);
+
+test('every call the Guard checks lands in the Session\'s transcript, and a refusal says why', async () => {
+  await call('POST', '/api/workspaces', ADMIN, { name: 'guardado' });
+  const id = (await call('POST', '/api/sessions', ADMIN, { workspace: 'guardado' })).body.id;
+  // `echo curl` reads nothing, but the Guard judges the command: its output counts as fetched.
+  llama.toolCalls = [{ name: 'bash', arguments: { command: 'echo curl' } }, { name: 'bash', arguments: { command: 'git push' } }];
+  await call('POST', `/api/sessions/${id}/prompt`, ADMIN, { message: 'trae la página y publica' });
+  const events = await settled(id, ADMIN);
+  assert.deepEqual(guardVerdicts(events), [['bash', 'allow'], ['bash', 'deny']]);
+  assert.match(events.find((e) => e.type === 'portal_guard' && e.payload.verdict === 'deny')!.payload.reason, /^publish:/);
+  assert.match(promptText(llama.bodies.at(-1)), /Refused \(publish\)/);
+});
+
+test('a tainted Session stays tainted across a restart of Deck, even with its pi file gone', async () => {
+  await call('POST', '/api/workspaces', ADMIN, { name: 'reinicio' });
+  const id = (await call('POST', '/api/sessions', ADMIN, { workspace: 'reinicio' })).body.id;
+  llama.toolCalls = [{ name: 'bash', arguments: { command: 'echo wget' } }];
+  await call('POST', `/api/sessions/${id}/prompt`, ADMIN, { message: 'lee el correo' });
+  await settled(id, ADMIN);
+
+  await sessions.shutdown();
+  const file = (await store.sessions.get(id))!.pi_session_file!;
+  assert.ok(existsSync(file));
+  rmSync(file);
+
+  llama.toolCalls = [{ name: 'bash', arguments: { command: 'git push' } }];
+  await call('POST', `/api/sessions/${id}/prompt`, ADMIN, { message: 'publica' });
+  const events = await settled(id, ADMIN);
+  assert.deepEqual(guardVerdicts(events).at(-1), ['bash', 'deny']);
+});

@@ -1,0 +1,180 @@
+# Deck: architecture
+
+How Deck's pieces fit is drawn in [`docs/diagrams/deck.dg`](../diagrams/deck.dg)
+(views `deck-servidor` and `deck-web`); what Deck reads and keeps is in
+[configuration](configuration.md). This page holds what the map cannot say.
+
+## Subagents
+
+An admin's Agent can hand a task to a child agent with the `subagent` tool. A
+child is a pi session of its own inside Deck's process, with an isolated
+context, kept in memory and gone once it answers. The tool is an inline
+factory of Deck (`deck/server/src/pi/subagents/`); nothing is installed into
+pi for it.
+
+**Who gets it.** Only a Session whose owner is an admin, decided by its
+`ToolProfile` when the Session starts, and asked again on every call: an owner
+who is no longer an admin, or an identity that does not answer, is refused. A
+member's Session never has it. A tainted Session loses it outright, and a
+child's answer is untrusted content: it reaches the parent inside the Guard's
+envelope and taints the Session.
+
+**Modes.** One child at a time per Session, since the Instance runs one Local
+model:
+
+- single: `{ agent, task }`
+- chain: `{ chain: [{ agent, task }] }`, each step gets the previous answer as
+  `{previous}`; the chain stops at a failed step
+- tasks: `{ tasks: [{ agent, task }] }`, independent, one after another;
+  `variants: true` presents them as alternatives
+
+Optional on the call or per item: `skills` (looked up by name in the Session's
+`.pi/skills` and `.agents/skills`, then in the agentDir's `skills/`; loaded on
+demand, or pasted whole with `inlineSkills: true`) and `persona` (a role for
+this task, meant for `custom`). At most 8 items per call; each answer is capped
+at 50 KB.
+
+**The child.** It uses its parent's Local model through the parent's model
+access: the same Session proxy URL, so it shares (and overwrites) the
+Session's slot. The slot is held one HTTP request at a time, not for a whole
+agent turn, so parent and child never wait on each other. The child runs with
+a Guard of its own and loads the agentDir's packages, but never has what a
+tainted Session loses (`subagent`, host exec, Memoria writes) nor
+`ask_user_question`; an installed package that registers one of those is not
+loaded in it. A child stops at its timeout or turn limit, whichever comes
+first, and when the parent's turn is aborted.
+
+### Agent types
+
+The image carries these, next to the factory
+(`deck/server/src/pi/subagents/agents/`):
+
+| Type | What it does | Tools |
+| --- | --- | --- |
+| `scout` | Quick reconnaissance of a codebase; returns compressed context for another agent | read, grep, find, ls, bash |
+| `planner` | Turns context and requirements into an implementation plan; changes nothing | read, grep, find, ls |
+| `researcher` | Web and document research with cited sources; changes nothing (bash only to fetch) | read, grep, find, ls, bash |
+| `worker` | General-purpose developer with full capabilities | read, write, edit, grep, find, ls, bash |
+| `reviewer` | Code review for quality, security and maintainability; bash read-only | read, grep, find, ls, bash |
+| `debugger` | Reproduces a bug and finds its root cause; does not fix it | read, grep, find, ls, bash |
+| `builder` | Runs builds, tests and checks, and reports; does not change code | read, grep, find, ls, bash |
+| `writer` | Drafts and edits documentation and other text | read, write, edit, grep, find, ls |
+| `custom` | Generic agent whose role is the call's `persona` | read, grep, find, ls, bash |
+
+These are pi's built-in tools: Deck registers no web search tool of its own,
+so the researcher fetches pages with `curl` through `bash` (a network command,
+so what it reads is untrusted, like any child's answer). Every child also gets
+`understory_memory_query` when the Session has Memoria. To give an agent a
+tool a package provides, install the package in Deck's agentDir and put a copy
+of the agent file with that tool in its `tools` on the volume (below).
+
+An agent type is a Markdown file: frontmatter with `name` and `description`
+(required), `tools` (pi's allowlist for the child; absent, pi's defaults),
+`thinking`, `skills`, `timeout` (seconds) and `maxTurns`, and the agent's
+prompt as the body. A local model is slow, so no agent goes below 1200 s or 60
+turns whatever its frontmatter says.
+
+**Adding or replacing one.** Drop a file into `agents/` of Deck's agentDir on
+the volume (`data/deck/home/.pi/agent/agents/`). It joins the image's types;
+one with an image type's name replaces it, and Deck logs the replacement
+(`[subagents] agent "<name>": <volume file> replaces the image's <image file>`)
+when an admin's Session starts. Files are read again on every call. A
+project's `.pi/agents` is never read.
+
+## Instance browser
+
+What the browser is and who uses it is in [configuration](configuration.md#instance-browser);
+these are the seams it hangs from.
+
+- `BrowserDriver` (`deck/server/src/browser-driver.ts`) is what the Agent's
+  browser tools need: the catalogue of tools and a call on a CDP endpoint. Its
+  adapter, `McpStdioBrowserDriver`, keeps one Playwright MCP process per
+  endpoint over stdio; the Instance has one endpoint, so every Session shares
+  it. Contract: `server/test/contract/browser-driver.mjs`, run against the
+  adapter (over a stand-in MCP server) and the double.
+- `BrowserRuntime` (`deck/server/src/instance-browser.ts`) is the browser's own
+  lifecycle: status, install, start, stop, remove, forget the profile. Its
+  adapter (`browser/browser-runtime.ts`) picks external, docker (Docker
+  Engine API over the socket, `browser/docker.ts`) or a local Chrome
+  (`browser/browser-local.ts`). Contract: `server/test/contract/browser-runtime.mjs`,
+  run against the adapter over a fake Docker and the in-memory double.
+- `CdpProbe` (`deck/server/src/instance-browser.ts`) reads the fixed CDP
+  endpoint: the browser's version and open pages, `null`/none when nothing
+  answers. One adapter (`browser/cdp.ts`, HTTP) serves both the runtime (to
+  find an external browser) and the `/api/browser` status.
+- `sessionBrowserNow` (`deck/server/src/session-browser.ts`) is the gate the
+  Guard and the tools read on every call: the Session's toggle and its owner's
+  role now (`ownerIsAdminNow`), shut on any failure. The tools themselves
+  (`pi/session-browser-tools.ts`) are an inline factory that `SdkPiClient`
+  loads only for the general profile; the names they register are the only
+  browser tools the Guard lets through, and the source the taint reads.
+- The view (`browser-proxy.ts`) is mounted outside `/api`, before the web UI,
+  and judges its caller itself; the frame keeper (`browser/frame-keeper.ts`)
+  watches the container's stream only while nobody else does.
+
+## Voice
+
+What voice does for the person is in [configuration](configuration.md#voice); these
+are its seams.
+
+- `VoiceSpeech` (`deck/server/src/voice/voice-speech.ts`) is what the voice
+  routes (`api/voice.ts`) need: whether `stt` and `tts` are active, a
+  transcription and a speech stream. Its adapter, `DirectVoiceSpeech`, reads the
+  route of each Capability on every call (`ModelRouting`) and calls
+  whisper-server (`POST /inference`) and audiocpp-server (`POST
+  /v1/audio/speech`, streamed PCM; a `409` while it is busy is asked again up to
+  15 s). `FakeVoiceSpeech` is its double. Contract:
+  `tests/voice-speech.contract.test.mts`, run against both, the adapter over a
+  fake whisper and a fake audio.cpp on real HTTP.
+- Each user's settings (`voice/voice-config.ts`) are keys of the `settings`
+  repo of `PortalStore`; no table of their own.
+- A voice Turn is `prompt` with `voice: true`. `SdkPiClient` adds the marker
+  and arms the `voice-first` inline factory (`pi/voice-first.ts`), which turns
+  thinking off for the first model call of the Turn.
+- In the web, the `VoiceSpeech` port (`ports/voice-speech.ts`) is the only way
+  to speech; `HandsFreeVoice` (`voice/hands-free.ts`) is the turn engine,
+  independent of React and of timing, over `SpeechPipeline` (one synthesis and
+  one playback in phrase order) and `LiveTranscription` (speculative requests
+  during the closing silence). Its pure transitions are in `voice/model/`.
+- `deck/tests/live/live-transcription.live.mts` runs the live transcription
+  against a real whisper-server; it is opt-in (`RINTHEL_LIVE_WHISPER_URL`, `npm
+  run test:live-transcription`) and never part of `npm test`.
+
+## Memoria
+
+The Memoria is what the Instance remembers between Sessions, kept in
+Understory: one per Instance, shared by its admins. An admin's Agent reaches
+it with three fixed tools, an inline factory of Deck
+(`deck/server/src/pi/memoria/`) that calls Understory's MCP endpoint (`POST
+/mcp`, stateless, one JSON reply) directly; no MCP adapter or `mcp.json` is
+installed in pi for it.
+
+| Tool | Understory tool | What it does |
+| --- | --- | --- |
+| `understory_memory_query` | `memory_query` | Asks a question; an agent inside Understory searches and answers with cited paths |
+| `understory_memory_add` | `memory_add` | Records new knowledge |
+| `understory_memory_update` | `memory_update` | Changes existing knowledge |
+
+`memory_status` and `memory_maintain` are left out.
+
+**Who gets it.** Only a Session whose owner is an admin, and only when Deck
+has `UNDERSTORY_TOKEN`; the role is asked again on every call and an owner who
+is no longer an admin, or an identity that does not answer, is refused. A
+member's Session never has it.
+
+**The Guard.** Reading the Memoria is not untrusted content: the Session stays
+clean. A tainted Session keeps the query but loses `add` and `update`, so only
+clean Sessions write the Memoria. A subagent's child gets the query alone.
+
+**Where it is.** The daemon hands the URL in its routing
+(`GET /model-provider/routing`, `understory_url`), per Platform:
+`http://127.0.0.1:3800` on Linux, `http://understory:3800` on Windows (a
+network Deck and Understory share); `null` when Understory is off. Deck reads
+it on every call and presents `UNDERSTORY_TOKEN` as a bearer token.
+
+**When Understory fails.** Registering the tools never reaches Understory, so
+neither Deck's start nor a Session's waits on it. A call that cannot reach it,
+a token it refuses, Understory off, or a write it could not make is an error
+result for the Agent, and the Session goes on. A call may take up to 40
+minutes (a query runs a model inside Understory); past that it is dropped with
+an error.

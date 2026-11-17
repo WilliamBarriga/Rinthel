@@ -1,0 +1,91 @@
+// Rinthel Deck (web portal of the pi agent): Node/Express server + React web, started by the daemon lifecycle as a compose service.
+// Deck owns the pi runs and deck.db; identity and the Local model route are asked of the daemon.
+model {
+  servicio deck "Deck" "User portal; container the daemon lifecycle brings up" {
+    source { path "deck" }
+
+    servicio deck-web "Deck web" "React + Vite; ports/adapters with fakes; UI text in Spanish" {
+      source { path "deck/web/src" }
+      modulo web-home "home / shell" "Home and workspace shell"
+      modulo web-sesiones "sessions / terminal" "Sessions, transcript, terminal"
+      modulo web-chat "chat" "Transcript and prompt box"
+      modulo web-canvas "canvas" "Canvases: markdown and ui (local actions and askAgent)"
+      modulo web-voz "voice" "Hands-free voice: Silero VAD, live transcription, barge-in, spoken replies, latency profiler; Voz screen with each user's settings" {
+        source { path "deck/web/src/voice" }
+      }
+      modulo web-usuarios "users" "Users screen (admin only)"
+      modulo web-ajustes "settings / appearance" "Local model and the Instance's voice (stt/tts on or off), Appearance and Personalization, Instance SOUL"
+      modulo web-browser "browser" "Instance browser screen (admin): install, start, stop, password, allowlist, live view; a Session's browser panel" {
+        source { path "deck/web/src/browser" }
+      }
+      puerto web-puertos "ports" "Contract towards the server: one port per area"
+      adaptador web-adaptadores "ports/adapters" "HTTP + SSE"
+      adaptador web-fakes "ports/fakes" "Test doubles"
+    }
+
+    servicio deck-server "Deck server" "Node + Express; owner of the pi runs and of deck.db" {
+      source { path "deck/server/src" }
+      ruta srv-api "api" "Routes /api/*: sessions, agent (instance-soul), workspaces, models, canvases, appearance, voice, browser, memory, packages and pi-settings (admin)" {
+        source { path "deck/server/src/api" }
+      }
+      modulo srv-auth "auth / tool-profile" "Login against the daemon; current role of the owner; tool profile by role" {
+        source { path "deck/server/src/tool-profile.ts" }
+      }
+      modulo srv-sesiones "session-manager" "A run belongs to the server, not to the tab: launches pi, marks running/idle" {
+        source { path "deck/server/src/session-manager.ts" }
+      }
+      modulo srv-eventos "live-events" "Session events: SSE and retention"
+      modulo srv-routing "session-proxy / model-routing" "pi points at /s/<token>; the proxy reads the route on every call and forwards straight to llama-server; wrong_model when the Local model changed" {
+        source { path "deck/server/src/session-proxy.ts" }
+      }
+      modulo srv-slots "session-slots" "Per-Session slot: restore before, save after, one lock per HTTP request, byte budget, LRU" {
+        source { path "deck/server/src/session-slots" }
+      }
+      modulo srv-daemon "daemon-client" "Client of the daemon: login, session-principal, model route"
+      modulo srv-recursos "user-resources" "users/<id>/: agent home and workspaces"
+      modulo srv-alma "instance-soul" "The SOUL every member Session loads: read by all, replaced by an admin; a file on the volume seeded by INSTALL" {
+        source { path "deck/server/src/instance-soul.ts" }
+      }
+      modulo srv-apariencia "appearance" "Appearance and brand over the settings of deck.db"
+      modulo srv-voz "voice" "VoiceSpeech port: DirectVoiceSpeech (STT/TTS straight to whisper-server and audiocpp-server on the route) and FakeVoiceSpeech; each user's voice settings; owner only" {
+        source { path "deck/server/src/voice" }
+      }
+      modulo srv-browser "browser" "Instance browser: docker, local Chrome or external; fixed CDP endpoint shared between Sessions with no lease; per-call gate (toggle + admin role, fails closed); /browser-ui proxy and frame keeper; never stopped for idleness" {
+        source { path "deck/server/src/session-browser.ts" }
+        source { path "deck/server/src/browser-proxy.ts" }
+        source { path "deck/server/src/browser" }
+      }
+      modulo srv-paquetes "pi-packages" "PiPackages port: pi packages of Deck's agentDir on the volume (list, install, remove, update) through pi's CLI, admin only; what Deck needs ships in the image (deck/skills, agent types)" {
+        source { path "deck/server/src/pi-packages.ts" }
+        source { path "deck/server/src/pi-packages-cli.ts" }
+      }
+      modulo srv-executors "executors" "host executor: pi runs in the server process"
+      modulo srv-store "store" "Persistence in deck.db" {
+        puerto store-puerto "port" "PortalStore: sessions, events, canvases, notes, settings"
+        adaptador store-sqlite "sqlite" "deck.db (better-sqlite3, WAL)"
+        adaptador store-memoria "memory" "Double"
+      }
+      servicio srv-pi "pi host" "Only what runs inside pi" {
+        modulo pi-sdk "sdk-client" "Talks to pi"
+        modulo pi-provider "provider" "pi model provider: goes to the session-proxy"
+        modulo pi-guard "guard / session-taint" "Fixed RULES and a persisted Session taint; every decision is a portal_guard event in the Session log"
+        modulo pi-admin "admin tool access" "What the admin-only tools share: their names (the Guard reads them), the owner's live role checked before every call (fails closed), http(s) service URLs and the 401 token mismatch" {
+          source { path "deck/server/src/pi/admin-tool.ts" }
+        }
+        modulo pi-hostexec "host-exec tools" "rinthel_host_exec and its history: loaded with a token in admin Sessions only, role checked on every call; lost when the Session is tainted" {
+          source { path "deck/server/src/pi/host-exec/host-exec-tools.ts" }
+        }
+        modulo pi-subagent "subagent tool" "Child agent on the parent's model access, sharing its slot one request at a time; admin only, role checked on every call; agent types from the image plus the volume; its answer taints, and a tainted Session loses it" {
+          source { path "deck/server/src/pi/subagents/subagent-tool.ts" }
+        }
+        modulo pi-memoria "memory tools" "Memoria: understory_memory_query / add / update straight to Understory's /mcp; loaded with UNDERSTORY_TOKEN in admin Sessions only, role checked on every call; reading does not taint, a tainted Session loses add/update, a child gets query only; Understory down is an error result, 40 min timeout" {
+          source { path "deck/server/src/pi/memoria/memoria-tools.ts" }
+        }
+        modulo pi-browser "browser tools" "Playwright's tools over the BrowserDriver, inline (no mcp.json): admin Sessions only; their output taints the Session" {
+          source { path "deck/server/src/pi/session-browser-tools.ts" }
+        }
+        modulo pi-canvas "canvas tools" "canvas_list / create / read / write / delete: the only tools of a member"
+      }
+    }
+  }
+}

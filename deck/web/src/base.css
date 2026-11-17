@@ -1,0 +1,29 @@
+/* Geometry and the shared text/card roles every screen uses. Palette roles live in index.css. */
+:root {
+  --space-1: .25rem;
+  --space-2: .5rem;
+  --space-3: .75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-page: 1.75rem;
+  --radius-control: .5625rem;
+  --radius-panel: .875rem;
+  --radius-pill: 999px;
+  --nav-width: 15rem;
+  --control-height: 2.75rem;
+  --panel-shadow: 0 6px 18px rgb(0 0 0 / .18), 0 1px 3px rgb(0 0 0 / .12);
+}
+.ui-title { font-size: 1.6875rem; line-height: 1.2; letter-spacing: -.04em; font-weight: 650; }
+.ui-eyebrow { font-size: .75rem; color: rgb(var(--fg-muted)); margin-bottom: var(--space-2); }
+.ui-description { font-size: .875rem; line-height: 1.65; color: rgb(var(--fg-muted)); margin-top: var(--space-3); }
+.ui-card { padding: var(--space-4); border: 1px solid rgb(var(--line)); border-radius: var(--radius-panel); background: rgb(var(--surface)); box-shadow: var(--panel-shadow); }
+.deck-main { background: rgb(var(--surface)); }
+
+/* The full selector uses labels; compact callers keep the same radio controls. */
+.theme-selector { display: flex; flex-shrink: 0; gap: .25rem; }
+.theme-selector button { display: flex; align-items: center; justify-content: center; gap: .625rem; min-width: 28px; min-height: 32px; padding: .375rem; border: 1px solid transparent; border-radius: var(--radius-control); color: rgb(var(--fg-muted)); background: rgb(var(--canvas)); }
+.theme-selector svg { width: 1rem; height: 1rem; flex-shrink: 0; }
+.theme-selector button[aria-checked="true"] { color: rgb(var(--accent)); border-color: currentColor; background: rgb(var(--accent) / .1); }
+.theme-selector button:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 3px; }
+.theme-selector-expanded { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr)); gap: .75rem; }
+.theme-selector-expanded button { min-height: 48px; padding: .75rem; }

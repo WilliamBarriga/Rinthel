@@ -6,6 +6,21 @@
 > directory. Create the venv at the repo root (see `README.md` →
 > Installation).
 
+> [!WARNING]
+> **Lost the admin password, or the daemon says "sin admin activo: corré
+> reset-admin"** — there is no open mode and no password reset over HTTP.
+> On the host, run
+> `rinthel/.venv/bin/python -m rinthel_tui.identity reset-admin [--username admin]`:
+> it makes that user an active admin with a new random password, printed
+> once, and revokes their refresh tokens. It works with the daemon running
+> or stopped.
+
+> [!WARNING]
+> **The daemon refuses to start: "rinthel.db has schema version N but this
+> daemon knows up to M"** — `data/rinthel.db` was written by a newer
+> version. Update the code; never downgrade the data. "SQLite X is too old"
+> means the Python of the daemon ships an SQLite older than 3.37.
+
 > [!TIP]
 > **Port already in use** — BOOT won't relaunch `llama-server` if
 > something is already listening on `RINTHEL_LLAMA_PORT` (default
@@ -25,19 +40,21 @@
 > ~300 MiB safety margin and which flag to lower first.
 
 > [!WARNING]
-> **Server dies right after enabling MTP** (`RINTHEL_MTP_ENABLED=true`,
-> `cudaMalloc failed: out of memory` in `ggml_cuda_graph_evaluate_and_capture`)
-> — MTP's compute buffer needs ~650 MiB that the current batch size is
-> already using. Lower `--ubatch-size`/`--batch-size` to `1024` or `512`
-> in `[N] CONFIGURAR > CÓMPUTO` (512 is the config with measured headroom
-> for MTP), or flip `mtp_enabled` off again in
-> `SPECULATIVE DECODING` — one checkbox, no `.env` editing. The save
-> itself warns about this combination before you get there.
+> **Server dies right after enabling MTP** (`"mtp": true` in the active
+> Local model, `cudaMalloc failed: out of memory` in
+> `ggml_cuda_graph_evaluate_and_capture`) — MTP's compute buffer needs
+> ~650 MiB that the current batch size is already using. Lower
+> `--ubatch-size`/`--batch-size` to `1024` or `512` in
+> `[N] CONFIGURAR > CÓMPUTO` (512 is the config with measured headroom for
+> MTP), or activate an entry with `"mtp": false`. The config save warns
+> about this combination before you get there.
 
 > [!NOTE]
-> **Model/binary not found** — the app warns on stderr at startup but
-> doesn't block the menu; adjust
-> `RINTHEL_LLAMA_BIN`/`RINTHEL_LLAMA_MODEL_PATH` in `.env`.
+> **Binary or model not found** — the app warns on stderr at startup but
+> doesn't block the menu. Adjust `RINTHEL_LLAMA_BIN` in `.env`; a missing
+> GGUF, an unknown active id or a bad entry is a catalog problem
+> (`models.local.json`, see [`local-models.md`](local-models.md)) and BOOT
+> leaves `llama-server` out until it is fixed.
 
 > [!IMPORTANT]
 > **Docker daemon not running** — the BOOT phase detects it and stops

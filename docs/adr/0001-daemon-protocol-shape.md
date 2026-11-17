@@ -24,3 +24,13 @@ Decisión explícita de Tarkark: construir este canal ahora en vez de dejarlo pe
 Grillado con Tarkark: nuevo sobre `phase_batch` — `{"batch": "boot"|"rebuild"}` — que `POST /reload` emite por `/ws/monitor` justo antes de arrancar cada una de esas 2 tandas (no antes de "shutdown": nada escucha esa transición en el original, no se emite). El cliente dispara Datamosh al recibir `"boot"` (límite shutdown→boot) y Vignette al recibir `"rebuild"` (límite boot→rebuild). Mismo criterio fire-and-forget que `phase_status`/`phase_log`: telemetría best-effort, no afecta el resultado final del POST. Ver `docstring` de `daemon.py` y `tests/daemon/test_aggregation.py` (sección "phase_batch").
 
 Tarkark, sobre las animaciones en sí (no sobre el envelope): conforme con que sean "llamativas pero cortas, 3s máximo" — Datamosh/Vignette ya corrían a 2s en el original (`reload.py`), así que se mantuvieron sin cambios. El remate de reload (tras `"rebuild"`, sobre `CommandDone`, sin marcador de protocolo propio) pasó por dos vueltas: primero `RippleEffect` (puerto de los anillos concéntricos de `reload.py`), retirado tras la primera prueba en vivo ("la ultima animacion de reload es demasiado larga y fea pon otra") y reemplazado por `effects::SyncSweepEffect` — ver doc-comment en `effects/transitions.rs`.
+
+## Amendment (2026-11): un segundo cliente con usuarios y Panel token
+
+El daemon deja de ser solo de la TUI: Deck también lo llama, por usuarios de la Instance. El límite sigue siendo REST + `/ws/monitor` sobre TCP, pero ya no es monousuario ni sin auth:
+
+- **La TUI** se autentica con `X-Rinthel-Service-Secret` en cada request (`?token=` en el WebSocket). Lo genera INSTALL y se rota desde la TUI.
+- **Los usuarios de Deck** entran con un **Panel token**: `POST /identity/login` devuelve un access JWT HS256 firmado con `RINTHEL_PANEL_SECRET` (1 día, `RINTHEL_IDENTITY_ACCESS_TTL`) y un refresh token opaco (30 días, `RINTHEL_IDENTITY_REFRESH_TTL`) que se guarda como hash en `rinthel.db` y rota en cada `POST /identity/refresh`; `POST /identity/logout` lo revoca. El access viaja como `Authorization: Bearer`. Rotar `RINTHEL_PANEL_SECRET` invalida todos los access.
+- **Deck como servicio** usa el mismo secreto que la TUI y, para leer el rol vigente de un usuario, `X-Rinthel-User-Id` en `GET /identity/me/session-principal`.
+
+Quién entra a cada ruta lo fija [ADR 0003](0003-policy-de-acceso-por-ruta.md); dónde viven usuarios y tokens, [ADR 0007](0007-sqlite-un-archivo-por-proceso.md). Las formas de mensaje de la TUI no cambian.

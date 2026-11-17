@@ -1,7 +1,6 @@
 # AGENTS.md — Rinthel-general
 
-> Instructions for the `pi` CLI in this repo — both running directly on
-> the host and when Pithagoras launches it (same agent, same skill).
+> Instructions for the `pi` CLI in this repo, running directly on the host.
 > graphify is already installed as a project skill
 > (`.pi/agent/skills/graphify/`, via `graphify pi install --project`).
 
@@ -29,6 +28,13 @@ and `docs/05-windows-validation.md` first. Preserve the validated Windows
 profile unless the change includes a new benchmark on the reference hardware;
 record new measurements in the validation document and keep machine-local
 paths, passwords, tokens, and `.env` files out of Git.
+
+## Architecture diagrams
+
+The architecture map is `docs/diagrams/*.dg` (rinthel-arch). A change that
+touches a module, port, route or table updates its `.dg` in the same change
+and passes `scripts/diagrams.sh validate --strict` by hand before the commit;
+there is no CI or tracked hook. See `docs/diagrams/README.md`.
 
 ## Understory (MCP Memory) — Tool Usage
 

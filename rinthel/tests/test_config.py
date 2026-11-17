@@ -1,0 +1,316 @@
+"""The 'config' category: env var parsing and defaults.
+
+Mocking style: no subprocess or network here, only os.environ, so the tests
+use pytest's monkeypatch.setenv/delenv directly, without object mocks. Every
+config is built on an Instance in ``tmp_path`` (the testing-policy ADR): never the repo's
+own ``.env``.
+"""
+
+import dataclasses
+from pathlib import Path
+
+import pytest
+
+from rinthel_tui.config import (
+    KIND_NAMES,
+    ConfigError,
+    _bool_env,
+    _int_env,
+    default_config,
+    diff_overrides,
+    stringify,
+    with_overrides,
+)
+from rinthel_tui.instance import Instance
+
+
+def test_int_env_uses_default_when_unset(monkeypatch):
+    monkeypatch.delenv("RINTHEL_TEST_INT", raising=False)
+    assert _int_env("RINTHEL_TEST_INT", 42) == 42
+
+
+def test_int_env_reads_override(monkeypatch):
+    monkeypatch.setenv("RINTHEL_TEST_INT", "7")
+    assert _int_env("RINTHEL_TEST_INT", 42) == 7
+
+
+def test_bool_env_accepts_common_truthy_spellings(monkeypatch):
+    for value in ("1", "on", "true", "yes", "TRUE"):
+        monkeypatch.setenv("RINTHEL_TEST_BOOL", value)
+        assert _bool_env("RINTHEL_TEST_BOOL", False) is True
+
+
+def test_bool_env_default_when_unset(monkeypatch):
+    monkeypatch.delenv("RINTHEL_TEST_BOOL", raising=False)
+    assert _bool_env("RINTHEL_TEST_BOOL", True) is True
+    assert _bool_env("RINTHEL_TEST_BOOL", False) is False
+
+
+def test_default_config_respects_port_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("RINTHEL_LLAMA_PORT", "9999")
+    cfg = default_config(Instance(tmp_path), platform="linux")
+    assert cfg.llama.port == 9999
+
+
+@pytest.mark.parametrize("platform,address", [("linux", "127.0.0.1"), ("windows", "host.docker.internal")])
+def test_deck_host_address_defaults_per_platform(monkeypatch, tmp_path, platform, address):
+    monkeypatch.delenv("RINTHEL_DECK_HOST_ADDRESS", raising=False)
+    assert default_config(Instance(tmp_path), platform=platform).deck.host_address == address
+
+
+def test_deck_host_address_can_be_set(monkeypatch, tmp_path):
+    monkeypatch.setenv("RINTHEL_DECK_HOST_ADDRESS", "10.0.0.5")
+    assert default_config(Instance(tmp_path), platform="windows").deck.host_address == "10.0.0.5"
+
+
+# ── RinthelConfig.validate()──────────────────────────────────────────────
+
+
+def test_validate_raises_on_duplicate_ports(cfg):
+    base = cfg
+    cfg = dataclasses.replace(base, understory=dataclasses.replace(base.understory, port=base.llama.port))
+    with pytest.raises(ConfigError, match="choca con"):
+        cfg.validate()
+
+
+def test_validate_raises_on_port_out_of_range(cfg):
+    base = cfg
+    cfg = dataclasses.replace(base, deck=dataclasses.replace(base.deck, port=70000))
+    with pytest.raises(ConfigError, match="fuera de rango"):
+        cfg.validate()
+
+
+def test_validate_raises_on_non_positive_numeric_field(cfg):
+    base = cfg
+    cfg = dataclasses.replace(base, llama=dataclasses.replace(base.llama, threads=0))
+    with pytest.raises(ConfigError, match="llama.threads"):
+        cfg.validate()
+
+
+def test_validate_warns_on_missing_paths_but_does_not_raise(cfg):
+    base = cfg
+    cfg = dataclasses.replace(
+        base, llama=dataclasses.replace(base.llama, bin=base.llama.bin.parent / "no-existe-seguro")
+    )
+    warnings = cfg.validate()
+    assert any("no existe todavía" in w for w in warnings)
+
+
+# ── MTP: the Local model turns it on + warnings on the unsafe combos ────
+
+
+def _mtp(cfg, *, mtp=True, mmproj=None, **llama):
+    model = dataclasses.replace(cfg.local_model, mtp=mtp, mmproj=mmproj)
+    return dataclasses.replace(cfg, local_model=model, llama=dataclasses.replace(cfg.llama, **llama))
+
+
+def test_validate_warns_when_mtp_is_on_with_a_batch_that_does_not_fit(cfg):
+    # test-tarkAIrk/logs/27: MTP + batch 2048 = 48 MiB free, CUDA OOM.
+    risky = _mtp(cfg, batch_size=2048, ubatch_size=2048)
+    warnings = risky.validate()
+    assert any("MTP + batch/ubatch 2048/2048" in w and "logs/27" in w for w in warnings)
+
+
+def test_validate_does_not_warn_about_batch_size_with_mtp_off(cfg):
+    off = _mtp(cfg, mtp=False, batch_size=2048, ubatch_size=2048)
+    assert not any("MTP + batch/ubatch" in w for w in off.validate())
+
+
+def test_validate_warns_on_mtp_with_parallel_gt_1_and_with_vision(cfg):
+    # The two limits of llama.cpp itself (handoff/03), not of VRAM.
+    combo = _mtp(cfg, mmproj=Path("/m/mmproj-F16.gguf"), batch_size=512, ubatch_size=512, parallel=2)
+    warnings = combo.validate()
+    assert any("--parallel > 1" in w for w in warnings)
+    assert any("--mmproj" in w for w in warnings)
+
+
+def test_validate_warns_when_the_model_turns_mtp_on_but_spec_type_is_none(cfg):
+    # MTP on in the catalog but mode "none": the argv would start with
+    # --spec-type none, MTP off despite the entry.
+    contradictory = _mtp(cfg, spec_type="none", batch_size=512, ubatch_size=512)
+    assert any("queda apagado" in w for w in contradictory.validate())
+
+
+def test_a_model_override_tunes_its_own_sampling(cfg):
+    model = dataclasses.replace(cfg.local_model, overrides={"temperature": 0.6, "top_k": 40})
+    tuned = dataclasses.replace(cfg, local_model=model).model_llama()
+    assert (tuned.temperature, tuned.top_k, tuned.n_cpu_moe) == (0.6, 40, cfg.llama.n_cpu_moe)
+
+
+# ── enabled ────────────────────────────────────────────────────────────────
+
+
+def test_default_config_enables_all_services_by_default(tmp_path):
+    cfg = default_config(Instance(tmp_path), platform="linux")
+    assert cfg.llama.enabled is True
+    assert cfg.understory.enabled is True
+    assert cfg.deck.enabled is True
+
+
+@pytest.mark.parametrize(
+    "env_var, attr",
+    [
+        ("RINTHEL_LLAMA_ENABLED", "llama"),
+        ("RINTHEL_UNDERSTORY_ENABLED", "understory"),
+        ("RINTHEL_DECK_ENABLED", "deck"),
+    ],
+)
+def test_enabled_can_be_disabled_per_service(monkeypatch, tmp_path, env_var, attr):
+    monkeypatch.setenv(env_var, "false")
+    cfg = default_config(Instance(tmp_path), platform="linux")
+    assert getattr(cfg, attr).enabled is False
+
+
+def test_validate_no_warnings_when_all_paths_exist(cfg, tmp_path):
+    existing = tmp_path / "bin"
+    existing.write_text("")
+    complete = dataclasses.replace(cfg, llama=dataclasses.replace(cfg.llama, bin=existing))
+    assert complete.validate() == []
+
+
+def test_validate_warns_without_an_active_local_model(tmp_path):
+    warnings = default_config(Instance(tmp_path), platform="linux").validate()
+    assert any("sin Local model activo" in w for w in warnings)
+
+
+# ── stringify/diff_overrides/with_overrides ─────────────────────────────
+# This logic is shared by the daemon (GET/POST /config) and any UI, not
+# specific to one.
+
+
+def test_stringify_bool_uses_lowercase_true_false():
+    assert stringify(True) == "true"
+    assert stringify(False) == "false"
+
+
+def test_stringify_other_types_use_str():
+    assert stringify(8080) == "8080"
+    assert stringify("mlock") == "mlock"
+
+
+def test_diff_overrides_excludes_values_that_match_current_config(cfg):
+    edits = {
+        "RINTHEL_LLAMA_PORT": str(cfg.llama.port),  # sin cambios reales
+        "RINTHEL_DECK_ENABLED": "false",  # sí cambió (default es true)
+    }
+    overrides = diff_overrides(cfg, edits)
+    assert overrides == {"RINTHEL_DECK_ENABLED": "false"}
+
+
+def test_diff_overrides_empty_when_nothing_changed(cfg):
+    edits = {"RINTHEL_UNDERSTORY_PORT": str(cfg.understory.port)}
+    assert diff_overrides(cfg, edits) == {}
+
+
+def test_diff_overrides_ignores_env_vars_not_in_any_field(cfg):
+    edits = {"RINTHEL_NOT_A_REAL_FIELD": "whatever"}
+    assert diff_overrides(cfg, edits) == {}
+
+
+def test_diff_overrides_reflects_a_cfg_already_disabled(cfg):
+    disabled = dataclasses.replace(cfg, deck=dataclasses.replace(cfg.deck, enabled=False))
+    # Re-enabling in the UI, against a cfg that is already disabled, must
+    # count as a change.
+    edits = {"RINTHEL_DECK_ENABLED": "true"}
+    assert diff_overrides(disabled, edits) == {"RINTHEL_DECK_ENABLED": "true"}
+    # But "false" against that same disabled cfg is not a change.
+    assert diff_overrides(disabled, {"RINTHEL_DECK_ENABLED": "false"}) == {}
+
+
+def test_with_overrides_parses_each_kind_from_a_raw_string(cfg):
+    updated = with_overrides(
+        cfg,
+        {
+            "RINTHEL_LLAMA_PORT": "9090",  # int
+            "RINTHEL_TEMPERATURE": "0.55",  # float
+            "RINTHEL_LLAMA_ENABLED": "false",  # bool
+            "RINTHEL_NGL": "42",  # str (se queda como string)
+        },
+    )
+    assert updated.llama.port == 9090
+    assert updated.llama.temperature == 0.55
+    assert updated.llama.enabled is False
+    assert updated.llama.ngl == "42"
+
+
+def test_with_overrides_does_not_mutate_the_original_cfg(cfg):
+    with_overrides(cfg, {"RINTHEL_LLAMA_PORT": "9090"})
+    assert cfg.llama.port != 9090
+
+
+def test_with_overrides_leaves_untouched_sub_configs_alone(cfg):
+    updated = with_overrides(cfg, {"RINTHEL_LLAMA_PORT": "9090"})
+    assert updated.understory == cfg.understory
+    assert updated.deck == cfg.deck
+
+
+def test_with_overrides_result_can_fail_validate(cfg):
+    updated = with_overrides(cfg, {"RINTHEL_LLAMA_PORT": str(cfg.understory.port)})
+    with pytest.raises(ConfigError, match="choca con"):
+        updated.validate()
+
+
+def test_kind_names_cover_every_field_kind_in_use():
+    from pathlib import Path
+
+    assert KIND_NAMES == {bool: "bool", int: "int", float: "float", str: "str", Path: "path"}
+
+
+def test_legacy_fork_env_vars_warn(monkeypatch, tmp_path):
+    monkeypatch.setenv("RINTHEL_MOE_CACHE_SLOTS", "16")
+    monkeypatch.setenv("RINTHEL_SCHED_ASYNC_CPU", "false")
+    warnings = default_config(Instance(tmp_path), platform="linux").validate()
+    assert any("RINTHEL_MOE_CACHE_SLOTS" in w and "RINTHEL_MOE_CACHE_MIB" in w for w in warnings)
+    assert any("RINTHEL_SCHED_ASYNC_CPU" in w for w in warnings)
+
+
+def test_default_paths_are_not_machine_specific(tmp_path):
+    cfg = default_config(Instance(tmp_path), platform="linux")
+    for path in (cfg.llama.bin, cfg.install.llamacpp_repo_dir, cfg.whisper.bin, cfg.audiocpp.bin):
+        assert not str(path).startswith("/rinthel-disk")
+
+
+# ── voice: the active stt/tts of instance.toml, Linux only ──────────────
+
+
+def _voice_instance(tmp_path, *, active: dict[str, str]) -> Instance:
+    import json
+
+    from rinthel_tui.models.adapters.toml_active import TomlActiveModels
+
+    (tmp_path / "ggml-base.bin").write_bytes(b"lmgg")
+    (tmp_path / "pocket.gguf").write_bytes(b"GGUF")
+    instance = Instance(tmp_path)
+    instance.models_catalog_path.write_text(json.dumps({"models": [
+        {"id": "whisper-base", "name": "Whisper", "capability": "stt", "gguf": str(tmp_path / "ggml-base.bin")},
+        {"id": "pocket", "name": "Pocket", "capability": "tts", "gguf": str(tmp_path / "pocket.gguf")},
+    ]}))
+    for capability, model_id in active.items():
+        TomlActiveModels(instance.instance_toml_path).set(capability, model_id)
+    return instance
+
+
+def test_the_active_voice_models_reach_the_config_on_linux(tmp_path):
+    cfg = default_config(_voice_instance(tmp_path, active={"stt": "whisper-base", "tts": "pocket"}), platform="linux")
+
+    assert (cfg.model_of("stt").id, cfg.model_of("tts").id) == ("whisper-base", "pocket")
+
+
+def test_without_an_active_key_voice_is_off_and_says_nothing(tmp_path):
+    cfg = default_config(_voice_instance(tmp_path, active={}), platform="linux")
+
+    assert (cfg.model_of("stt"), cfg.model_of("tts")) == (None, None)
+    assert not any("stt" in w or "tts" in w for w in cfg.validate())
+
+
+def test_an_unusable_active_voice_id_warns(tmp_path):
+    cfg = default_config(_voice_instance(tmp_path, active={"tts": "nadie"}), platform="linux")
+
+    assert cfg.model_of("tts") is None
+    assert any("nadie" in w for w in cfg.validate())
+
+
+def test_voice_is_never_active_on_windows(tmp_path):
+    cfg = default_config(_voice_instance(tmp_path, active={"stt": "whisper-base"}), platform="windows")
+
+    assert cfg.model_of("stt") is None

@@ -1,0 +1,75 @@
+// Edges between pieces of different files: Deck, Understory, the daemon, the SQLite files and the outside.
+// Edges internal to a module live in its own file. Endpoints are qualified ids.
+model {
+  // Deck inside
+  usuario -> deck.deck-web "browser"
+  admin -> deck.deck-web "administration"
+  deck.deck-web -> deck.deck-server "REST + SSE"
+  deck.deck-web.web-adaptadores -> deck.deck-web.web-puertos
+  deck.deck-web.web-fakes -> deck.deck-web.web-puertos
+  deck.deck-web.web-puertos -> deck.deck-server.srv-api
+  deck.deck-server.srv-api -> deck.deck-server.srv-auth
+  deck.deck-server.srv-api -> deck.deck-server.srv-sesiones "prompt"
+  deck.deck-server.srv-sesiones -> deck.deck-server.srv-auth "tool profile"
+  deck.deck-server.srv-sesiones -> deck.deck-server.srv-executors "launches pi"
+  deck.deck-server.srv-sesiones -> deck.deck-server.srv-pi "runs pi"
+  deck.deck-server.srv-sesiones -> deck.deck-server.srv-routing "opens the model proxy"
+  deck.deck-server.srv-sesiones -> deck.deck-server.srv-recursos "home and SOUL"
+  deck.deck-server.srv-sesiones -> deck.deck-server.srv-store
+  deck.deck-server.srv-sesiones -> deck.deck-server.srv-eventos
+  deck.deck-server.srv-pi.pi-provider -> deck.deck-server.srv-routing "/s/<token>"
+  deck.deck-server.srv-pi.pi-subagent -> deck.deck-server.srv-routing "shares the parent slot"
+  deck.deck-server.srv-pi.pi-memoria -> deck.deck-server.srv-routing "understory_url on every call"
+  deck.deck-server.srv-pi.pi-browser -> deck.deck-server.srv-browser
+  deck.deck-server.srv-store.store-sqlite -> deck.deck-server.srv-store.store-puerto
+  deck.deck-server.srv-store.store-memoria -> deck.deck-server.srv-store.store-puerto
+
+  // Deck -> daemon (the daemon owns identity and the model route)
+  deck.deck-server.srv-auth -> deck.deck-server.srv-daemon
+  deck.deck-server.srv-routing -> deck.deck-server.srv-daemon "model route"
+  deck.deck-server.srv-voz -> deck.deck-server.srv-routing "stt and tts routes on every call"
+  deck.deck-server.srv-daemon -> daemon.api "REST; service credential"
+  deck.deck-server.srv-auth -> daemon.api.api-identity "login, session-principal"
+  deck.deck-server.srv-routing -> daemon.api.api-models "GET /model-provider/routing"
+  deck.deck-server.srv-api -> daemon.api.api-models "GET /models, POST /models/activate, POST /models/off (admin Panel token)"
+  deck.deck-server.srv-routing -> deck.deck-server.srv-slots "holds the slot per request"
+  deck.deck-server.srv-slots -> modelos.llama-server "POST /slots/0?action=restore|save"
+  daemon.identity.id-deck-http -> deck.deck-server.srv-api "POST /api/agent/retire-sessions"
+
+  // Deck -> models, SQLite, Docker
+  deck.deck-server.srv-routing -> modelos.llama-server "direct, per-Session slot"
+  deck.deck-server.srv-voz -> modelos.whisper-server "STT"
+  deck.deck-server.srv-voz -> modelos.audiocpp-server "TTS"
+  deck.deck-server.srv-pi.pi-hostexec -> modelos.hostexecd "commands of admin Sessions"
+  deck.deck-server.srv-browser -> docker.deck-browser "CDP; installed, started and stopped over the Docker socket; /browser-ui proxied to its view; host network on Linux, by container name on a shared network on Windows"
+  deck.deck-server.srv-store.store-sqlite -> deck-db "reads and writes"
+
+  // Understory
+  deck.deck-server.srv-pi.pi-memoria -> understory.us-server.us-mcp "MCP /mcp, bearer"
+  understory.us-server.us-mcp -> understory.us-server.us-auth
+  understory.us-server.us-api -> understory.us-server.us-auth
+  understory.us-server.us-mcp -> understory.us-core.us-agent
+  understory.us-server.us-api -> understory.us-core.us-agent "chat"
+  understory.us-server.us-api -> understory.us-core.us-okf "browse"
+  understory.us-core.us-agent -> understory.us-core.us-okf
+  understory -> modelos.llama-server "host address given by the daemon"
+
+  // Daemon -> the rest of the Instance
+  daemon.identity.id-sqlite -> rinthel-db
+  daemon.database -> rinthel-db "migrate by user_version"
+  daemon.lifecycle.host-procesos -> modelos "spawn / kill"
+  daemon.lifecycle.host-compose -> docker "docker compose up / down"
+  daemon.lifecycle.host-compose -> deck "up / recreate"
+  daemon.lifecycle.host-compose -> understory "up / recreate"
+  daemon.lifecycle.host-sondeo -> npm "pi version"
+  daemon.lifecycle.lc-install -> huggingface "pinned models"
+  daemon.lifecycle.lc-install -> github "llama.cpp, whisper.cpp, audio.cpp"
+  daemon.models.mod-cambio -> modelos.llama-server "switch the Local model"
+  daemon.models.mod-cambio -> modelos.whisper-server "switch or turn off stt"
+  daemon.models.mod-cambio -> modelos.audiocpp-server "switch or turn off tts"
+  daemon.monitoring.mon-host -> modelos "GPU / CPU"
+  boot -> daemon.database "before the daemon serves"
+  cliente-tui -> daemon.api.api-lifecycle "Boot, Terminate, Reload, Install"
+  cliente-tui -> daemon.api.api-ws "Monitor"
+  docker -> docker-hub "images"
+}

@@ -1,32 +1,12 @@
-# Instalación y validación en Ubuntu 26.04
+# Installing on Ubuntu 26.04
 
-## Estado de la revisión (2026-09-28)
+Linux is the normal INSTALL: one root compose, data in `data/`, secrets
+generated locally in the root `.env`. There is no separate Ubuntu profile and
+no `COMPOSE_FILE`.
 
-Trabajo separado en `fix/ubuntu-26-04`, basado en `feature/windows-runtime`
-para reutilizar los cambios multiplataforma. Su PR se revisa contra esa rama;
-los cambios Ubuntu quedan separados de Windows y de host exec. `main` conserva
-el estado anterior a Windows tras el PR de reparación.
+## 1. Ubuntu dependencies
 
-Equipo observado: Ubuntu 26.04.1, x86_64, Python 3.14.4, unos 30 GiB de RAM,
-8 GiB de swap, RTX 5070 Laptop con 8151 MiB de VRAM y controlador 595.91.07.
-La GPU funciona. La indicación «CUDA 13.2» de `nvidia-smi` describe la capacidad
-del controlador; no significa que esté instalado el compilador `nvcc`.
-Faltaban Cargo/Rust, CMake, Docker y CUDA Toolkit. El usuario debe introducir
-su contraseña de administrador para instalar los paquetes del sistema.
-
-En la revisión original pasaron 174 pruebas Python y la sintaxis de los lanzadores. Se arrancó
-el daemon con Python 3.14 y respondió correctamente a GET /config; se
-detuvo al terminar. No se iniciaron servicios de inferencia. La
-compilación Rust, el build CUDA y las conversaciones completas quedan
-pendientes de instalar las dependencias: esta revisión no es un benchmark
-Linux ni una validación completa de la aplicación en ejecución.
-
-Tras separar las ramas, la suite completa del checkout Ubuntu pasó 189
-pruebas. No se repitieron la ejecución del daemon ni pruebas de hardware.
-
-## 1. Dependencias de Ubuntu
-
-En una terminal normal (no ejecutes Rinthel como root):
+In a normal terminal (do not run Rinthel as root):
 
 ```bash
 sudo apt update
@@ -35,33 +15,32 @@ sudo systemctl enable --now docker
 sudo usermod -aG docker "$USER"
 ```
 
-Cierra sesión y vuelve a entrar para que se aplique el grupo Docker. Luego:
+Log out and back in so the Docker group applies. Then:
 
 ```bash
 docker info
 docker compose version
 ```
 
-El grupo Docker permite administrar contenedores con privilegios sobre el
-host. El portal necesita el socket Docker para sus complementos gestionados.
-No mezcles los paquetes `docker.io` de Ubuntu con Docker CE. Si prefieres CE,
-usa exclusivamente la [guía oficial de Docker](https://docs.docker.com/engine/install/ubuntu/).
+The Docker group can manage containers with privileges over the host. INSTALL
+writes its GID as `DOCKER_GID` in the root `.env`. Do not mix Ubuntu's
+`docker.io` packages with Docker CE; if you prefer CE, follow only the
+[official Docker guide](https://docs.docker.com/engine/install/ubuntu/).
 
-No necesitas Node/npm en el host. El instalador usa rustup si falta Cargo.
-Ubuntu 26.04 ya trae un Python compatible; no agregues deadsnakes.
+Node/npm are not needed on the host. The installer uses rustup when Cargo is
+missing. Ubuntu 26.04 already ships a compatible Python; do not add deadsnakes.
 
-## 2. CUDA para esta RTX 5070
+## 2. CUDA
 
-El paquete `nvidia-cuda-toolkit` ofrecido por los repositorios Ubuntu de este
-equipo era 12.4, anterior a esta GPU Blackwell. Usa el repositorio NVIDIA
-para Ubuntu 26.04. La guía actual de NVIDIA soporta esta distribución con
-CUDA 13.4. La rama del controlador asociada a CUDA 13.4 es R615: el 595
-observado debe actualizarse para seguir esta combinación sin depender del
-modo de compatibilidad entre versiones menores.
+`nvidia-smi`'s "CUDA 13.x" line is what the driver supports, not an installed
+`nvcc`. Ubuntu's own `nvidia-cuda-toolkit` can be older than a recent GPU
+(12.4 on the reference machine, older than its Blackwell RTX 5070): use
+NVIDIA's repository for Ubuntu 26.04, which supports CUDA 13.4 with the R615
+driver branch.
 
-Fuentes: [CUDA Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/),
-[versiones CUDA/controlador](https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/),
-[controlador para Ubuntu](https://docs.nvidia.com/datacenter/tesla/driver-installation-guide/ubuntu.html).
+Sources: [CUDA Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/),
+[CUDA/driver versions](https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/),
+[driver for Ubuntu](https://docs.nvidia.com/datacenter/tesla/driver-installation-guide/ubuntu.html).
 
 ```bash
 curl -fL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2604/x86_64/cuda-keyring_1.1-1_all.deb -o /tmp/cuda-keyring_1.1-1_all.deb
@@ -71,11 +50,11 @@ sudo apt install linux-headers-$(uname -r)
 sudo apt install nvidia-open cuda-toolkit-13-4
 ```
 
-Revisa la propuesta de APT antes de aceptar, especialmente si ya tienes
-paquetes NVIDIA de otro origen. Con Secure Boot activo, completa la
-inscripción MOK si el instalador la solicita. Reinicia al terminar.
+Review what APT proposes before accepting, especially if you already have
+NVIDIA packages from another source. With Secure Boot on, complete the MOK
+enrollment if the installer asks for it. Reboot when done.
 
-En una nueva terminal:
+In a new terminal:
 
 ```bash
 export PATH=/usr/local/cuda-13.4/bin:$PATH
@@ -83,103 +62,129 @@ nvidia-smi
 nvcc --version
 ```
 
-Agrega ese `export PATH=...` una sola vez al final de `~/.bashrc` para que
-persista. No continúes con INSTALL si `nvidia-smi` o `nvcc` fallan. No uses
-`--allow-unsupported-compiler` como solución automática.
+Add that `export PATH=...` once at the end of `~/.bashrc` so it persists. Do
+not go on to INSTALL while `nvidia-smi` or `nvcc` fail. Do not use
+`--allow-unsupported-compiler` as an automatic fix.
 
-## 3. Instalar Rinthel
+## 3. Install Rinthel
 
-Desde la carpeta donde está este README:
+From the repository root:
 
 ```bash
-git branch --show-current
-./install.sh --skip-launch
+rinthel/install.sh --skip-launch
 ```
 
-La rama debe ser `fix/ubuntu-26-04`. El script instala Rust si falta,
-crea `.venv`, prepara la configuración Linux y compila el cliente.
-No descarga el modelo ni inicia los contenedores en este paso.
+The script installs Rust if missing, creates `rinthel/.venv`, installs the
+daemon and builds the client. It neither downloads the model nor starts the
+containers. Do not reuse a `.venv` or absolute paths from Windows. `.env`,
+`data/` and `models.local.json` are ignored by Git.
 
-El perfil Linux usa `COMPOSE_FILE=docker-compose.ubuntu.yml` en `.env`,
-datos en `data/`, secretos generados localmente y el proveedor `local-llm`.
-No reutilices un `.venv` o rutas absolutas de Windows. El instalador conserva
-los valores existentes en `.env`; revisa ese archivo si lo copiaste de otra
-máquina. Los archivos `.env` y `data/` están ignorados por Git.
+Deck uses the host network, so it reaches the daemon and the model on
+`127.0.0.1:8080` (`deck.host_address`) without special iptables rules. The web
+servers listen on the host's interfaces; limit access from other machines
+with your firewall if you only want local use.
 
-Si el checkout también contiene host exec, el bootstrap añade su overlay al
-perfil Ubuntu, prepara el token compartido y monta la extensión en el portal.
-Al integrar host exec en una instalación Ubuntu existente, vuelve a ejecutar
-el bootstrap y recrea el portal para cargar ese entorno. El perfil Windows
-mantiene sus stacks separados.
-
-Ambos contenedores usan `network_mode: host`, por lo que alcanzan al modelo
-en `127.0.0.1:8080` sin reglas iptables especiales. Los servidores web
-escuchan en las interfaces del host; limita con tu firewall el acceso desde
-otras máquinas si solo quieres uso local. El perfil no activa VPN ni voz.
-
-Comprueba la configuración sin imprimir secretos:
+Check the configuration without printing secrets:
 
 ```bash
 docker compose config --quiet
-./rinthel-boot.sh
+rinthel/rinthel-boot.sh
 ```
 
-En la interfaz:
+In the TUI:
 
-1. **INSTALL**: valida dependencias, compila llama.cpp upstream (ggml-org, rama `master`) con CUDA y descarga el GGUF
-   (aproximadamente 22 GB). Deja que la descarga termine: la lógica antigua
-   puede confundir una descarga interrumpida con un archivo completo.
-2. **BOOT**: carga el modelo y construye/inicia Understory y Pithagoras.
-3. **MONITOR**: confirma que los tres servicios estén disponibles.
-4. Abre <http://127.0.0.1:4100>. La contraseña está en `PORTAL_PASSWORD` del
-   `.env` local. Understory queda en <http://127.0.0.1:3800>.
+1. **INSTALL**: checks dependencies, builds upstream llama.cpp (ggml-org,
+   `master`) with CUDA, downloads the default Local model's GGUF (about
+   22 GB) and writes the initial catalog `models.local.json` with that model
+   active ([`local-models.md`](local-models.md)). It generates in the root
+   `.env` the Instance secrets, the host exec token, `PUID`/`PGID` (your user,
+   which Deck runs as), `DOCKER_GID`, and Understory's token
+   (`UNDERSTORY_TOKEN`, the only source) with its bundle in `data/understory`.
+   It creates `rinthel.db` and the first admin: copy the password it shows,
+   it is not shown again.
+2. **BOOT**: loads the model and builds/starts Understory and Deck.
+3. **MONITOR**: confirms the services are up.
+4. Open Deck at <http://127.0.0.1:4100> and log in as `admin` with that
+   password. If you lost it: `python -m rinthel_tui.identity reset-admin`.
+   Understory is at <http://127.0.0.1:3800>.
 
-El perfil conserva los valores de inferencia validados en Windows como
-punto de partida, sin afirmar el mismo rendimiento en Linux. Cierra juegos
-u otras aplicaciones que consuman mucha RAM/VRAM durante la primera prueba.
+Linux starts with its Validated profile (`VALIDATED_PROFILES["linux"]` in
+`rinthel_tui/config.py`). Close games or other RAM/VRAM-hungry applications
+during the first run.
 
-En Pithagoras, para conectar las herramientas de memoria, abre **Settings →
-MCP**, instala `pi-mcp-adapter` si el portal lo solicita, y añade un servidor
-HTTP con URL `http://127.0.0.1:3800/mcp` y `bearerTokenEnv` igual a
-`UNDERSTORY_TOKEN`. Inicia una sesión nueva después de configurarlo. Los
-paquetes se instalan en el volumen persistente del portal: no se requieren
-carpetas Pi preexistentes en el host.
+Deck keeps its state (`deck.db`, pi's home, Sessions) in `data/deck`; no
+pre-existing pi folders are needed on the host.
 
-## 4. Uso diario y diagnóstico
+## 4. Coming from an older layout
+
+An older install is not migrated: the current layout does not read the old
+root `.venv`, the old `.env` keys, nor another portal's data. Run a clean
+INSTALL and delete by hand what is no longer used. INSTALL never deletes
+anything. Stop everything first (**TERMINATE**, then
+`rinthel/rinthel-boot.sh --stop`), and keep a copy of anything you still want
+to read.
+
+Git removes the files it tracked when you update; what stays behind is what
+it never tracked. What the current layout uses at the root: `rinthel/`,
+`deck/`, `understory/`, `docs/`, `scripts/`, `compose/` (Windows only),
+`docker-compose.yaml`, the `.env`, `models.local.json`, `data/` and `logs/`.
+Safe to delete:
+
+- `.venv/` at the repository root: the venv is now `rinthel/.venv`.
+- Build and cache leftovers of the old places: `rinthel-client/` at the root
+  (its `target/` build; the client now lives in `rinthel/rinthel-client/`),
+  `rinthel_tui/`, `tests/` and `hostexecd/` at the root if only
+  `__pycache__` folders remain, and any `*.egg-info`.
+- `model-profiles.json` and a `secrets/` folder at the root: the model picker
+  is gone (the catalog is `models.local.json`) and nothing reads `secrets/`.
+- The folder of the previous web portal at the root (its `node_modules` and
+  build output are untracked), and its data folder in `data/`: in `data/`,
+  everything except `deck/`, `understory/`, `hostexecd/`, `instance.toml` and
+  `rinthel.db` belongs to the old layout. Its containers and images can go too
+  (`docker ps -a`, `docker image ls`); the current compose project is
+  `rinthel-general` (services `deck`, `understory`).
+- In the root `.env`: start again from `.env.example` and carry over only what
+  you set yourself (ports, paths of llama.cpp and the GGUFs). INSTALL writes
+  the secrets again. Keys the current daemon no longer reads include
+  `PORTAL_PASSWORD`, `OPENCODE_API_KEY`, `COMPOSE_FILE` on Linux and a
+  hand-set `AUTH_TOKEN` (compose passes `UNDERSTORY_TOKEN` to Understory); the
+  daemon warns about the legacy llama keys it still recognises.
+
+llama.cpp and the GGUFs stay outside the repository (`~/llama.cpp` and the
+paths in `models.local.json`): keep them.
+
+## 5. Daily use and diagnosis
 
 ```bash
-./rinthel-boot.sh
+rinthel/rinthel-boot.sh
 ```
 
-Usa **BOOT** para iniciar servicios y **TERMINATE** para detenerlos.
-`./rinthel-boot.sh --stop` detiene únicamente el daemon de control;
-no detiene automáticamente los contenedores ni el modelo.
+Use **BOOT** to start the services and **TERMINATE** to stop them.
+`rinthel/rinthel-boot.sh --stop` stops only the control daemon; it does not
+stop the containers nor the model.
 
 ```bash
 curl -f http://127.0.0.1:8080/v1/models
 docker compose ps
-docker compose logs --tail 60 portal understory
+docker compose logs --tail 60 deck understory
 tail -n 60 logs/daemon.log
 tail -n 60 logs/llama-server.log
 ```
 
-Si Docker muestra permisos denegados, confirma que la sesión tenga el grupo
-`docker`; reiniciar solo la terminal puede no aplicar el cambio. Ejecuta de
-nuevo `./install.sh --skip-launch` después de instalar Docker para registrar
-su GID real. No uses `sudo ./install.sh`, porque los datos quedarían con
-propietario root.
+If Docker says permission denied, check that the session has the `docker`
+group; restarting only the terminal may not apply it. If you installed Docker
+after INSTALL, run it again so it writes `DOCKER_GID`. Do not use
+`sudo rinthel/install.sh`: the data would end up owned by root.
 
-Si cambias el puerto del modelo o su ruta en CONFIGURAR, ejecuta de nuevo
-`./install.sh --skip-launch`, detén el daemon con `--stop` y vuelve a abrirlo;
-así se actualizan `models.json` y las variables que heredan los contenedores.
+To change the Local model, edit `models.local.json` and run
+`python -m rinthel_tui.models use <id>` with the services stopped, or switch
+from Deck's Ajustes ([`local-models.md`](local-models.md)).
 
-## Pruebas reproducibles
+## Tests
 
 ```bash
-.venv/bin/python -m pip install -e '.[dev]'
-.venv/bin/python -m pytest -q
-bash -n install.sh rinthel-boot.sh
-cargo test --locked --manifest-path rinthel-client/Cargo.toml
+rinthel/.venv/bin/python -m pip install -e 'rinthel[dev]'
+(cd rinthel && .venv/bin/python -m pytest -q)
+bash -n rinthel/install.sh rinthel/rinthel-boot.sh
+cargo test --locked --manifest-path rinthel/rinthel-client/Cargo.toml
 ```
-
-`graphify` no estaba instalado en este equipo; no se regeneró el grafo.

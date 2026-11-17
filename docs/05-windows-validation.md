@@ -1,112 +1,137 @@
-# Validación de Rinthel en Windows
+# Validating Rinthel on Windows
 
-Este documento registra el punto reproducible alcanzado el 2026-09-20. No es
-una promesa de rendimiento para cualquier PC: es evidencia de una máquina,
-un modelo y un perfil concretos.
+This document records the reproducible point reached on 2026-09-20. It is not
+a performance promise for any PC: it is evidence from one machine, one model
+and one concrete profile.
 
-## Máquina de referencia
+## Reference machine
 
-| Componente | Valor observado |
+| Component | Observed value |
 |---|---|
-| Sistema | Windows 11, PowerShell de 64 bits, Docker Desktop con contenedores Linux |
-| CPU | AMD Ryzen 7 260, 8 núcleos / 16 hilos |
-| RAM visible | 31.31 GiB |
+| System | Windows 11, 64-bit PowerShell, Docker Desktop with Linux containers |
+| CPU | AMD Ryzen 7 260, 8 cores / 16 threads |
+| Visible RAM | 31.31 GiB |
 | GPU | NVIDIA GeForce RTX 5070 Laptop GPU |
 | VRAM | 8151 MiB |
-| NPU | AMD XDNA, hasta 16 TOPS, detectada pero no usada por `llama.cpp` CUDA |
-| Modelo | Qwen3.6-35B-A3B UD-Q4_K_XL, 21.28 GiB |
+| NPU | AMD XDNA, up to 16 TOPS, detected but not used by CUDA `llama.cpp` |
+| Model | Qwen3.6-35B-A3B UD-Q4_K_XL, 21.28 GiB |
 
-La configuración exacta está en
-[`windows-hardware-optimization.md`](windows-hardware-optimization.md). Los archivos
-locales viven por defecto bajo `%USERPROFILE%\Rinthel-data`; ninguna ruta de
-usuario, contraseña ni token forma parte del repositorio.
+The exact configuration is in
+[`02-hardware-optimization.md`](02-hardware-optimization.md#windows-validated-profile). Local
+files live by default under `%USERPROFILE%\Rinthel-data`; no user path,
+password or token is part of the repository.
 
-## Arquitectura validada
+## Validated architecture
 
-- Cliente Ratatui, daemon FastAPI y `llama-server.exe`: procesos nativos de
-  Windows.
-- Understory y Pithagoras: contenedores Linux en Docker Desktop.
-- `llama-server`: `127.0.0.1:8080` en el host.
+- Ratatui client, FastAPI daemon and `llama-server.exe`: native Windows
+  processes.
+- Understory and the web portal: Linux containers in Docker Desktop.
+- `llama-server`: `127.0.0.1:8080` on the host.
 - Understory: `127.0.0.1:3800`.
-- Pithagoras: `127.0.0.1:4100`.
-- Pithagoras alcanza el modelo mediante
-  `http://host.docker.internal:8080/v1` y el proveedor `local-llm`.
+- Web portal: `127.0.0.1:4100`.
+- The portal reaches the model at `http://host.docker.internal:8080/v1`.
 
-El adaptador de Windows reemplaza `network_mode: host` por un puerto publicado
-en loopback, prepara permisos persistentes de `/data`, hace opcional
-`TS_AUTHKEY` y conserva los secretos existentes. Estas transformaciones son
-idempotentes.
+The validation was done with the previous web portal, which Deck replaced.
+Deck talks to the same `llama-server` with the same argv of the Validated
+profile (the change is in the client, not in inference), so the measurements
+below still hold. Deck on Windows (`compose/windows.override.yaml`: bridge
+network, port published on the loopback) is not validated on this machine
+yet: see the [Windows checklist](#windows-checklist).
 
-## Problemas resueltos
+## Where the profile lives
 
-1. Rechazo temprano de PowerShell x86 y detección robusta de Python 3.13.
-2. Descubrimiento de CMake instalado con Visual Studio y de CUDA mediante
-   `CUDA_PATH` o las rutas estándar.
-3. Compilación multi-configuración de `llama.cpp` en `Release` y localización
-   correcta de `llama-server.exe`.
-4. Arranque persistente del daemon con pidfile, ventana oculta y logs locales.
-5. Terminación multiplataforma de servicios por puerto mediante `psutil`.
-6. Comprobación de Docker Desktop con `docker info`, sin depender de
+Since the model became a Local model of the catalog, the hardware values of
+the Windows Validated profile live in one place,
+`rinthel_tui/config.py::VALIDATED_PROFILES["windows"]`, and the 65,536-token
+window in the default entry INSTALL writes to `models.local.json`.
+`install.ps1` does not write the profile to `.env`. The `llama-server` argv is
+pinned by `rinthel/tests/models/test_validated_profile.py`. It is **not**
+identical to the one benchmarked here: every tuning flag is, but one flag was
+appended after the benchmark, `--slot-save-path <root>/data/deck/llama-slots`
+(where Deck saves and restores each Session's slot). It changes no inference
+value, but the argv with it has **not** been benchmarked on Windows: that
+measurement is still pending on the reference machine. Any other change to
+the argv also asks for a new benchmark.
+
+The lifecycle uses Windows adapters of its own (`WindowsRunner`,
+`WindowsProcesses`, `WindowsHostInfo`: `creationflags`, stopping the process
+tree with psutil, discovery of Visual Studio's CMake, `CUDA_PATH` and
+`Release`). They run on Linux under the same contract suites as the POSIX
+ones, with `creationflags=0`; their real behaviour on Windows is still
+pending manual verification on the reference machine.
+
+## Problems solved
+
+1. Early refusal of x86 PowerShell and robust detection of Python 3.13.
+2. Discovery of the CMake installed with Visual Studio, and of CUDA through
+   `CUDA_PATH` or the standard paths.
+3. Multi-configuration `Release` build of `llama.cpp` and the right location
+   of `llama-server.exe`.
+4. Persistent daemon start with a pidfile, hidden window and local logs.
+5. Cross-platform stop of services by port through `psutil`.
+6. Docker Desktop check with `docker info`, without depending on
    `systemctl`.
-7. Transporte WebSocket declarado como dependencia de runtime.
-8. Proveedor local de Pithagoras conectado al modelo del host, eliminando la
-   dependencia accidental de OpenRouter.
-9. Monitor independiente `install-status.ps1` para compilación, descarga y
-   finalización.
+7. WebSocket transport declared as a runtime dependency.
+8. The web portal's local provider wired to the host's model, removing the
+   accidental dependency on OpenRouter.
+9. A separate `install-status.ps1` monitor for build, download and
+   completion.
 
-## Rendimiento observado
+## Observed performance
 
-Se realizaron cinco consultas documentales y una corrección de guardrails en
-una sesión de Pithagoras. El contexto acumulado llegó a 15,526 tokens sin error
-de CUDA ni pérdida del documento.
+Five document queries and one guardrail correction were run in one session
+of the previous web portal. The accumulated context reached 15,526 tokens
+with no CUDA error and no loss of the document.
 
-| Prueba | Salida | Tiempo | Velocidad aproximada | Calidad revisada |
+| Test | Output | Time | Approx. speed | Reviewed quality |
 |---|---:|---:|---:|---:|
-| Lectura y resumen | 878 tokens | 28.1 s | 32.6 tok/s | 9/10 |
-| Catálogo y precios | 1031 tokens | 31.0 s | 33.2 tok/s | 8.5/10 |
-| Datos ausentes y márgenes | 866 tokens | 26.4 s | 32.8 tok/s | 10/10 |
-| Respuesta comercial | 1282 tokens | 40.5 s | 31.7 tok/s | 9.5/10 |
-| Vigencia y contradicciones | 1349 tokens | 42.5 s | 31.7 tok/s | 9/10 |
-| Corrección con guardrail | 1828 tokens | 55.6 s | 32.9 tok/s | 10/10 |
+| Reading and summary | 878 tokens | 28.1 s | 32.6 tok/s | 9/10 |
+| Catalog and prices | 1031 tokens | 31.0 s | 33.2 tok/s | 8.5/10 |
+| Missing data and margins | 866 tokens | 26.4 s | 32.8 tok/s | 10/10 |
+| Commercial answer | 1282 tokens | 40.5 s | 31.7 tok/s | 9.5/10 |
+| Validity and contradictions | 1349 tokens | 42.5 s | 31.7 tok/s | 9/10 |
+| Correction with a guardrail | 1828 tokens | 55.6 s | 32.9 tok/s | 10/10 |
 
-Promedio revisado: 9.3/10 de calidad y aproximadamente 32.5 tokens/s. La
-calidad es una evaluación humana de estas pruebas, no una métrica universal.
+Reviewed average: 9.3/10 quality and about 32.5 tokens/s. Quality is a human
+assessment of these tests, not a universal metric.
 
-### Carga controlada
+### Controlled load
 
-Una generación directa de 420 tokens tomó 13.994 s (30.0 tok/s), con doce
-muestras de hardware:
+A direct generation of 420 tokens took 13.994 s (30.0 tok/s), with twelve
+hardware samples:
 
-| Recurso | Promedio | Pico o mínimo relevante |
+| Resource | Average | Relevant peak or minimum |
 |---|---:|---:|
-| CPU | 59.5% | 74.5% pico |
-| RAM usada | 29.47 GiB | 29.57 GiB pico; 1.74 GiB libre mínimo |
-| Working set de `llama-server` | — | 17.03 GiB pico |
-| GPU | 39.9% | 81% pico |
-| VRAM usada | 7341 MiB | 551 MiB libre mínimo |
-| Temperatura GPU | — | 58 C pico |
-| Potencia GPU | — | 45.04 W pico |
+| CPU | 59.5% | 74.5% peak |
+| Used RAM | 29.47 GiB | 29.57 GiB peak; 1.74 GiB free minimum |
+| `llama-server` working set | — | 17.03 GiB peak |
+| GPU | 39.9% | 81% peak |
+| Used VRAM | 7341 MiB | 551 MiB free minimum |
+| GPU temperature | — | 58 C peak |
+| GPU power | — | 45.04 W peak |
 
-La NPU aparece como `NPU Compute Accelerator Device`, pero este servidor se
-compiló con CUDA y no le asigna trabajo. Sus 16 TOPS no se suman a la VRAM ni
-a la capacidad CUDA.
+The NPU shows up as `NPU Compute Accelerator Device`, but this server was
+built with CUDA and gives it no work. Its 16 TOPS do not add to the VRAM or
+to the CUDA capacity.
 
-## Casos de uso validados
+## Validated use cases
 
-- Consulta de una base de conocimiento local con citas de sección.
-- Recuperación de catálogo, precios, estados y datos históricos.
-- Rechazo de cálculos cuando faltan costos o variables.
-- Borradores comerciales sin inventar envío, tiempos ni condiciones.
-- Detección de contradicciones entre precios vigentes e históricos.
-- Separación de catálogo activo, validación, experimento y propuesta.
+- Querying a local knowledge base with section citations.
+- Retrieving catalog, prices, states and historical data.
+- Refusing calculations when costs or variables are missing.
+- Commercial drafts without inventing shipping, lead times or conditions.
+- Detecting contradictions between current and historical prices.
+- Separating active catalog, validation, experiment and proposal.
 
-El mismo patrón puede aplicarse a una pyme, una operación de movilidad laboral
-o un estudio jurídico: cada organización mantiene su propio knowledge
-workspace y sus reglas. En dominios legales o migratorios, las respuestas son
-apoyo documental y requieren revisión profesional; no sustituyen asesoría
-jurídica ni una decisión oficial.
+The same pattern applies to a small business, a labour-mobility operation or
+a law firm: each organisation keeps its own knowledge workspace and rules. In
+legal or migration domains the answers are documentary support and need
+professional review; they do not replace legal advice or an official
+decision.
 
-## Guardrail recomendado
+## Recommended guardrail
+
+The guardrail as it was tested (in Spanish, the language of the session):
 
 ```text
 No conviertas inferencias en hechos confirmados.
@@ -123,15 +148,76 @@ Si una acción parece razonable pero no está expresamente indicada en la base
 de conocimiento, identifícala como “Propuesta”, no como política vigente.
 ```
 
-La prueba posterior demostró que este guardrail corrigió una inferencia previa
-sobre el canal para cotizaciones de envío y la convirtió explícitamente en una
-propuesta.
+The later test showed that this guardrail corrected an earlier inference
+about the channel for shipping quotes and turned it explicitly into a
+proposal.
 
-## Límites pendientes
+## Windows checklist
 
-- No se ha llenado ni validado el contexto completo de 65,536 tokens.
-- El margen de RAM y VRAM es reducido; aumentar contexto, batch, MTP o cache de
-  expertos requiere un benchmark aislado.
-- Una respuesta fluida puede contener una inferencia incorrecta. Los flujos que
-  prometen precios, logística, requisitos legales o acciones externas deben
-  conservar revisión humana.
+Deck on Windows is verified on Linux only by tests: `docker compose config`
+over the root compose plus `compose/windows.override.yaml`
+(`rinthel/tests/test_windows_compose.py`), INSTALL's `COMPOSE_FILE`
+(`rinthel/tests/lifecycle/test_install.py`), the `.ps1` contracts
+(`rinthel/tests/test_windows_scripts.py`), the journal-mode check of
+`deck.db` and the browser container's network (`deck/server/test/`). Every
+item below is **not verified** until it is run on the reference machine.
+Record the date, the Docker Desktop version and the result next to each one.
+
+1. **Compose selection.** After INSTALL, the root `.env` has
+   `COMPOSE_FILE=docker-compose.yaml;compose/windows.override.yaml` and
+   `COMPOSE_PATH_SEPARATOR=;`. At the root, `docker compose config --quiet`
+   succeeds and `docker compose config` shows `deck` without `network_mode`,
+   with port `127.0.0.1:4100` and `DECK_DB_JOURNAL_MODE: delete`.
+2. **Deck on the loopback.** After BOOT, `http://127.0.0.1:4100` answers on the
+   host, and Deck is not reachable from another machine on the LAN.
+3. **`host.docker.internal`.** From the Deck container,
+   `http://host.docker.internal:8765/docs` (the daemon) and
+   `http://host.docker.internal:8080/health` (`llama-server`) answer, both
+   bound to `127.0.0.1` on the host. A chat turn in a Session reaches the model
+   (the route the daemon hands Deck uses `deck.host_address`).
+4. **`deck.db` in `DELETE`.** Deck's startup log (`docker compose logs deck`)
+   shows `store: /data/deck.db (journal mode delete)`; there is no
+   `deck.db-wal` under `data\deck`; Sessions survive `docker compose restart
+   deck`.
+5. **Understory over the shared network (Memoria).** An admin's Session
+   reaches Understory at `http://understory:3800` with `UNDERSTORY_TOKEN`:
+   `understory_memory_query` answers, and a wrong token gets 401. Understory
+   is published on `127.0.0.1:3800` only and reaches `llama-server` through
+   `host.docker.internal` (`host-gateway`). The fixed subnet
+   `172.30.99.0/24` of `understory-net` does not clash with Docker Desktop's
+   networks.
+6. **Docker socket and `DOCKER_GID` under Docker Desktop.** Deck runs as the
+   image's user with no `group_add` (`DOCKER_GID` is Linux only) and can use
+   `/var/run/docker.sock`: the Instance browser screen shows docker mode, and
+   Instalar pulls the image and creates `deck-browser`. If the socket is
+   refused, record the socket's owner and mode inside the container.
+7. **Instance browser in docker mode.** `deck-browser` runs on the
+   `rinthel-general_deck_browser` network (`docker inspect deck-browser`),
+   nothing of it is published on the host, and from Deck:
+   - CDP at `http://deck-browser:9222/json/version` answers. Two known risks,
+     to confirm or rule out: Chrome's DevTools HTTP endpoint refuses a `Host`
+     header that is neither an IP nor `localhost`
+     (https://chromium.googlesource.com/chromium/src/+/master/content/browser/devtools/devtools_http_handler.cc),
+     so a container name may be refused; and whether the image's Chromium
+     honours `--remote-debugging-address=0.0.0.0` in a headful session. If
+     either fails, record it; the fallback is `BROWSER_CDP_URL` with the
+     container's IP on that network.
+   - The live view at `/browser-ui` (the container's `3011`) opens, and the
+     frame keeper's stream (`8082`) keeps the page rendering: a click by the
+     Agent completes while nobody watches the view.
+8. **Local or external browser.** With `BROWSER_EXTERNAL=true` and
+   `BROWSER_CDP_URL=http://host.docker.internal:9222` (Chrome started on the
+   host with remote debugging), the Instance browser screen shows it running.
+9. **Omitted on Windows.** `MONITOR` lists no `hostexecd`, `stt` or `tts`;
+   INSTALL with `--voice` shows only the Linux-only notice; an admin's
+   Session has no host exec tools.
+10. **TLS mount.** With no `PORTAL_TLS_DIR`, the `/dev/null` bind of the
+    certificates does not stop Deck from starting under Docker Desktop.
+
+## Pending limits
+
+- The full 65,536-token context has not been filled or validated.
+- RAM and VRAM headroom is small; raising context, batch, MTP or the expert
+  cache needs an isolated benchmark.
+- A fluent answer can contain a wrong inference. Flows that promise prices,
+  logistics, legal requirements or external actions must keep human review.

@@ -1,0 +1,25 @@
+{
+  "name": "deck",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "shared/canvas-catalog",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm run build -w @deck/canvas-catalog && npm run build -w @deck/server && npm run build -w @deck/web",
+    "test": "npm run build -w @deck/canvas-catalog && npm run build -w @deck/server && npm test -w @deck/server && npm test -w @deck/web && npm run test:guards",
+    "test:guards": "node --import tsx --test tests/*.test.mts",
+    "dev:server": "npm run dev -w @deck/server",
+    "dev:web": "npm run dev -w @deck/web",
+    "start": "node server/dist/index.js",
+    "test:browser": "npm run build -w @deck/canvas-catalog && npm run build -w @deck/server && playwright test",
+    "test:live-transcription": "node --import tsx --test tests/live/live-transcription.live.mts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.3"
+  }
+}

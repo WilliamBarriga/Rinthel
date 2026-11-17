@@ -1,121 +1,67 @@
-# Architecture diagrams
+# Architecture map
 
-The diagrams in this repo are written in a variant of
-[Eraser](https://docs.eraser.io/docs/syntax)'s DSL (`*.eraser`) and
-compiled to interactive HTML with [Archify](https://github.com/tt-a1i/archify).
+The architecture of Rinthel lives here as code: the `*.dg` files are the Model
+(nodes, groups, edges) and the Views, written with
+[rinthel-arch](https://github.com/WilliamBarriga/Rinthel-arch). The `.dg` text is
+the only editable source; what is generated in `.diagrams/` is git-ignored.
+The map describes the target state of the Instance: a daemon with identity in
+SQLite, Local models served by `llama-server`, and Deck with its own SQLite file.
 
-To get started right away: [`QUICKSTART.md`](QUICKSTART.md). For the full
-syntax of the supported subset: [`SYNTAX.md`](SYNTAX.md).
+## Reading order
 
-## Requirements
+Open it with `scripts/diagrams.sh dev` and go to `http://127.0.0.1:4173/#p=<view>`.
+In architecture Views, a click on a linked Group opens its detail.
 
-- Node.js (to run Archify) — already on PATH on this host.
-- The Archify package at `~/archify-pkg` (outside this repo). If it's not
-  there: clone/unpack that package into the user's home; the path is
-  hardcoded in `_ir_builder.py::ARCHIFY_BIN`.
-- Python stdlib only — no `pip install` needed to compile.
-
-## Workflow
-
-```bash
-# 1. Compile the .eraser into Archify's JSON IR, validating geometry/labels
-.venv/bin/python docs/diagrams/eraser_to_archify.py \
-    docs/diagrams/rinthel-runtime.eraser \
-    docs/diagrams/out/rinthel-runtime.architecture.json \
-    --validate
-
-# 2. If validate raises no errors, render to self-contained HTML
-node ~/archify-pkg/archify/bin/archify.mjs render architecture \
-    docs/diagrams/out/rinthel-runtime.architecture.json \
-    docs/diagrams/out/rinthel-runtime.html
-```
-
-Open the resulting `.html` in a browser — it's interactive (zoom, hover,
-legend) and looks far better than a Graphviz PNG.
-
-## Writing a new diagram
-
-Base syntax (subset of real Eraser):
-
-```
-title: My Diagram
-direction: right
-
-Node A [icon: server]
-Node B [icon: postgresql]
-
-Group {
-  Node C [icon: docker]
-}
-
-Node A > Node B: makes a query
-Node A <> Node B: bidirectional
-```
-
-- `icon:` first tries to match Archify's real brand catalog
-  (`node ~/archify-pkg/archify/bin/archify.mjs brands`) — if the node's
-  name or icon matches something like `postgresql`, `docker`, `github`,
-  `python`, `discord`, `telegram`, the real logo shows up. If it doesn't
-  match, it falls back to a small table of generic words (`mail`,
-  `monitor`, `server`, `database`, `network`, `cloud`, `queue`...).
-- `{ }` nests groups (translated to Archify `boundaries`, a region type).
-- `A > B`, `A < B`, `A <> B` are the three connection forms. `<>`
-  generates two connections (Archify has no native single bidirectional
-  arrow).
-
-### Two extensions over real Eraser
-
-Archify needs a typed `componentType`
-(frontend/backend/database/cloud/security/messagebus/external) for its
-legend, which real Eraser doesn't have. Hence:
-
-- `Node [icon: x, type: database]` — forces the type when neither the
-  brand nor the generic icon infers it well (e.g. Slack has no logo in
-  the bundled catalog — `Slack [icon: slack, type: external]`).
-- `Node [icon: x, row: 0, col: 2]` — pins the grid cell when automatic
-  layering (rank by topological distance from the edges) picks wrong.
-  Leave it out unless `--validate` complains.
-- A connection can end with `{style: dashed, labelDy: -20}` — passed
-  straight through to Archify's connection (`style` maps to `variant`;
-  it also supports `fromSide`, `toSide`, `route`, `labelDx`,
-  `labelSegment`).
-
-## When `--validate` complains
-
-Archify doesn't do real auto-layout — it places nodes on a grid
-(`row`/`col`) and routes automatically, but routing/labels can overlap
-with dense topologies (columns with many stacked nodes, connections
-spanning several columns). `--validate` prints exact diagnostics with the
-coordinate and a suggested fix (`labelDy +54` / `labelAt [x, y]` / etc.)
-— iterate like this:
-
-1. See which connection/node the diagnostic points at (**careful**: for
-   connections with a default label, sometimes the label overlapping a
-   box belongs to *another* nearby connection, not the "obvious" one —
-   confirm the exact `from`/`to` pair in the message before touching
-   anything).
-2. If it's a label overlapping a box: `{labelDy: N}` with the suggested
-   value.
-3. If it's a connection crossing an unrelated node: move that node with
-   an explicit `row`/`col`, or try `{route: orthogonal-v}` /
-   `{fromSide: ..., toSide: ...}`.
-4. Repeat `--validate` until 0 errors. Warnings (`composition standard: N
-   warnings`) are optional, non-blocking.
+| # | View | Type | What it explains |
+| --- | --- | --- | --- |
+| 1 | `instancia` | architecture | One Instance: actors, daemon, Deck, Understory, managed services and Docker |
+| 2 | `modelos-locales` | architecture | `llama-server`, the optional voice services and the Local model switch |
+| 3 | `ciclo-de-vida` | architecture | Boot, Terminate, Reload and Install: Client, API, plans and Host ports |
+| 4 | `daemon-modulos` | architecture | The daemon modules and their dependencies |
+| 5 | `daemon-api` | architecture | The routes per area and who calls them |
+| 6 | `deck-servidor`, `deck-web` | architecture | Deck inside: Sessions, pi host, Guard, store, daemon client and screens |
+| 7 | `understory-detalle` | architecture | Memory over MCP for admin Sessions |
+| 8 | `datos`, `er-identidad`, `er-deck` | architecture / ER | `rinthel.db` and `deck.db`: tables, keys and the one reference between them |
 
 ## Files
 
-```
-docs/diagrams/
-├── _ir_builder.py               # shared logic: dict -> Archify IR
-├── eraser_to_archify.py         # DSL parser + CLI (the only entrypoint)
-├── rinthel-monorepo-structure.eraser # source: subtrees, forks, upstreams
-├── rinthel-runtime.eraser        # source: runtime architecture
-├── rinthel-install-sources.eraser # source: where INSTALL pulls things from
-├── examples/
-│   └── mail-integration.eraser   # syntax example, not Rinthel-specific
-└── out/                          # generated — *.architecture.json + *.html
+| File | What it holds |
+| --- | --- |
+| `especificacion.dg` | Node types and the `rinthel` Theme |
+| `sistema.dg` | The Instance, its actors, managed services, Docker and external systems |
+| `daemon.dg` | The daemon: API per area, identity, models, lifecycle, monitoring, config |
+| `deck.dg` | Deck web and server, pi host, Guard, store |
+| `understory.dg` | Understory |
+| `datos.dg` | SQLite: `rinthel.db` (identity) and `deck.db` (Deck) |
+| `conexiones.dg` | Edges between files (Deck, daemon, SQLite, models, outside) |
+| `vistas.dg` | All the Views |
+| `fuentes/` | DejaVu fonts (and their license) used by the Theme |
+
+## Tool
+
+`rinthel-arch` enters as a submodule pinned to a commit in `docs/diagrams/.tool`
+(https URL). It is not an npm package: it is built on first use.
+
+```bash
+git submodule update --init docs/diagrams/.tool   # once
+
+scripts/diagrams.sh validate --strict   # 0 errors and 0 warnings before a commit
+scripts/diagrams.sh build               # writes docs/diagrams/.diagrams/
+scripts/diagrams.sh dev                 # live viewer
 ```
 
-`out/` can be regenerated at any time with the workflow above; it's
-versioned the same way the PNGs used to be, so links from
-`docs/01-system-overview.md` work without having to run anything.
+The first run does `pnpm install && pnpm build` inside the submodule (heavy).
+When you bump the submodule, delete `docs/diagrams/.tool/packages/cli/dist` so
+the script rebuilds. To use your own, already built clone of rinthel-arch:
+
+```bash
+DIAGRAMS_HOME=/path/to/rinthel-arch scripts/diagrams.sh validate --strict
+```
+
+## Maintenance rule
+
+A change that touches a module, a port, a route or a table updates its `.dg`
+in the same change and passes `scripts/diagrams.sh validate --strict` by hand
+before the commit. There is no CI and no tracked hook for this: the check is
+manual. If what the Instance promises changes (a new service, a new
+Capability), update `sistema.dg` and the `instancia` View too.

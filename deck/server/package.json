@@ -1,0 +1,31 @@
+{
+  "name": "@deck/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b tsconfig.json && node -e \"require('node:fs').cpSync('src/pi/subagents/agents', 'dist/pi/subagents/agents', { recursive: true })\"",
+    "test": "node --test test/*.test.mjs",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@deck/canvas-catalog": "*",
+    "@earendil-works/pi-ai": "^1.5.2",
+    "@earendil-works/pi-coding-agent": "^1.5.2",
+    "better-sqlite3": "13.2.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.0.1",
+    "jsonwebtoken": "^9.0.2",
+    "nanoid": "^5.1.16",
+    "typebox": "^1.1.38"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cookie-parser": "^1.4.8",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.3"
+  }
+}
