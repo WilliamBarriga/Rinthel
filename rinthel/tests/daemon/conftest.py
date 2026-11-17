@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 from rinthel_tui.api import create_app
 from rinthel_tui.api.adapters import Adapters
 from rinthel_tui.config import Secrets
+from rinthel_tui.models.adapters.memory import InMemoryActiveModels, InMemoryCatalog, InMemoryTurns
+from rinthel_tui.models.composition import ModelAdapters
 from rinthel_tui.monitoring.adapters.memory import (
     InMemoryContainers,
     InMemoryGpu,
@@ -49,8 +51,15 @@ def host():
 
 
 @pytest.fixture
-def adapters(telemetry, host) -> Adapters:
-    return Adapters(telemetry=telemetry, lifecycle_host=host)
+def model_adapters() -> ModelAdapters:
+    """Catálogo, modelo activo y turnos en memoria: los Local models que el
+    test declare."""
+    return ModelAdapters(catalog=InMemoryCatalog(), active=InMemoryActiveModels(), turns=InMemoryTurns())
+
+
+@pytest.fixture
+def adapters(telemetry, host, model_adapters) -> Adapters:
+    return Adapters(telemetry=telemetry, lifecycle_host=host, models=model_adapters)
 
 
 @pytest.fixture

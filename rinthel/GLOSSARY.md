@@ -56,7 +56,7 @@ Tipo de trabajo que la Instance sirve con un modelo: generar texto, transcribir 
 _Avoid_: Tarea, rol, proveedor.
 
 **Local model**:
-Modelo declarado en el catálogo de la Instance que puede servir una Capability. El admin elige cuál está activo, y ese modelo lo comparten todas las Sesiones.
+Modelo declarado en el catálogo de la Instance que puede servir una Capability. El admin elige cuál está activo, y ese modelo lo comparten todas las Sesiones. Una entrada inválida del catálogo (archivo ausente, cabecera mala) queda listada pero no activable.
 _Avoid_: Perfil (es Validated profile), proveedor.
 
 **Instance browser**:

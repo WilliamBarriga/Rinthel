@@ -17,7 +17,12 @@ from rinthel_tui.lifecycle.commands import Lifecycle
 def get_lifecycle(request: Request) -> Lifecycle:
     """Lifecycle sobre el ``cfg`` vivo y el ``Host`` de la app."""
     state = request.app.state
-    return Lifecycle(state.cfg, state.broadcaster.broadcast, execute=executor.bound_to(state.lifecycle_host))
+    return Lifecycle(
+        state.cfg,
+        state.broadcaster.broadcast,
+        execute=executor.bound_to(state.lifecycle_host),
+        lock=state.lifecycle_lock,
+    )
 
 
 def state(attr: str) -> Callable[[HTTPConnection], Any]:

@@ -334,12 +334,3 @@ async def test_download_raises_when_curl_fails(host, report, tmp_path):
         await install.phase_install_download(
             host, report, task=ModelDownload("Modelo", "https://x/m.gguf", tmp_path / "m.gguf")
         )
-
-
-async def test_the_llama_model_download_is_not_checked_against_a_sha(host, report, cfg, tmp_path):
-    cfg = _with(cfg, llama={"model": tmp_path / "m.gguf"})
-    host.runner.on_success("curl", _writes(b"whatever the admin chose"))
-
-    await install.phase_install_download(host, report, task=install_tasks.llama_model(cfg))
-
-    assert cfg.llama.model.exists()

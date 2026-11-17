@@ -12,6 +12,7 @@ from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle.composition import real_host
 from rinthel_tui.lifecycle.domain.host import Host
 from rinthel_tui.lifecycle.services import LLAMA_SERVICE
+from rinthel_tui.models.composition import ModelAdapters
 from rinthel_tui.monitoring.adapters.docker_compose import DockerComposeContainers
 from rinthel_tui.monitoring.adapters.http_readiness import HttpReadiness
 from rinthel_tui.monitoring.adapters.log_file import FileLog
@@ -27,6 +28,8 @@ class Adapters:
     telemetry: TelemetrySources
     # El host donde corren las phases de lifecycle (``executor.bound_to``).
     lifecycle_host: Host
+    # Catálogo, modelo activo y turnos en curso de los Local models.
+    models: ModelAdapters
     # El reloj de la app: lo comparten el Monitor y los casos de uso que
     # sellan instantes. Un test que quiere fijar el tiempo pasa un ``ManualClock``.
     clock: Clock = field(default_factory=SystemClock)
@@ -36,7 +39,12 @@ class Adapters:
         """``cfg_of`` es el ``cfg`` vivo de la app: por eso los arma
         ``create_app`` cuando no le pasan otros."""
         host = real_host()
-        return cls(telemetry=real_telemetry(cfg_of, host), lifecycle_host=host, clock=host.clock)
+        return cls(
+            telemetry=real_telemetry(cfg_of, host),
+            lifecycle_host=host,
+            models=ModelAdapters.real(cfg_of),
+            clock=host.clock,
+        )
 
 
 def real_telemetry(cfg_of: Callable[[], RinthelConfig], host: Host) -> TelemetrySources:

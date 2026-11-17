@@ -223,6 +223,10 @@ __marimo__/
 .env.backup-*
 .env.before-*
 model-profiles.local.json
+# Local model catalog of the Instance (edited by hand) and the example
+# INSTALL writes next to it
+/models.local.json
+/models.local.example.json
 logs/
 plans/
 .claude/

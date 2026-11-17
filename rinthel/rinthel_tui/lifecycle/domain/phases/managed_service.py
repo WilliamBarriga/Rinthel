@@ -164,6 +164,11 @@ async def phase_kill(host: Host, report: PhaseReport, *, service: ServiceSpec, r
         report.success(f"{service.display_name} parado en :{port} (terminación forzada)")
 
 
+async def phase_notice(host: Host, report: PhaseReport, *, message: str) -> None:
+    """Una unidad que no corre: deja su motivo como aviso en el resultado."""
+    report.warn(message)
+
+
 async def phase_wait_port_free(host: Host, report: PhaseReport, *, port: int, timeout: int = 30) -> None:
     """Genérico a propósito (no atado a un servicio): RELOAD lo usa para
     esperar a que el puerto de un servicio puntual (hoy llama-server) quede

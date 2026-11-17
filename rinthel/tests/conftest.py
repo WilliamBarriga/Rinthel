@@ -14,8 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from rinthel_tui.config import default_config
+from rinthel_tui.config import default_config, with_local_model
 from rinthel_tui.instance import Instance
+from rinthel_tui.models.domain.types import LocalModel
 
 
 class FakeReport:
@@ -49,9 +50,10 @@ def report() -> FakeReport:
 @pytest.fixture
 def cfg(tmp_path):
     """RinthelConfig real (misma construcción que en prod vía default_config())
-    sobre una Instance en tmp_path — layout (.env, data/, understory/,
-    pithagoras/) y paths de log fuera del repo real."""
-    base = default_config(Instance(tmp_path), platform="posix")
+    sobre una Instance en tmp_path — layout (.env, data/, subtrees) y paths
+    de log fuera del repo real — con un Local model activo, como deja INSTALL."""
+    base = default_config(Instance(tmp_path), platform="linux")
+    base = with_local_model(base, LocalModel("test-model", "Test model", "llm", tmp_path / "model.gguf", 112000))
     return dataclasses.replace(base, llama=dataclasses.replace(base.llama, log=tmp_path / "llama-server.log"))
 
 

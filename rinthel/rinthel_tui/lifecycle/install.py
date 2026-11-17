@@ -11,7 +11,6 @@ idempotente: reruns seguros, nunca pisa algo que ya funciona.
 """
 
 import importlib.resources
-import json
 import secrets
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
@@ -22,9 +21,9 @@ from dotenv import dotenv_values
 
 from rinthel_tui.config import RinthelConfig
 from rinthel_tui.env_file import update_env_file
-from rinthel_tui.install import ubuntu
 from rinthel_tui.install.host_exec import prepare_host_exec
-from rinthel_tui.instance import Instance, RotatableSecret
+from rinthel_tui.install.portal_model import PORTAL_MODEL_ID, PORTAL_PROVIDER
+from rinthel_tui.instance import RotatableSecret
 from rinthel_tui.lifecycle import install_tasks
 from rinthel_tui.lifecycle.domain.errors import PhaseError
 from rinthel_tui.lifecycle.domain.host import Host
@@ -33,10 +32,13 @@ from rinthel_tui.lifecycle.domain.phases.docker import phase_check_docker
 from rinthel_tui.lifecycle.install_tasks import (
     InstanceSecrets,
     LlamaCppInstall,
+    ModelCatalogInstall,
     ModelDownload,
     PortalInstall,
     UnderstoryInstall,
 )
+from rinthel_tui.models.adapters.json_catalog import write_catalog
+from rinthel_tui.models.adapters.toml_active import TomlActiveModels
 
 PhaseFn = Callable[..., Coroutine[Any, Any, None]]
 
@@ -220,11 +222,30 @@ async def phase_install_download(host: Host, report: PhaseReport, *, task: Model
     report.success(f"{task.what} descargado en {dest}")
 
 
+async def phase_install_model_catalog(host: Host, report: PhaseReport, *, task: ModelCatalogInstall) -> None:
+    """El catálogo inicial (``models.local.json``) con el Local model por
+    defecto, su ejemplo documentado al lado y ese modelo activo en
+    ``instance.toml``. Nunca pisa lo que ya existe: el catálogo es del admin."""
+    instance = task.instance
+    if instance.models_catalog_path.exists():
+        report.warn(f"{instance.models_catalog_path} ya existe — omito")
+    else:
+        write_catalog(instance.models_catalog_path, [task.model])
+        report.success(f"Catálogo de Local models escrito en {instance.models_catalog_path}")
+    if not instance.models_example_path.exists():
+        template = importlib.resources.files("rinthel_tui.install") / "templates" / "models.local.example.json"
+        instance.models_example_path.write_text(template.read_text())
+        report.success(f"Ejemplo del catálogo escrito en {instance.models_example_path}")
+    active = TomlActiveModels(instance.instance_toml_path)
+    current = active.get("llm")
+    if current is None:
+        active.set("llm", task.model.id)
+        report.success(f"Local model activo: {task.model.id}")
+    else:
+        report.warn(f"Local model activo ya elegido ({current}) — omito")
+
+
 # ── el portal heredado: sale entero cuando Deck lo reemplace ────────────────
-
-
-def _ubuntu_profile(host: Host, instance: Instance) -> bool:
-    return host.host_info.platform() == "linux" and ubuntu.is_selected(instance.variable("COMPOSE_FILE"))
 
 
 def prepare_portal_for_windows(portal_dir: Path, report: PhaseReport) -> None:
@@ -268,44 +289,7 @@ def prepare_portal_for_windows(portal_dir: Path, report: PhaseReport) -> None:
             report.success("Permisos persistentes del portal preparados para Windows")
 
 
-def write_local_model_config(pi_agent_dir: Path, model_path: Path, llama_port: int, report: PhaseReport) -> None:
-    """Registra el llama-server de Windows como proveedor local de Pi."""
-    models_path = pi_agent_dir / "models.json"
-    pi_agent_dir.mkdir(parents=True, exist_ok=True)
-    config: dict[str, Any] = {"providers": {}}
-    if models_path.exists():
-        try:
-            existing = json.loads(models_path.read_text())
-            if isinstance(existing, dict):
-                config = existing
-        except (json.JSONDecodeError, OSError) as exc:
-            report.error(f"{models_path} no es JSON válido: {exc}")
-            raise PhaseError("invalid pi models.json") from exc
-
-    providers = config.setdefault("providers", {})
-    if not isinstance(providers, dict):
-        report.error(f"{models_path}: 'providers' debe ser un objeto JSON")
-        raise PhaseError("invalid providers in pi models.json")
-    providers["local-llm"] = {
-        "baseUrl": f"http://host.docker.internal:{llama_port}/v1",
-        "api": "openai-completions",
-        "apiKey": "local",
-        "compat": {
-            "supportsDeveloperRole": False,
-            "supportsReasoningEffort": False,
-        },
-        "models": [{"id": str(model_path), "name": "Qwen3.6 35B Local"}],
-    }
-    models_path.write_text(json.dumps(config, indent=2) + "\n")
-    report.success(f"Proveedor local de Pi configurado en {models_path}")
-
-
 async def phase_install_setup_portal(host: Host, report: PhaseReport, *, task: PortalInstall) -> None:
-    if _ubuntu_profile(host, task.instance):
-        ubuntu.prepare(task.instance.root)
-        report.success("Configuración del monorepositorio Ubuntu preparada")
-        return
-    windows = host.host_info.platform() == "windows"
     # ``.git`` propio (checkout standalone) o directorio no vacío (subtree del
     # monorepo, sin ``.git`` propio pero con contenido): no hay nada que clonar.
     if (task.dir / ".git").exists() or (task.dir.is_dir() and any(task.dir.iterdir())):
@@ -314,22 +298,16 @@ async def phase_install_setup_portal(host: Host, report: PhaseReport, *, task: P
         await _git_clone(host, report, task.repo_url, task.dir, "portal clone", branch=task.branch)
         report.success(f"Portal clonado en {task.dir}")
 
-    if windows:
+    if host.host_info.platform() == "windows":
         prepare_portal_for_windows(task.dir, report)
-        write_local_model_config(task.pi_agent_dir, task.llama_model, task.llama_port, report)
 
+    # El portal chatea contra el Local model activo: su pi usa el proveedor
+    # que el daemon mantiene (``install/portal_model.py``), en cada rerun.
+    local_model = {"LLAMA_BASE_URL": task.llama_url, "PI_PROVIDER": PORTAL_PROVIDER, "PI_MODEL": PORTAL_MODEL_ID}
     env_path = task.dir / ".env"
     if env_path.exists():
-        if windows:
-            update_env_file(
-                env_path,
-                {
-                    "LLAMA_BASE_URL": f"http://host.docker.internal:{task.llama_port}",
-                    "PI_PROVIDER": "local-llm",
-                    "PI_MODEL": str(task.llama_model),
-                },
-            )
-            report.success("Ruta de llama.cpp actualizada para Docker Desktop")
+        update_env_file(env_path, local_model)
+        report.success("Portal apuntado al Local model activo")
         report.warn(f"{env_path} ya existe — conservo sus secretos")
     else:
         example_path = task.dir / ".env.example"
@@ -346,13 +324,7 @@ async def phase_install_setup_portal(host: Host, report: PhaseReport, *, task: P
             # Sin esto, Compose monta un directorio vacío donde Pi espera sus
             # paquetes y luego intenta instalar sobre un mount de solo lectura.
             "PI_AGENT_DIR": str(task.pi_agent_dir),
-            # Con red bridge en Docker Desktop, 127.0.0.1 sería el propio
-            # contenedor; este nombre reservado alcanza el llama-server de Windows.
-            "LLAMA_BASE_URL": (
-                f"http://host.docker.internal:{task.llama_port}" if windows else f"http://127.0.0.1:{task.llama_port}"
-            ),
-            "PI_PROVIDER": "local-llm" if windows else "",
-            "PI_MODEL": str(task.llama_model) if windows else "",
+            **local_model,
         }
         update_env_file(env_path, overrides, seed_from=example_path)
         report.success(f"{env_path} generado")
@@ -372,12 +344,8 @@ def _read_understory_token(portal_env: Path) -> str | None:
 
 
 async def phase_install_setup_understory(host: Host, report: PhaseReport, *, task: UnderstoryInstall) -> None:
-    """Prepara el bundle Linux o el despliegue standalone. Sin clone:
-    Understory corre desde su imagen publicada, no desde fuente."""
-    if _ubuntu_profile(host, task.instance):
-        ubuntu.prepare(task.instance.root)
-        report.success("Configuración del monorepositorio Ubuntu preparada")
-        return
+    """Prepara el despliegue de Understory. Sin clone: corre desde su imagen
+    publicada, no desde fuente."""
     task.dir.mkdir(parents=True, exist_ok=True)
 
     compose_path = task.dir / "docker-compose.yml"
@@ -469,6 +437,7 @@ LLAMA_INSTALL = InstallUnit(
         InstallStep("LLAMA.CPP — clone", phase_install_clone_llamacpp, install_tasks.llamacpp_install),
         InstallStep("LLAMA.CPP — build CUDA (native)", phase_install_build_llamacpp, install_tasks.llamacpp_install),
         InstallStep("MODELO GGUF — descarga", phase_install_download, install_tasks.llama_model),
+        InstallStep("LOCAL MODELS — catálogo inicial", phase_install_model_catalog, install_tasks.model_catalog),
     ),
 )
 
