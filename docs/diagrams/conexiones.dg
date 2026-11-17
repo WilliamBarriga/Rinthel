@@ -19,6 +19,7 @@ model {
   deck.deck-server.srv-sesiones -> deck.deck-server.srv-eventos
   deck.deck-server.srv-pi.pi-provider -> deck.deck-server.srv-routing "/s/<token>"
   deck.deck-server.srv-pi.pi-subagent -> deck.deck-server.srv-routing "shares the parent slot"
+  deck.deck-server.srv-pi.pi-memoria -> deck.deck-server.srv-routing "understory_url on every call"
   deck.deck-server.srv-pi.pi-browser -> deck.deck-server.srv-browser
   deck.deck-server.srv-store.store-sqlite -> deck.deck-server.srv-store.store-puerto
   deck.deck-server.srv-store.store-memoria -> deck.deck-server.srv-store.store-puerto

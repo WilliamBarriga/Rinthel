@@ -128,7 +128,7 @@ En la interfaz:
    ([`local-models.md`](local-models.md)). Genera en el `.env` raíz los
    secretos de la Instance, el token de host exec, `PUID`/`PGID` (tu
    usuario, con el que corre Deck) y `DOCKER_GID`, y el token de Understory
-   (`AUTH_TOKEN` = `UNDERSTORY_TOKEN`) con su bundle en `data/understory`.
+   (`UNDERSTORY_TOKEN`, la única fuente) con su bundle en `data/understory`.
    Crea `rinthel.db` y el primer admin: copia la contraseña que muestra,
    no se vuelve a mostrar.
 2. **BOOT**: carga el modelo y construye/inicia Understory y Deck.

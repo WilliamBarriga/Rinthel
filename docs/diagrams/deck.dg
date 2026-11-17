@@ -60,7 +60,9 @@ model {
         modulo pi-subagent "subagent tool" "Child agent on the parent's model access, sharing its slot one request at a time; admin only, role checked on every call; agent types from the image plus the volume; its answer taints, and a tainted Session loses it" {
           source { path "deck/server/src/pi/subagents/subagent-tool.ts" }
         }
-        modulo pi-memoria "memory tools" "understory_memory_query / add / update (admin only); a child gets query only"
+        modulo pi-memoria "memory tools" "Memoria: understory_memory_query / add / update straight to Understory's /mcp; loaded with UNDERSTORY_TOKEN in admin Sessions only, role checked on every call; reading does not taint, a tainted Session loses add/update, a child gets query only; Understory down is an error result, 40 min timeout" {
+          source { path "deck/server/src/pi/memoria/memoria-tools.ts" }
+        }
         modulo pi-browser "browser tools" "Instance browser tools"
         modulo pi-canvas "canvas tools" "canvas_list / create / read / write / delete: the only tools of a member"
       }

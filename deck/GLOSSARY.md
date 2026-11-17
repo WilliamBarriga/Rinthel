@@ -44,6 +44,10 @@ _Avoid_: Caché de sesión, KV cache a secas.
 Un agente hijo al que el Agente de un admin le delega una tarea con la herramienta `subagent`. Corre en un contexto propio, en memoria, y se va al responder; usa el Local model de su padre y comparte el Slot de la Sesión, una petición a la vez. Nunca tiene `subagent`, host-exec ni escritura en Memoria. Su respuesta es palabras ajenas: deja la Sesión contaminada. Sus tipos (`scout`, `worker`, `reviewer`…) vienen en la imagen de Deck y el volumen puede sumar o reemplazar alguno.
 _Avoid_: Sub-sesión, agente secundario.
 
+**Memoria**:
+Lo que la Instance recuerda entre Sesiones, guardado en Understory: una por Instance, compartida entre los Admins. Solo las Sesiones de un Admin la consultan y la escriben, con `understory_memory_query`, `understory_memory_add` y `understory_memory_update`, y solo las Sesiones limpias la escriben: una Sesión contaminada conserva la consulta y pierde la escritura. Leerla no contamina. Un Subagent solo la consulta.
+_Avoid_: Memoria de pi, `MEMORY.md` (las notas del dueño en la casa del Agente), MCP a secas.
+
 **Canvas**:
 Un documento que el Agente escribe para la persona dentro de una Sesión; la persona lo lee, lo descarga y no lo edita. Es de uno de dos tipos: `markdown` (texto) o `ui` (una interfaz armada con un catálogo cerrado de componentes: encabezados, texto, tablas, tarjetas, botones y campos de formulario). Vive en memoria hasta que se guarda en `deck.db`. En un `ui`, filtrar y rellenar campos es local al navegador; la única acción que sale es «preguntar al agente».
 _Avoid_: Artefacto, página, documento a secas.

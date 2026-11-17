@@ -77,3 +77,42 @@ one with an image type's name replaces it, and Deck logs the replacement
 (`[subagents] agent "<name>": <volume file> replaces the image's <image file>`)
 when an admin's Session starts. Files are read again on every call. A
 project's `.pi/agents` is never read.
+
+## Memoria
+
+The Memoria is what the Instance remembers between Sessions, kept in
+Understory: one per Instance, shared by its admins. An admin's Agent reaches
+it with three fixed tools, an inline factory of Deck
+(`deck/server/src/pi/memoria/`) that calls Understory's MCP endpoint (`POST
+/mcp`, stateless, one JSON reply) directly; no MCP adapter or `mcp.json` is
+installed in pi for it.
+
+| Tool | Understory tool | What it does |
+| --- | --- | --- |
+| `understory_memory_query` | `memory_query` | Asks a question; an agent inside Understory searches and answers with cited paths |
+| `understory_memory_add` | `memory_add` | Records new knowledge |
+| `understory_memory_update` | `memory_update` | Changes existing knowledge |
+
+`memory_status` and `memory_maintain` are left out.
+
+**Who gets it.** Only a Session whose owner is an admin, and only when Deck
+has `UNDERSTORY_TOKEN`; the role is asked again on every call and an owner who
+is no longer an admin, or an identity that does not answer, is refused. A
+member's Session never has it.
+
+**The Guard.** Reading the Memoria is not untrusted content: the Session stays
+clean. A tainted Session keeps the query but loses `add` and `update`, so only
+clean Sessions write the Memoria. A subagent's child gets the query alone.
+
+**Where it is.** The daemon hands the URL in its routing
+(`GET /model-provider/routing`, `understory_url`), per Platform:
+`http://127.0.0.1:3800` on Linux, `http://understory:3800` on Windows (a
+network Deck and Understory share); `null` when Understory is off. Deck reads
+it on every call and presents `UNDERSTORY_TOKEN` as a bearer token.
+
+**When Understory fails.** Registering the tools never reaches Understory, so
+neither Deck's start nor a Session's waits on it. A call that cannot reach it,
+a token it refuses, Understory off, or a write it could not make is an error
+result for the Agent, and the Session goes on. A call may take up to 40
+minutes (a query runs a model inside Understory); past that it is dropped with
+an error.

@@ -29,10 +29,11 @@ writes under `data/deck` stays editable from the host. On Linux it shares the
 host network and binds `4100` directly; on Windows the port is published on
 loopback only (see [`04-windows-installation.md`](04-windows-installation.md)).
 
-`llama-server` and Understory (published `3800:3800`) bind to `0.0.0.0`.
-`ufw` restricts the host-process ports (`sudo ufw status verbose`). `3800`
-is **not** covered by `ufw`: Docker-published ports are DNAT'ed and go
-through `FORWARD`, not `INPUT`, so only `AUTH_TOKEN` protects it. Remote
+`llama-server` binds to `0.0.0.0`; `ufw` restricts the host-process ports
+(`sudo ufw status verbose`). Understory is published on the host loopback
+only (`127.0.0.1:3800`): Docker-published ports are DNAT'ed and go through
+`FORWARD`, not `INPUT`, so `ufw` would not cover them, and nothing outside
+the host reaches it, LAN or Tailscale. Its token protects it on top. Remote
 access goes through Tailscale instead of exposing ports to the internet; if
 Tailscale connects but a port does not answer on the same wifi, see
 [`03-troubleshooting.md`](03-troubleshooting.md).
@@ -64,9 +65,20 @@ Quick check from the host:
 docker exec rinthel-general-understory-1 nc -zv -w3 host.docker.internal 8080
 ```
 
-Its token: INSTALL writes one value as both `AUTH_TOKEN` (what Understory
-requires) and `UNDERSTORY_TOKEN` (what a caller presents) in the root `.env`.
-The live bundle is `data/understory`.
+Its token has one source: INSTALL writes `UNDERSTORY_TOKEN` in the root
+`.env`, the root compose hands it to Understory as its `AUTH_TOKEN`, and
+Deck presents it. Compose refuses to run with it unset or empty (an empty
+`AUTH_TOKEN` is Understory without auth). The live bundle is
+`data/understory`.
+
+### Deck → Understory (Memoria)
+
+An admin's Session reads and writes the Instance's Memoria through
+Understory's MCP endpoint (`/mcp`). The daemon hands Deck the URL per
+Platform in its routing (`understory_url`): `http://127.0.0.1:3800` on
+Linux (Deck on the host network), `http://understory:3800` on Windows (a
+network Deck and Understory share). See
+[`deck/architecture.md`](deck/architecture.md#memoria).
 
 ## Lifecycle
 
