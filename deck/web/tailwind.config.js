@@ -24,9 +24,6 @@ export default {
         border: token("line"),
         primary: token("accent"),
         "primary-foreground": token("canvas"),
-        // The mermaid block sits on bg-sidebar; without this it is a border
-        // around nothing and the diagram floats on the transcript.
-        sidebar: token("surface"),
         // Named for the job, not the colour — see index.css.
         canvas: token("canvas"),
         surface: token("surface"),
