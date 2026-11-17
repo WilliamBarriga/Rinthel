@@ -200,6 +200,17 @@ test('the status reads the fixed CDP endpoint: version, open pages, and the Sess
   } finally { cdp.state.up = true; }
 });
 
+test('a Docker socket Deck may not use is reported in the status, not a 500', async () => {
+  const status = runtime.status;
+  runtime.status = async () => { throw new Error('connect EACCES /var/run/docker.sock'); };
+  try {
+    const res = await call('GET', '/api/browser', ADMIN);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.install.container, 'unavailable');
+    assert.match(res.body.install.pulling.error, /EACCES/);
+  } finally { runtime.status = status; }
+});
+
 test('the allowlist is saved in the settings and read back as lines; a body without it is a 400', async () => {
   const saved = await call('PUT', '/api/browser/allowlist', ADMIN, { domains: ' a.example, *.b.example ' });
   assert.equal(saved.body.allowlist, 'a.example\n*.b.example');

@@ -29,8 +29,12 @@ Lo que el Agente lee una sola vez, en el primer prompt de toda Sesión con dueñ
 _Avoid_: Encuadre de Grupo.
 
 **Guard**:
-La política que corre en toda Sesión, en cada resultado y cada llamada a una herramienta. Envuelve como no confiable lo que trae palabras ajenas (comandos de red en `bash` o `rinthel_host_exec`, MCP, el browser propio de la Sesión, la respuesta de un subagent) antes de que el modelo lo lea, y deja la Sesión contaminada. Decide solo, con reglas fijas, sin aprobaciones ni reglas por usuario. Cada llamada que revisa queda como evento `portal_guard` (`allow` o `deny`) en el historial de su Sesión; el transcript muestra los rechazos. No hay otro registro.
+La política que corre en toda Sesión, en cada resultado y cada llamada a una herramienta. Envuelve como no confiable lo que trae palabras ajenas (comandos de red en `bash` o `rinthel_host_exec`, MCP, el Instance browser, la respuesta de un subagent) antes de que el modelo lo lea, y deja la Sesión contaminada. Decide solo, con reglas fijas, sin aprobaciones ni reglas por usuario. Cada llamada que revisa queda como evento `portal_guard` (`allow` o `deny`) en el historial de su Sesión; el transcript muestra los rechazos. No hay otro registro.
 _Avoid_: Registro del Guard (ya no existe), filtro, sandbox (el Guard limita lo que hace un turno, no lo aísla del sistema).
+
+**Instance browser**:
+El único navegador de la Instance, con sus sesiones iniciadas guardadas en su perfil: un contenedor `deck-browser` que Deck instala por el socket de Docker, un Chrome local o uno externo (`BROWSER_EXTERNAL`). Solo el Admin lo instala, lo arranca, lo detiene y lo configura (contraseña de su vista, dominios permitidos), y solo lo usa una Sesión cuyo dueño es Admin y que lo tiene activado; el rol se comprueba en cada llamada y, si no se puede leer, se rechaza. Todas esas Sesiones comparten el mismo navegador y sus pestañas, sin turnos. Nunca se apaga por inactividad: corre hasta que el Admin lo detiene. Lo que devuelve es palabra ajena y contamina la Sesión.
+_Avoid_: Browser personal (ya no existe), navegador del Usuario, browser de la Sesión (la Sesión solo lo usa).
 
 **Sesión contaminada**:
 Una Sesión que leyó palabras ajenas. Lo es para siempre: la marca se guarda en `deck.db` y sobrevive a relanzar la Sesión, reiniciar Deck o perder el archivo de pi; al arrancar, la Sesión cuenta como contaminada hasta que el Guard la reconstruye. Pierde del todo host-exec, `subagent` y la escritura en Memoria, y se le rechazan las formas peligrosas de una llamada (publicar, subir datos, programar trabajo, escribir en el PATH, leer credenciales, reescribir los archivos propios del Agente).

@@ -53,7 +53,14 @@ export function browserRouter({ store, settings, runtime, cdpUrl }: BrowserDeps)
       pages,
       uiPort: config.httpsPort,
       allowlist: (await settings.allowlist()).join("\n"),
-      install: await runtime.status(),
+      // A socket Deck may not use (no docker group) is said, not a 500: the rest of the status still reads.
+      install: await runtime.status().catch((e: Error) => ({
+        available: false,
+        mode: "docker" as const,
+        image: false,
+        container: "unavailable" as const,
+        pulling: { active: false, line: "", error: e.message },
+      })),
       config: { user: config.user, hasPassword: Boolean(config.password) },
       sessions: sessions.map((s) => ({ id: s.id, title: s.title, kind: s.kind })),
     };

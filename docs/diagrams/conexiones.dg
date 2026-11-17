@@ -39,7 +39,7 @@ model {
   deck.deck-server.srv-voz -> modelos.whisper-server "STT"
   deck.deck-server.srv-voz -> modelos.audiocpp-server "TTS"
   deck.deck-server.srv-pi.pi-hostexec -> modelos.hostexecd "commands of admin Sessions"
-  deck.deck-server.srv-browser -> docker.deck-browser "CDP"
+  deck.deck-server.srv-browser -> docker.deck-browser "CDP; installed, started and stopped over the Docker socket; /browser-ui proxied to its view"
   deck.deck-server.srv-store.store-sqlite -> deck-db "reads and writes"
 
   // Understory
