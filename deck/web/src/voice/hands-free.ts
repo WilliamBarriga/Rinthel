@@ -5,17 +5,17 @@ import { systemTimer, type Timer } from "../ports/timer";
 import { displayPhase, holdsOutput, idleTurn, turnAfter, type TurnEvent, type TurnState } from "./model/hands-free-turn";
 
 export const THINKING_PHRASES = [
-  "Let me think about that for a moment.",
-  "Give me a moment to think this through.",
-  "Let me consider that.",
-  "I’m thinking through your request.",
-  "Let me take a moment with that.",
+  "Déjame pensarlo un momento.",
+  "Dame un momento para pensarlo bien.",
+  "Déjame considerarlo.",
+  "Estoy pensando en lo que me pediste.",
+  "Dame un momento con eso.",
 ];
 
 export const COMPACTION_PHRASES = [
-  "My context is getting full. Let me quickly compact our conversation before I continue.",
-  "I need a little room in my context. Let me summarize our conversation, then I'll carry on.",
-  "Let me do a quick context compaction so I can keep going.",
+  "Mi contexto se está llenando. Voy a compactar la conversación antes de seguir.",
+  "Necesito un poco de espacio en mi contexto. Resumo la conversación y sigo.",
+  "Hago una compactación rápida del contexto para poder seguir.",
 ];
 export type VoicePhase = "Escuchando" | "Te escucho" | "Transcribiendo" | "Pensando" | "Compactando el contexto" | "Hablando";
 export interface VoiceIO {
@@ -109,7 +109,7 @@ export class HandsFreeVoice {
       this.lastCompactionWaitAt = -Infinity;
       this.thinkingPipeline.cancel();
       if (!this.hearing && this.acceptingReplies) this.pipeline.enqueue([COMPACTION_PHRASES[Math.floor(this.random() * COMPACTION_PHRASES.length)]],'status');
-    } else this.pipeline.enqueue([completed ? "Context compaction is done. I'm ready to continue." : "Context compaction stopped before it finished."],'status');
+    } else this.pipeline.enqueue([completed ? "La compactación del contexto terminó. Puedo seguir." : "La compactación del contexto se detuvo antes de terminar."],'status');
     this.state();
   }
   observe(items: Item[]) {
@@ -128,7 +128,7 @@ export class HandsFreeVoice {
     if (overCompaction) {
       if (this.io.statusSpeech !== false && !this.io.sequential && this.timer.now() - this.lastCompactionWaitAt >= 8000) {
         this.lastCompactionWaitAt = this.timer.now();
-        this.pipeline.enqueue(["I'm still compacting our conversation. Please wait a moment; I'll let you know when I'm ready."],'status');
+        this.pipeline.enqueue(["Todavía estoy compactando la conversación. Espera un momento; te aviso cuando esté lista."],'status');
       }
       return;
     }

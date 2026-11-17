@@ -117,7 +117,7 @@ test('streaming code and link fragments are not spoken, and a final unfinished s
   voice.observe([part('Here is an introduction. ```js\nsecret.call();\n')]); await tick();
   assert.deepEqual(spoken, ['Here is an introduction.']);
   voice.observe([part('Here is an introduction. ```js\nsecret.call();\n```\nSee [the docs](https://secret.')]); await tick();
-  assert.ok(spoken.join(' ').includes('Code is shown in the transcript.'));
+  assert.ok(spoken.join(' ').includes('El código está en la transcripción.'));
   voice.observe([part('Here is an introduction. ```js\nsecret.call();\n```\nSee [the docs](https://secret.example). Final words', true)]); await tick();
   assert.ok(spoken.join(' ').endsWith('See the docs. Final words'));
   assert.ok(!spoken.join(' ').includes('secret')); voice.stop();
@@ -181,7 +181,7 @@ test('compaction replaces thinking cues once and returns to normal status after 
   assert.equal(phases.at(-1), 'Compactando el contexto');
   voice.setCompacting(false);
   await tick();
-  assert.ok(spoken.some(text => text.includes('compaction is done')));
+  assert.ok(spoken.some(text => text.includes('compactación del contexto terminó')));
   assert.equal(phases.at(-1), 'Pensando');
   voice.stop();
 });
@@ -210,17 +210,17 @@ test('speech during compaction does not abort or send, even if compaction ends m
  voice.setCompacting(true); await tick();
  voice.speechStart(); voice.speechStart(); await tick();
  assert.equal(aborts,0);
- assert.equal(spoken.filter(text=>text.includes('Please wait')).length,1);
+ assert.equal(spoken.filter(text=>text.includes('Espera un momento')).length,1);
  voice.setCompacting(false); await tick();
  voice.speechEnd(new Float32Array(16000)); await tick();
  assert.equal(transcriptions,0); assert.equal(sent.length,0);
- assert.ok(spoken.some(text=>text.includes('compaction is done')));
+ assert.ok(spoken.some(text=>text.includes('compactación del contexto terminó')));
  voice.stop();
 });
 test('failed compaction is not announced as completed', async () => {
  const {voice,spoken}=setup();voice.setCompacting(true);await tick();voice.setCompacting(false,false);await tick();
- assert.ok(spoken.some(text=>text.includes('stopped before')));
- assert.ok(!spoken.some(text=>text.includes('compaction is done')));voice.stop();
+ assert.ok(spoken.some(text=>text.includes('se detuvo antes')));
+ assert.ok(!spoken.some(text=>text.includes('compactación del contexto terminó')));voice.stop();
 });
 
 

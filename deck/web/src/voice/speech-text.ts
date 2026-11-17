@@ -7,7 +7,7 @@ import type { TranscriptItem } from "../chat/model/transcript";
 
 /** Keep code blocks and link destinations out of speech; split without losing text. */
 export function speechChunks(text: string): string[] {
-  const plain = text.replace(/```[\s\S]*?(?:```|$)/g, " Code is shown in the transcript. ")
+  const plain = text.replace(/```[\s\S]*?(?:```|$)/g, " El código está en la transcripción. ")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/<[^>]*>/g, "").replace(/[*_`#>|]/g, "").replace(/\s+/g, " ").trim();
   const chunks: string[] = [];
