@@ -10,12 +10,13 @@ export interface BrowserViewers {
 /**
  * Keeps the Instance browser rendering when nobody has its view open. Only the container needs it:
  * a local Chrome is presented by a real desktop, and an external one is not Deck's to watch. Does
- * nothing until the container runs. `streamPort` is selkies' own websocket, reachable directly
- * because the container shares the host's network.
+ * nothing until the container runs. `streamPort` is selkies' own websocket, reached directly at
+ * `host`: the loopback when the container shares the host's network, its name on a user network.
  */
-export function watchBrowserFrames(runtime: BrowserRuntime, streamPort: number): BrowserViewers & { stop(): void } {
+export function watchBrowserFrames(runtime: BrowserRuntime, streamPort: number, host?: string): BrowserViewers & { stop(): void } {
   const keeper = new FrameKeeper({
     port: streamPort,
+    host,
     shouldRun: async () => {
       const state = await runtime.status();
       return state.mode === "docker" && state.container === "running";

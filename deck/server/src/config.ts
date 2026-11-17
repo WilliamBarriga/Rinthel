@@ -61,8 +61,10 @@ export interface InstanceBrowserConfig {
   localProfileDir: string;
   /** Tried first for a local Chrome (`BROWSER_BINARY`). */
   binary: string | undefined;
-  /** Where its view listens (`BROWSER_HOST`). */
+  /** Where its view and stream listen (`BROWSER_HOST`): the loopback, or the container's name on a user network. */
   uiHost: string;
+  /** The container's network (`BROWSER_NETWORK`): `host`, or a user network Deck shares with it (Windows). */
+  network: string;
   /** selkies' stream websocket, kept watched so the page keeps rendering (`BROWSER_STREAM_PORT`). */
   streamPort: number;
   /** The login and ports of the view, before the admin saves their own. */
@@ -103,6 +105,7 @@ export function deckConfigFromEnv(env: NodeJS.ProcessEnv): DeckConfig {
       localProfileDir: path.join(dataDir, "browser-profile"),
       binary: env.BROWSER_BINARY || undefined,
       uiHost: env.BROWSER_HOST || "127.0.0.1",
+      network: env.BROWSER_NETWORK || "host",
       streamPort: Number(env.BROWSER_STREAM_PORT || 8082),
       defaults: { user: env.BROWSER_USER, password: env.BROWSER_PASSWORD, port: env.BROWSER_PORT, httpsPort: env.BROWSER_HTTPS_PORT },
     },

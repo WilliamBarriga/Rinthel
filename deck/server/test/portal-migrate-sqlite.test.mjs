@@ -56,6 +56,11 @@ test("WAL by default, DELETE when asked (Windows bind mounts)", async () => {
   assert.equal(pragma(del, "journal_mode"), "delete");
 });
 
+test("a journal mode SQLite did not take is refused, so the mode Deck logs at startup is the one in use", () => {
+  // An in-memory database answers `memory` whatever mode is asked for.
+  assert.throws(() => openSqliteStore(":memory:", { journalMode: "delete" }), /journal mode.*memory.*delete/);
+});
+
 test("SQLite older than 3.37 is refused: STRICT tables need it", () => {
   assert.throws(() => requireSqliteVersion("3.36.9"), /3\.37/);
   assert.doesNotThrow(() => requireSqliteVersion("3.37.0"));

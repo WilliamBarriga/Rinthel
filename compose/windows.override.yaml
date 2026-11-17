@@ -1,0 +1,48 @@
+# Windows (Docker Desktop). INSTALL selects it in the root .env:
+#   COMPOSE_FILE=docker-compose.yaml;compose/windows.override.yaml
+# Linux never reads it: there the root compose runs alone.
+#
+# Docker Desktop's host networking needs an opt-in, a signed-in account and no
+# Enhanced Container Isolation, so Deck runs in a bridge instead: published on
+# the host loopback only, reaching the native daemon and llama-server through
+# `host.docker.internal`, Understory and the Instance browser by name on
+# networks it shares with them. No tailscale: remote access on Windows is out
+# of scope. Paths are relative to the root compose's directory.
+services:
+  deck:
+    network_mode: !reset null
+    # The Linux host user and docker group do not exist here: Deck runs as the
+    # image's user, the one Docker Desktop lets use its socket.
+    user: !reset null
+    group_add: !reset []
+    ports:
+      - "127.0.0.1:${RINTHEL_DECK_PORT:-4100}:${RINTHEL_DECK_PORT:-4100}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - understory-net
+      - deck-browser-net
+    environment:
+      # The daemon runs natively on the host loopback.
+      RINTHEL_DAEMON_URL: http://host.docker.internal:${RINTHEL_DAEMON_PORT:-8765}
+      # WAL needs shared memory the Windows bind mount cannot give.
+      DECK_DB_JOURNAL_MODE: delete
+      # The Instance browser in docker mode: Deck creates `deck-browser` on the
+      # network below and reaches its CDP and view by container name. A local
+      # Chrome or BROWSER_EXTERNAL goes through host.docker.internal instead
+      # (set BROWSER_CDP_URL in the root .env).
+      BROWSER_NETWORK: rinthel-general_deck_browser
+      BROWSER_CDP_URL: ${BROWSER_CDP_URL:-http://deck-browser:9222}
+      BROWSER_HOST: deck-browser
+
+  understory:
+    # The root compose points host.docker.internal at the Linux bridge's
+    # gateway (an iptables rule on the host); Docker Desktop resolves the host
+    # itself through host-gateway.
+    extra_hosts: !override
+      - "host.docker.internal:host-gateway"
+
+networks:
+  # Deck and the Instance browser it starts; Understory is not on it.
+  deck-browser-net:
+    name: rinthel-general_deck_browser

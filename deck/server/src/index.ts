@@ -63,6 +63,7 @@ const browserRuntime = createBrowserRuntime({
     searchPath: process.env.PATH,
   }),
   volume: browserConfig.volume,
+  network: browserConfig.network,
   timezone: process.env.TZ,
 });
 // The Agent's browser tools: Playwright's MCP server over the CDP endpoint, one process for every Session.
@@ -76,7 +77,7 @@ const browserDriver = new McpStdioBrowserDriver({
   callTimeoutMs: 120_000,
 });
 // Keeps the browser rendering when nobody has its view open.
-const browserViewers = watchBrowserFrames(browserRuntime, browserConfig.streamPort);
+const browserViewers = watchBrowserFrames(browserRuntime, browserConfig.streamPort, browserConfig.uiHost);
 
 let sessions: SessionManager;
 const proxy = new SessionProxy({
@@ -126,7 +127,7 @@ await store.canvases.interruptActiveWrites();
 await store.sessions.markOrphanedInterrupted();
 const server = serve(app, { port: config.port, tls }, () => {
   console.log(`deck listening on :${config.port}${tls ? " (https)" : ""}`);
-  console.log(`  store:      ${config.databasePath} (${config.journalMode})`);
+  console.log(`  store:      ${config.databasePath} (journal mode ${config.journalMode})`);
   console.log(`  workspaces: ${config.workspaceRoot}`);
   console.log(`  slots:      ${config.slotsDir}`);
   console.log(`  auth:       panel token`);

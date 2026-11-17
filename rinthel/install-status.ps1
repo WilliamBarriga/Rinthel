@@ -26,7 +26,8 @@ function Test-InstallComplete {
         ((Get-Item -LiteralPath $Model).Length -gt 1GB) -and
         (Test-EnvKey 'RINTHEL_PANEL_SECRET') -and
         (Test-EnvKey 'UNDERSTORY_TOKEN') -and
-        (Test-Path -LiteralPath $Bundle)
+        (Test-Path -LiteralPath $Bundle) -and
+        (Test-EnvKey 'COMPOSE_FILE')
     )
 }
 
@@ -46,6 +47,7 @@ do {
     Write-Host "Modelo descargado  : $ModelSizeGB GB de ~22 GB"
     Write-Host "Secretos (.env)    : $(if (Test-EnvKey 'RINTHEL_PANEL_SECRET') { 'LISTO' } else { 'pendiente' })"
     Write-Host "Understory         : $(if ((Test-EnvKey 'UNDERSTORY_TOKEN') -and (Test-Path -LiteralPath $Bundle)) { 'LISTO' } else { 'pendiente' })"
+    Write-Host "Compose Windows    : $(if (Test-EnvKey 'COMPOSE_FILE') { 'LISTO' } else { 'pendiente' })"
 
     if (Test-InstallComplete) {
         Write-Host "`nINSTALL COMPLETO" -ForegroundColor Green

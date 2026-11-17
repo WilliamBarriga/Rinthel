@@ -309,9 +309,42 @@ async def phase_install_container_user(host: Host, report: PhaseReport, *, task:
     report.success(f"{', '.join(f'{k}={v}' for k, v in missing.items())} en {instance.env_path}")
 
 
+# What compose reads on Windows: the root compose plus the tracked override
+# (bridge network, loopback-published ports, `host.docker.internal`). The
+# separator is written too, so the same line means the same on every host.
+WINDOWS_COMPOSE = {
+    "COMPOSE_FILE": "docker-compose.yaml;compose/windows.override.yaml",
+    "COMPOSE_PATH_SEPARATOR": ";",
+}
+
+
+async def phase_install_platform_compose(host: Host, report: PhaseReport, *, task: InstanceSecrets) -> None:
+    """Picks the compose files of the Platform in the root ``.env``: on
+    Windows the root compose plus ``compose/windows.override.yaml``; Linux
+    runs the root compose alone and writes nothing. A ``COMPOSE_FILE`` the
+    admin set wins."""
+    if host.host_info.platform() != "windows":
+        report.success("compose raíz, sin override en esta Platform")
+        return
+    instance = task.instance
+    current = instance.get("COMPOSE_FILE")
+    if current:
+        if current != WINDOWS_COMPOSE["COMPOSE_FILE"]:
+            report.warn(f"COMPOSE_FILE ya estaba seteado ({current}) — omito; Deck en Windows necesita el override")
+        else:
+            report.warn("COMPOSE_FILE ya estaba seteado — omito")
+        return
+    update_env_file(instance.env_path, WINDOWS_COMPOSE, seed_from=instance.env_example_path)
+    report.success(f"COMPOSE_FILE={WINDOWS_COMPOSE['COMPOSE_FILE']} en {instance.env_path}")
+
+
 async def phase_install_host_exec_token(host: Host, report: PhaseReport, *, task: InstanceSecrets) -> None:
     """El token que comparten ``hostexecd`` y quien le pide comandos, en el
-    ``.env`` raíz. El boot lo asegura igual (``rinthel-boot.sh``)."""
+    ``.env`` raíz. El boot lo asegura igual (``rinthel-boot.sh``). En
+    Windows ``hostexecd`` no corre: no hay token que escribir."""
+    if host.host_info.platform() == "windows":
+        report.warn("host exec es solo de Linux — omito el token en esta Platform")
+        return
     try:
         generated = prepare_host_exec(task.instance.root)
     except ValueError as exc:
@@ -523,6 +556,7 @@ SECRETS_INSTALL = InstallUnit(
         InstallStep("INSTANCE — secretos del .env", phase_install_instance_secrets, install_tasks.instance_secrets),
         InstallStep("INSTANCE — token de host exec", phase_install_host_exec_token, install_tasks.instance_secrets),
         InstallStep("INSTANCE — usuario de los contenedores", phase_install_container_user, install_tasks.container_user),
+        InstallStep("INSTANCE — compose de la Platform", phase_install_platform_compose, install_tasks.container_user),
     ),
 )
 

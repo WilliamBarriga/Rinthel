@@ -41,6 +41,13 @@ test('the Instance browser: a fixed CDP endpoint, docker unless BROWSER_EXTERNAL
   assert.deepEqual(external.browser.mcpCommand, ['/opt/mcp/bin/playwright-mcp', '--headless']);
 });
 
+test("the Instance browser's container shares the host network unless a user network is named (Windows bridge)", () => {
+  assert.equal(deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's' }).browser.network, 'host');
+  const bridged = deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's', BROWSER_NETWORK: 'rinthel-general_deck_browser', BROWSER_HOST: 'deck-browser' });
+  assert.equal(bridged.browser.network, 'rinthel-general_deck_browser');
+  assert.equal(bridged.browser.uiHost, 'deck-browser');
+});
+
 test('hostexecd comes from what the daemon hands Deck, and only with a token', () => {
   assert.equal(deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's' }).hostExec, undefined);
   assert.equal(deckConfigFromEnv({ RINTHEL_PANEL_SECRET: 's', RINTHEL_HOSTEXECD_URL: 'http://127.0.0.1:8766', RINTHEL_HOSTEXECD_TOKEN: ' ' }).hostExec, undefined);

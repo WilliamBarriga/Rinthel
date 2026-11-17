@@ -117,6 +117,40 @@ async def test_container_user_does_nothing_on_windows(host, report, cfg):
     assert not cfg.instance.env_path.exists()
 
 
+# ── COMPOSE DE LA PLATFORM: el override de Windows por COMPOSE_FILE ─────
+
+
+async def test_platform_compose_picks_the_windows_override_on_windows(host, report, cfg):
+    host.host_info.os = "windows"
+
+    await install.phase_install_platform_compose(host, report, task=install_tasks.container_user(cfg))
+
+    env = dotenv_values(cfg.instance.env_path)
+    assert env["COMPOSE_FILE"] == "docker-compose.yaml;compose/windows.override.yaml"
+    assert env["COMPOSE_PATH_SEPARATOR"] == ";"
+
+
+async def test_platform_compose_leaves_linux_on_the_root_compose_alone(host, report, cfg):
+    await install.phase_install_platform_compose(host, report, task=install_tasks.container_user(cfg))
+
+    assert not cfg.instance.env_path.exists()
+
+
+async def test_platform_compose_keeps_what_the_admin_set(host, report, cfg):
+    host.host_info.os = "windows"
+    cfg.instance.env_path.write_text("COMPOSE_FILE=mine.yaml\n")
+
+    await install.phase_install_platform_compose(host, report, task=install_tasks.container_user(cfg))
+
+    env = dotenv_values(cfg.instance.env_path)
+    assert env["COMPOSE_FILE"] == "mine.yaml" and "COMPOSE_PATH_SEPARATOR" not in env
+    assert any("COMPOSE_FILE" in w for w in report.warnings)
+
+
+def test_the_instance_unit_sets_the_platform_compose():
+    assert install.phase_install_platform_compose in [step.fn for step in install.SECRETS_INSTALL.steps]
+
+
 # ── HOST EXEC: el token compartido vive en el .env raíz ───────────────
 
 
@@ -127,6 +161,15 @@ async def test_host_exec_token_is_generated_once_in_the_root_env(host, report, c
 
     assert len(token) >= 64
     assert dotenv_values(cfg.instance.env_path)["RINTHEL_HOSTEXECD_TOKEN"] == token
+
+
+async def test_host_exec_token_is_skipped_on_windows_where_hostexecd_does_not_run(host, report, cfg):
+    host.host_info.os = "windows"
+
+    await install.phase_install_host_exec_token(host, report, task=install_tasks.instance_secrets(cfg))
+
+    assert not cfg.instance.env_path.exists()
+    assert report.warnings
 
 
 async def test_host_exec_token_conflicting_with_the_shell_fails(host, report, cfg, monkeypatch):

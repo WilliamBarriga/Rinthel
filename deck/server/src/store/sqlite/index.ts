@@ -48,7 +48,11 @@ export function openSqliteStore(file: string, options: SqliteStoreOptions = {}):
   const db = new Database(file);
   try {
     requireSqliteVersion((db.prepare("SELECT sqlite_version() AS v").get() as { v: string }).v);
-    db.pragma(`journal_mode = ${options.journalMode ?? "wal"}`);
+    const asked = options.journalMode ?? "wal";
+    // SQLite answers with the mode it is in, which is not always the one asked for: refused here,
+    // so the mode the server logs at startup is the one in use.
+    const active = String(db.pragma(`journal_mode = ${asked}`, { simple: true })).toLowerCase();
+    if (active !== asked) throw new Error(`${file} stayed in journal mode ${active}, ${asked} was asked for (DECK_DB_JOURNAL_MODE)`);
     db.pragma("foreign_keys = ON");
     db.pragma("busy_timeout = 5000");
     migrate(db, file);

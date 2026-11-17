@@ -20,15 +20,22 @@ export interface BrowserRuntimeOptions {
   local: LocalChrome;
   /** The profile volume: the logins. */
   volume: string;
+  /**
+   * The container's network (`BROWSER_NETWORK`): `host` (default, Linux), or a user network Deck
+   * shares with it (Windows, Deck in a bridge), where CDP and the view are reached by container name.
+   */
+  network?: string;
   timezone?: string;
 }
 
 /**
  * The container as validated by hand. `seccomp=unconfined` is Chromium's own sandbox needing room
  * (the alternative, `--no-sandbox`, is worse). Host networking puts the debugging port on the same
- * loopback as Deck without publishing it anywhere.
+ * loopback as Deck without publishing it anywhere. On a user network Deck is another container, so the
+ * debugging port listens on the container's interfaces: reachable on that network only, never published.
  */
-function containerSpec(cfg: BrowserConfig, volume: string, timezone: string) {
+function containerSpec(cfg: BrowserConfig, volume: string, timezone: string, network: string) {
+  const cdp = network === "host" ? "--remote-debugging-port=9222" : "--remote-debugging-port=9222 --remote-debugging-address=0.0.0.0";
   return {
     Image: IMAGE,
     Env: [
@@ -39,13 +46,13 @@ function containerSpec(cfg: BrowserConfig, volume: string, timezone: string) {
       `PASSWORD=${cfg.password}`,
       `CUSTOM_PORT=${cfg.port}`,
       `CUSTOM_HTTPS_PORT=${cfg.httpsPort}`,
-      "CHROME_CLI=--remote-debugging-port=9222",
+      `CHROME_CLI=${cdp}`,
       // The image restarts the app when it exits; without this, closing the window leaves a healthy
       // container with no browser in it.
       "RESTART_APP=true",
     ],
     HostConfig: {
-      NetworkMode: "host",
+      NetworkMode: network,
       SecurityOpt: ["seccomp=unconfined"],
       ShmSize: 1024 * 1024 * 1024,
       RestartPolicy: { Name: "unless-stopped" },
@@ -136,7 +143,7 @@ export function createBrowserRuntime(opts: BrowserRuntimeOptions): BrowserRuntim
       }
       await docker.request("POST", "/volumes/create", { Name: volume });
       if ((await containerState()).exists) await remove();
-      const created = await docker.request("POST", `/containers/create?name=${CONTAINER}`, containerSpec(cfg, volume, opts.timezone ?? "Etc/UTC"));
+      const created = await docker.request("POST", `/containers/create?name=${CONTAINER}`, containerSpec(cfg, volume, opts.timezone ?? "Etc/UTC", opts.network ?? "host"));
       if (created.status >= 400) throw failed("Create", created);
       await start();
     },

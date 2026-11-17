@@ -14,8 +14,10 @@
  * container, on that container's own stream websocket.
  */
 export interface FrameKeeperOptions {
-  /** The container's stream websocket (loopback; the container shares the host's network). */
+  /** The container's stream websocket: on the loopback when it shares the host's network (default). */
   port: number;
+  /** Its host on a user network Deck shares with it (`BROWSER_HOST`, the container's name). */
+  host?: string;
   /** Asked before each connection attempt; false means the container is not one to watch right now. */
   shouldRun?: () => Promise<boolean>;
   pollMs?: number;
@@ -77,7 +79,7 @@ export class FrameKeeper {
   }
 
   private connect(): void {
-    const ws = new WebSocket(`ws://127.0.0.1:${this.opts.port}/websocket`);
+    const ws = new WebSocket(`ws://${this.opts.host ?? "127.0.0.1"}:${this.opts.port}/websocket`);
     this.socket = ws;
     ws.binaryType = "arraybuffer";
 

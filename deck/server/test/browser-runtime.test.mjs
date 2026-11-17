@@ -28,6 +28,24 @@ test("docker runtime: the container is the one validated by hand (host network, 
   assert.equal(docker.volumes.has("deck_browser-profile"), false);
 });
 
+test("docker runtime on a user network (Windows bridge): the container joins it and its CDP listens beyond its own loopback", async () => {
+  const docker = new FakeDocker({ image: true });
+  const runtime = createBrowserRuntime({ external: false, cdpUrl: "http://deck-browser:9222", docker, local: noChrome(), volume: "v", network: "rinthel-general_deck_browser" });
+  await runtime.install({ user: "agent", password: "s3cret", port: "3010", httpsPort: "3011" });
+  const { spec } = docker.containers.get("deck-browser");
+  assert.equal(spec.HostConfig.NetworkMode, "rinthel-general_deck_browser");
+  assert.ok(spec.Env.includes("CHROME_CLI=--remote-debugging-port=9222 --remote-debugging-address=0.0.0.0"));
+});
+
+test("docker runtime on the host network keeps CDP on the host loopback", async () => {
+  const docker = new FakeDocker({ image: true });
+  const runtime = createBrowserRuntime({ external: false, cdpUrl: "http://127.0.0.1:9222", docker, local: noChrome(), volume: "v", network: "host" });
+  await runtime.install({ user: "agent", password: "s3cret", port: "3010", httpsPort: "3011" });
+  const { spec } = docker.containers.get("deck-browser");
+  assert.equal(spec.HostConfig.NetworkMode, "host");
+  assert.ok(!spec.Env.some((e) => e.includes("remote-debugging-address")));
+});
+
 test("external runtime: found over its CDP endpoint, with no Docker, and never managed from Deck", async (t) => {
   const cdp = await fakeCdp();
   t.after(() => cdp.close());

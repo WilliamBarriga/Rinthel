@@ -9,7 +9,7 @@ import { FrameKeeper } from "../dist/extensions/frame-keeper.js";
  * A stand-in for selkies' stream websocket: it accepts the upgrade, decodes the client's (masked,
  * short) text frames, and can send one text frame back. Enough to see what the keeper asks for.
  */
-async function fakeStream() {
+async function fakeStream(address = "127.0.0.1") {
   const state = { messages: [], sockets: [], closed: 0 };
   const server = http.createServer();
   server.on("upgrade", (req, socket) => {
@@ -32,7 +32,7 @@ async function fakeStream() {
       }
     });
   });
-  server.listen(0, "127.0.0.1");
+  server.listen(0, address);
   await once(server, "listening");
   return {
     port: server.address().port,
@@ -60,6 +60,15 @@ test("frame keeper: with the container running and nobody watching, it claims th
   keeper.start();
   await until(() => stream.state.messages.includes("START_VIDEO"));
   assert.match(stream.state.messages[0], /^SETTINGS,\{"displayId":"primary","framerate":10\}$/);
+});
+
+test("frame keeper: on a user network it watches the container at its own host, not the loopback", async (t) => {
+  // Another loopback address stands in for the container's name on the shared network.
+  const stream = await fakeStream("127.0.0.2");
+  const keeper = new FrameKeeper({ host: "127.0.0.2", port: stream.port, shouldRun: async () => true, startDelayMs: 10, pollMs: 50 });
+  t.after(async () => { keeper.stop(); await stream.close(); });
+  keeper.start();
+  await until(() => stream.state.messages.includes("START_VIDEO"));
 });
 
 test("frame keeper: a container not to watch (stopped, local or external) is never connected to", async (t) => {
