@@ -31,6 +31,10 @@ _DISPLAY_NAMES = {
 }
 
 
+# The sub-configs of the services that only run on Linux (voice, host exec):
+# on another Platform ``[N] CONFIGURAR`` leaves them out, as the Monitor does.
+_LINUX_ONLY = frozenset({"whisper", "audiocpp", "hostexecd"})
+
 # The Local model's fields: speculative decoding is tuned per Local model
 # (its ``overrides`` whitelist), so ``[N] CONFIGURAR`` does not offer it.
 _LOCAL_MODEL_FIELDS = frozenset({("llama", "spec_type"), ("llama", "spec_draft_n_max")})
@@ -54,6 +58,8 @@ def config_payload(cfg: RinthelConfig) -> dict:
     cliente Rust."""
     services = []
     for attr, fields in config._ENTRIES:
+        if attr in _LINUX_ONLY and cfg.platform != "linux":
+            continue
         sub = getattr(cfg, attr)
         enabled_field = next((f for f in fields if f.attr == "enabled"), None)
         services.append(

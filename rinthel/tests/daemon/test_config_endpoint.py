@@ -31,6 +31,16 @@ def test_get_config_lists_every_sub_config_including_install(get_config):
     assert attrs == ["llama", "moe", "understory", "deck", "hostexecd", "install", "whisper", "audiocpp"]
 
 
+def test_on_windows_configurar_leaves_out_the_linux_only_services(daemon_cfg, adapters, service_headers):
+    # Voice and host exec never run on Windows: their settings would be dead
+    # knobs there, the same services the Monitor does not list.
+    windows = TestClient(create_app(dataclasses.replace(daemon_cfg, platform="windows"), adapters=adapters))
+
+    attrs = [s["attr"] for s in windows.get("/config", headers=service_headers).json()["services"]]
+
+    assert attrs == ["llama", "moe", "understory", "deck", "install"]
+
+
 def test_get_config_names_the_voice_services(get_config):
     names = {s["attr"]: s["display_name"] for s in get_config()["services"]}
     assert (names["whisper"], names["audiocpp"]) == ("whisper-server", "audiocpp-server")
