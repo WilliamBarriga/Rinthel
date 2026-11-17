@@ -87,8 +87,8 @@ It covers:
   `docker compose ps`, a Ctrl+C shutdown is clean, and every test daemon fails
   at shutdown if its `daemon.log` has a `Traceback` — `test_daemon_health.py`;
 - the Monitor over the real WS: the five streams, the echo of a `log_line`,
-  and (with `--start-llm`) `llama_status` turning ready with a real
-  llama-server — `test_monitor_ws_live.py`;
+  and (with `--start-llm`) the `llm` line of `models_status` turning ready
+  with a real llama-server — `test_monitor_ws_live.py`;
 - the rotation of the service and Panel secrets — `test_secret_rotation.py`;
 - **the Local model switch against a real llama-server** (`--start-llm`) —
   `test_model_switch.py`: `POST /models/activate` kills the old llama-server
@@ -143,7 +143,7 @@ noted as **skipped**, not as done.
 - [ ] **Local model switch from the TUI.** *Manual (1 and 3): the confirmation
   and the banner are read, and the model occupies the GPU.* Pick another model
   in CONFIGURAR; the daemon switches (or rolls back) and the Monitor shows
-  `llama_status` going down and up.
+  the `llm` line of `models_status` going down and up.
 
 ### Deck (web)
 
