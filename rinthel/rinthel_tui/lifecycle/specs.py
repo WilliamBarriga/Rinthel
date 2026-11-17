@@ -10,6 +10,7 @@ tocar este archivo a mano.
 
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
 from rinthel_tui.config import RinthelConfig
@@ -138,16 +139,28 @@ def _local_unit(cfg: RinthelConfig, svc: LocalProcessService) -> Unit:
     return Unit(svc.display_name.lower(), (_spawn_spec(cfg, svc), _wait_spec(cfg, svc)))
 
 
+def _portal_data_dir(cfg: RinthelConfig, svc: DockerComposeService) -> tuple[str, Path] | None:
+    """El volumen de un portal (el heredado o Deck), que corre con el usuario
+    del host: el nombre de su fase y el directorio."""
+    if svc is services.PITHAGORAS_SERVICE:
+        return "DATOS DEL PORTAL", cfg.instance.portal_data_dir
+    if svc is services.DECK_SERVICE:
+        return "DATOS DE DECK", cfg.instance.deck_data_dir
+    return None
+
+
 def _docker_unit(cfg: RinthelConfig, svc: DockerComposeService, *, rebuild: bool = False) -> Unit:
-    """Un servicio compose: arriba y esperado. El portal, antes de todo, deja
+    """Un servicio compose: arriba y esperado. Un portal, antes de todo, deja
     su directorio de datos con el dueño del contenedor."""
     phases = [_up_spec(cfg, svc, rebuild=rebuild), _wait_spec(cfg, svc)]
-    if svc is services.PITHAGORAS_SERVICE:
+    volume = _portal_data_dir(cfg, svc)
+    if volume is not None:
+        label, path = volume
         uid, gid = _container_user(cfg)
         data = PhaseSpec(
-            "◈ DATOS DEL PORTAL  --  DUEÑO DEL DIRECTORIO",
+            f"◈ {label}  --  DUEÑO DEL DIRECTORIO",
             data_dir.phase_ensure_data_dir,
-            {"path": cfg.instance.portal_data_dir, "uid": uid, "gid": gid},
+            {"path": path, "uid": uid, "gid": gid},
         )
         phases.insert(0, data)
     return Unit(svc.display_name.lower(), tuple(phases))

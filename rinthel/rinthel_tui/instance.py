@@ -80,6 +80,16 @@ class Instance:
         return self.root / "understory"
 
     @property
+    def deck_dir(self) -> Path:
+        """Default of ``cfg.deck.dir``."""
+        return self.root / "deck"
+
+    @property
+    def deck_data_dir(self) -> Path:
+        """Deck's volume: ``deck.db``, the home of pi, sessions and slots."""
+        return self.data_dir / "deck"
+
+    @property
     def portal_dir(self) -> Path:
         """Default of ``cfg.pithagoras.dir``: the legacy portal, until Deck replaces it."""
         return self.root / "pithagoras"

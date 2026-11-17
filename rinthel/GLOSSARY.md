@@ -5,7 +5,7 @@ Rinthel administra una infraestructura local de IA como un conjunto coordinado d
 ## Language
 
 **Managed service**:
-Una capacidad de infraestructura que Rinthel controla como una sola unidad de ciclo de vida: Llama, Understory o Pithagoras.
+Una capacidad de infraestructura que Rinthel controla como una sola unidad de ciclo de vida: Llama, Understory, Deck o Pithagoras.
 _Avoid_: Proceso, contenedor; son mecanismos de ejecución, no la capacidad administrada.
 
 **Install**:

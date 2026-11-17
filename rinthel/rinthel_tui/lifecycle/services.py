@@ -118,7 +118,23 @@ PITHAGORAS_SERVICE = DockerComposeService(
     ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.pithagoras.port}/",
 )
 
+# Deck, el portal web. Vive junto al heredado, en su propio puerto, hasta
+# que lo reemplace.
+DECK_SERVICE = DockerComposeService(
+    display_name="Deck",
+    menu_label="DECK  --  WEB PORTAL",
+    wait_label="DECK",
+    kill_label="DECK  --  WEB PORTAL",
+    dir_of=lambda cfg: cfg.instance.root,
+    port_of=lambda cfg: cfg.deck.port,
+    enabled_of=lambda cfg: cfg.deck.enabled,
+    compose_service_name="deck",
+    extra_env_of=lambda cfg: {"RINTHEL_DECK_PORT": str(cfg.deck.port)},
+    build_args=("build", "deck"),
+    ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.deck.port}/api/auth/status",
+)
+
 # Orden de aparición en BOOT/TERMINATE/RELOAD — agregar o sacar un servicio de
 # estas listas alcanza para que los planes lo reflejen.
 LOCAL_SERVICES: list[LocalProcessService] = [LLAMA_SERVICE]
-DOCKER_SERVICES: list[DockerComposeService] = [UNDERSTORY_SERVICE, PITHAGORAS_SERVICE]
+DOCKER_SERVICES: list[DockerComposeService] = [UNDERSTORY_SERVICE, PITHAGORAS_SERVICE, DECK_SERVICE]

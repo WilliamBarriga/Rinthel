@@ -6,7 +6,7 @@ explícito como argumento (no leen el entorno global), así que no importa en
 qué orden ni en qué proceso/subshell corran.
 
 ``RinthelConfig`` es composición de un sub-config por servicio
-(``cfg.llama``, ``cfg.understory``, ``cfg.pithagoras``, ``cfg.moe``,
+(``cfg.llama``, ``cfg.understory``, ``cfg.pithagoras``, ``cfg.deck``, ``cfg.moe``,
 ``cfg.install``) — cada uno con sus propios
 campos, sin el prefijo repetido que tenían como campos sueltos del
 dataclass monolítico anterior (``cfg.llama_port`` -> ``cfg.llama.port``).
@@ -281,6 +281,24 @@ UNDERSTORY_FIELDS: list[Field] = [
 
 
 @dataclass(frozen=True)
+class DeckConfig:
+    """Deck, the web portal: its own port while the legacy portal keeps 4100."""
+
+    dir: Path
+    port: int
+    enabled: bool
+
+
+DECK_FIELDS: list[Field] = [
+    # Subtree del monorepo. Estado real (deck.db, home de pi) vive en la raíz
+    # de la Instance, en data/deck.
+    Field("dir", "RINTHEL_DECK_DIR", Path, lambda i: str(i.deck_dir)),
+    Field("port", "RINTHEL_DECK_PORT", int, 4200, port=True),
+    Field("enabled", "RINTHEL_DECK_ENABLED", bool, True),
+]
+
+
+@dataclass(frozen=True)
 class PithagorasConfig:
     """El portal heredado, hasta que Deck lo reemplace."""
 
@@ -367,6 +385,7 @@ _ENTRIES: list[tuple[str, list[Field]]] = [
     ("moe", MOE_FIELDS),
     ("understory", UNDERSTORY_FIELDS),
     ("pithagoras", PITHAGORAS_FIELDS),
+    ("deck", DECK_FIELDS),
     ("install", INSTALL_FIELDS),
 ]
 
@@ -383,6 +402,7 @@ class RinthelConfig:
     moe: MoeConfig
     understory: UnderstoryConfig
     pithagoras: PithagorasConfig
+    deck: DeckConfig
     install: InstallConfig
     secrets: Secrets = Secrets("", "")
     identity: IdentityConfig = IdentityConfig()
@@ -556,6 +576,7 @@ def default_config(instance: Instance | None = None, *, platform: str | None = N
         moe=_load(MoeConfig, MOE_FIELDS, env, instance),
         understory=_load(UnderstoryConfig, UNDERSTORY_FIELDS, env, instance),
         pithagoras=_load(PithagorasConfig, PITHAGORAS_FIELDS, env, instance),
+        deck=_load(DeckConfig, DECK_FIELDS, env, instance),
         install=_load(InstallConfig, INSTALL_FIELDS, env, instance),
         secrets=Secrets(**{attr: _str_env(name, "", env) for attr, name in SECRET_ENVS.items()}),
         identity=_load(IdentityConfig, IDENTITY_FIELDS, env, instance),

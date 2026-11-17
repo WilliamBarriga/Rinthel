@@ -7,8 +7,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+import httpx
+
 from rinthel_tui.clock import Clock, SystemClock
 from rinthel_tui.config import RinthelConfig
+from rinthel_tui.identity.adapters.deck_http import HttpDeckSessions
 from rinthel_tui.identity.adapters.sqlite import SqliteIdentity
 from rinthel_tui.identity.domain.ports import DeckSessions, Identity
 from rinthel_tui.lifecycle.composition import real_host
@@ -43,12 +46,26 @@ class Adapters:
         """``cfg_of`` es el ``cfg`` vivo de la app: por eso los arma
         ``create_app`` cuando no le pasan otros."""
         host = real_host()
+        cfg = cfg_of()
         return cls(
             telemetry=real_telemetry(cfg_of, host),
             lifecycle_host=host,
-            identity=SqliteIdentity(cfg_of().instance.database_path, clock=host.clock),
+            identity=SqliteIdentity(cfg.instance.database_path, clock=host.clock),
+            deck_sessions=real_deck_sessions(cfg),
             clock=host.clock,
         )
+
+
+def real_deck_sessions(cfg: RinthelConfig) -> DeckSessions | None:
+    """Deck on the host loopback (host network on Linux, published port on
+    Windows) with the Instance's service secret; ``None`` while Deck is
+    disabled. Read once at startup, like the identity database: a new port or
+    a rotated service secret takes effect when the daemon restarts, as it does
+    for Deck itself. The client lives as long as the process."""
+    if not cfg.deck.enabled:
+        return None
+    client = httpx.Client(base_url=f"http://127.0.0.1:{cfg.deck.port}", timeout=httpx.Timeout(10.0))
+    return HttpDeckSessions(client, service_secret=cfg.secrets.service)
 
 
 def real_telemetry(cfg_of: Callable[[], RinthelConfig], host: Host) -> TelemetrySources:

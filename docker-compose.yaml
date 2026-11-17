@@ -1,11 +1,40 @@
-# Managed modules: merge each subtree with its Rinthel override before include.
-# Relative build/data paths remain anchored to the original subtree directory.
+# The Instance's compose project. One `.env`, the root one.
+#
+# Deck keeps its own deck/docker-compose.yml and enters by `include:`.
+# Understory enters by `extends:`, because `include:` does not let the parent
+# redefine an imported service: its fixed network and host alias are set here.
+# The legacy portal still enters by `include:` with its host-exec override,
+# until Deck replaces it.
+name: rinthel-general
+
 include:
-  - path:
-      - understory/docker-compose.yml
-      - compose/understory.override.yaml
-    project_directory: understory
+  - deck/docker-compose.yml
   - path:
       - pithagoras/docker-compose.yml
       - compose/host-exec.override.yaml
     project_directory: pithagoras
+
+services:
+  understory:
+    extends:
+      file: understory/docker-compose.yml
+      service: understory
+    networks:
+      - understory-net
+    # The subtree says "host.docker.internal:host-gateway", which Docker
+    # resolves against the default bridge (172.17.0.1), not this network's
+    # gateway. `!override` replaces the whole list instead of adding to it.
+    extra_hosts: !override
+      - "host.docker.internal:172.30.99.1"
+
+# A fixed bridge and gateway, kept across `compose down && up`, so the host's
+# iptables/route_localnet rules for it are never orphaned. The "rg" suffix keeps
+# its Linux names apart from any other environment on the same host.
+networks:
+  understory-net:
+    name: rinthel-general_understory_net
+    driver_opts:
+      com.docker.network.bridge.name: br-rgunderstory
+    ipam:
+      config:
+        - subnet: 172.30.99.0/24

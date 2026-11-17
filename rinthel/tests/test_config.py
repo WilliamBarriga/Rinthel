@@ -170,6 +170,7 @@ def test_default_config_enables_all_services_by_default():
     assert cfg.llama.enabled is True
     assert cfg.understory.enabled is True
     assert cfg.pithagoras.enabled is True
+    assert cfg.deck.enabled is True
 
 
 @pytest.mark.parametrize(
@@ -178,6 +179,7 @@ def test_default_config_enables_all_services_by_default():
         ("RINTHEL_LLAMA_ENABLED", "llama"),
         ("RINTHEL_UNDERSTORY_ENABLED", "understory"),
         ("RINTHEL_PITHAGORAS_ENABLED", "pithagoras"),
+        ("RINTHEL_DECK_ENABLED", "deck"),
     ],
 )
 def test_enabled_can_be_disabled_per_service(monkeypatch, env_var, attr):

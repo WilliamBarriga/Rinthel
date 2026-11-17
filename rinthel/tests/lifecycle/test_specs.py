@@ -62,6 +62,11 @@ def test_boot_plan_checks_docker_then_spawns_llama_then_ups_each_docker_service(
             "◈ PITHAGORAS  --  PI TASK PORTAL",
             "◈ ESPERANDO PITHAGORAS",
         ]),
+        (None, "deck", [
+            "◈ DATOS DE DECK  --  DUEÑO DEL DIRECTORIO",
+            "◈ DECK  --  WEB PORTAL",
+            "◈ ESPERANDO DECK",
+        ]),
     ]
 
 
@@ -79,6 +84,7 @@ def test_terminate_plan_stops_every_service_and_continues_on_failure(cfg):
         (None, "llama-server", ["◈ LLAMA-SERVER  --  Qwen3.6-35B-A3B-MTP"]),
         (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER"]),
         (None, "pithagoras", ["◈ PITHAGORAS  --  PI TASK PORTAL"]),
+        (None, "deck", ["◈ DECK  --  WEB PORTAL"]),
     ]
 
 
@@ -90,6 +96,7 @@ def test_reload_plan_shuts_down_then_boots_local_then_rebuilds_docker(cfg):
         (None, "llama-server", ["◈ LLAMA-SERVER  --  Qwen3.6-35B-A3B-MTP"]),
         (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER"]),
         (None, "pithagoras", ["◈ PITHAGORAS  --  PI TASK PORTAL"]),
+        (None, "deck", ["◈ DECK  --  WEB PORTAL"]),
         (None, "llama-server", ["◈ PUERTO LLAMA-SERVER LIBRE"]),
         ("boot", "docker", ["◈ DOCKER"]),
         ("boot", "llama-server", ["◈ LLAMA-SERVER", "◈ ESPERANDO LLAMA-SERVER"]),
@@ -98,6 +105,11 @@ def test_reload_plan_shuts_down_then_boots_local_then_rebuilds_docker(cfg):
             "◈ DATOS DEL PORTAL  --  DUEÑO DEL DIRECTORIO",
             "◈ PITHAGORAS  --  PI TASK PORTAL",
             "◈ ESPERANDO PITHAGORAS",
+        ]),
+        ("rebuild", "deck", [
+            "◈ DATOS DE DECK  --  DUEÑO DEL DIRECTORIO",
+            "◈ DECK  --  WEB PORTAL",
+            "◈ ESPERANDO DECK",
         ]),
     ]
     rebuild = next(batch for batch in plan.batches if batch.marker == "rebuild")
@@ -132,6 +144,15 @@ def test_the_portal_data_directory_is_prepared_for_the_container_user_of_the_env
 
     assert phase.fn is data_dir.phase_ensure_data_dir
     assert phase.kwargs == {"path": cfg.instance.root / "data" / "pithagoras", "uid": 1234, "gid": 5678}
+
+
+def test_decks_data_directory_is_its_volume_prepared_for_the_container_user(cfg):
+    cfg.instance.env_path.write_text("PUID=1234\nPGID=5678\n")
+
+    deck = next(unit for batch in specs.boot_plan(cfg).batches for unit in batch.units if unit.service == "deck")
+
+    assert deck.phases[0].fn is data_dir.phase_ensure_data_dir
+    assert deck.phases[0].kwargs == {"path": cfg.instance.root / "data" / "deck", "uid": 1234, "gid": 5678}
 
 
 def test_the_portal_data_directory_defaults_to_the_compose_default_user(cfg):
