@@ -1,0 +1,49 @@
+// Instance level: who uses what, and the pieces that run on the host. One Instance = one host.
+// Deck and Understory are root Nodes in deck.dg and understory.dg (they run in Docker).
+// The two SQLite files are root Nodes in datos.dg.
+model {
+  actor admin "Admin" "Operates the Instance: the terminal (Rinthel Client) on the host and the administration screens in Deck"
+  actor usuario "Usuario" "Admin or Miembro: uses Deck from the browser"
+
+  servicio cliente-tui "Rinthel Client" "Ratatui TUI; rinthel-boot builds and launches it" {
+    source { path "rinthel/rinthel-client/src" }
+  }
+
+  servicio boot "rinthel-boot" "Starts the daemon, waits for its port and opens the Client (rinthel-boot.sh / .ps1)" {
+    source { path "rinthel/rinthel-boot.sh" }
+  }
+
+  servicio daemon "Rinthel Daemon" "FastAPI (uvicorn) on 127.0.0.1:8765; core of the Instance: identity, Local models, lifecycle, monitoring" {
+    source { path "rinthel/rinthel_tui/daemon.py" }
+  }
+
+  servicio modelos "Managed services" "Native host processes (GPU of the host); the optional ones exist only when enabled in instance.toml" {
+    source { path "rinthel/rinthel_tui/lifecycle/services.py" }
+    modelo llama-server "llama-server" "Text Capability; one active Local model at a time (switch = kill, spawn, ready, rollback)"
+    modelo whisper-server "whisper-server" "STT Capability; whisper.cpp; optional, Linux only"
+    modelo audiocpp-server "audiocpp-server" "TTS Capability; audio.cpp; optional, Linux only"
+    modelo hostexecd "hostexecd" "Host-exec service: runs commands for admin Sessions; Linux only" {
+      source { path "rinthel/hostexecd" }
+    }
+  }
+
+  servicio docker "Docker services" "Root docker-compose.yaml (name rinthel-general); Deck, Understory and deck-browser are compose services" {
+    source { path "docker-compose.yaml" }
+    servicio deck-browser "deck-browser" "The Instance browser: one Chromium with a fixed CDP endpoint"
+  }
+
+  externo huggingface "Hugging Face" "GGUF models, pinned by revision and sha256"
+  externo github "GitHub" "llama.cpp, whisper.cpp, audio.cpp releases"
+  externo docker-hub "Docker Hub / ghcr" "Images for Deck, Understory and the Instance browser"
+  externo npm "npm" "pi version (coding agent) used when Deck is rebuilt"
+
+  admin -> boot "./rinthel-boot"
+  boot -> daemon "starts it and waits for the port"
+  boot -> cliente-tui "launches it"
+  cliente-tui -> daemon "REST + /ws/monitor"
+  usuario -> deck "HTTPS / SSE"
+  daemon -> modelos.llama-server "starts, stops, switches the Local model"
+  daemon -> modelos.whisper-server "opt-in (stt)"
+  daemon -> modelos.audiocpp-server "opt-in (tts)"
+  daemon -> docker "docker compose up / down"
+}

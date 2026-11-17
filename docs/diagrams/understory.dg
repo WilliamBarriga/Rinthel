@@ -1,0 +1,21 @@
+// Understory (Memory): MCP knowledge layer. Container bound to loopback. Deck reaches it only for admin Sessions;
+// a failure never blocks a Session.
+model {
+  servicio understory "Understory" "MCP memory server in its own container; token shared with Deck, bound to loopback" {
+    source { path "understory" }
+    servicio us-server "server" "Express: /mcp and /api with a bearer token" {
+      source { path "understory/packages/server/src" }
+      ruta us-mcp "mcp" "memory_query, memory_add, memory_update, memory_status, memory_maintain"
+      ruta us-api "api" "chat and browse (reads the KnowledgeBase, no LLM)"
+      modulo us-auth "auth" "Bearer token"
+    }
+    servicio us-core "core" "OKF knowledge and agent" {
+      source { path "understory/packages/core/src" }
+      modulo us-okf "okf" "Bundle, indexer, search, lint, graph"
+      modulo us-agent "agent" "Agent, hot memory, query cache"
+    }
+    servicio us-web "web" "React + Vite" {
+      source { path "understory/packages/web/src" }
+    }
+  }
+}

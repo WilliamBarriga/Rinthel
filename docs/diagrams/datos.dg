@@ -1,0 +1,84 @@
+// SQLite: one file per process. The daemon owns rinthel.db (identity only); Deck owns deck.db.
+// Both migrate themselves at startup by PRAGMA user_version; tables are STRICT; `?` = nullable.
+// Deck stores the user id as opaque text with no FK: the two files never reference each other.
+model {
+  base rinthel-db "rinthel.db" "Daemon file in the state directory; rollback journal, connection per request, BEGIN IMMEDIATE on writes" {
+    source { path "rinthel/rinthel_tui/identity" }
+
+    tabla users "users" {
+      id: int pk
+      username: text uk
+      password_hash: text
+      role: text "admin | miembro"
+      notes: text
+      created_at: text
+      disabled_at: text?
+    }
+    tabla refresh-tokens "refresh_tokens" "Hash only; rotates on every use" {
+      id: int pk
+      user_id: int fk "CASCADE"
+      token_hash: text uk
+      issued_at: text
+      expires_at: text
+      revoked_at: text?
+    }
+  }
+
+  base deck-db "deck.db" "Deck file at data/deck/deck.db; WAL, one synchronous connection (better-sqlite3)" {
+    source { path "deck/server/migrations" }
+
+    tabla portal-settings "settings" {
+      key: text pk
+      value: text
+    }
+    tabla portal-sessions "sessions" {
+      id: text pk
+      title: text
+      kind: text "task | agent"
+      workspace: text
+      executor: text "host"
+      status: text
+      owner_user_id: text "opaque id from the daemon; no FK"
+      model: text?
+      thinking_level: text?
+      pinned: int
+      browser: int "1 only for an admin Session"
+      pi_session_file: text?
+      last_error: text?
+      created_at: text
+      updated_at: text
+      archived_at: text?
+    }
+    tabla portal-events "events" "Transcript and SSE events of the Session, including portal_guard decisions" {
+      seq: int pk
+      session_id: text fk "CASCADE"
+      type: text
+      payload: text
+      created_at: text
+    }
+    tabla portal-notes "notes" {
+      id: int pk
+      session_id: text fk "CASCADE"
+      text: text
+      pending_delivery: int
+      consumed_at: text?
+      created_at: text
+    }
+    tabla portal-canvases "canvases" {
+      id: text pk
+      session_id: text fk "CASCADE"
+      title: text
+      kind: text "markdown | ui"
+      content: text
+      revision: int
+      status: text
+      updated_at: text
+    }
+  }
+
+  rinthel-db.refresh-tokens#user_id "0..*" -> "1" rinthel-db.users#id
+  deck-db.portal-events#session_id "0..*" -> "1" deck-db.portal-sessions#id
+  deck-db.portal-notes#session_id "0..*" -> "1" deck-db.portal-sessions#id
+  deck-db.portal-canvases#session_id "0..*" -> "1" deck-db.portal-sessions#id
+  deck-db.portal-sessions#owner_user_id "0..*" -> "0..1" rinthel-db.users#id "no FK on purpose"
+}
