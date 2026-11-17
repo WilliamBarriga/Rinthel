@@ -3,6 +3,7 @@ import type { PortalStore } from "../port.js";
 import { sqliteCanvases } from "./canvases.js";
 import { MIGRATIONS, SCHEMA_VERSION } from "./schema.js";
 import { sqliteSessions } from "./sessions.js";
+import { sqliteSessionTaint } from "./session-taint.js";
 import { sqliteSettings } from "./settings.js";
 
 export { SCHEMA_VERSION } from "./schema.js";
@@ -59,6 +60,7 @@ export function openSqliteStore(file: string, options: SqliteStoreOptions = {}):
     sessions: sqliteSessions(db, options.now),
     canvases: sqliteCanvases(db),
     settings: sqliteSettings(db),
+    sessionTaint: sqliteSessionTaint(db),
     async close() {
       if (db.open) db.close();
     },

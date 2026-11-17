@@ -81,6 +81,7 @@ export function memorySessions(state: MemoryState, now: () => Date = () => new D
       state.events = state.events.filter((e) => e.session_id !== id);
       state.notes = state.notes.filter((n) => n.session_id !== id);
       for (const [key, canvas] of state.canvases) if (canvas.session_id === id) state.canvases.delete(key);
+      state.tainted.delete(id);
     },
 
     async markOrphanedInterrupted() {

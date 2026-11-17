@@ -49,15 +49,16 @@ y las rutas relativas de los subtrees.
 
 ## Estado de contaminación
 
-El módulo `SessionTaint` concentra la clasificación y la reconstrucción.
-Ante contenido no confiable, el guard guarda un custom entry en el archivo
-de sesión de Pi. Ese entry no se envía al modelo y sobrevive a recargas y
-compactación. Al iniciar o reabrir una sesión, se reconstruye el estado
-desde sus entries, incluyendo resultados históricos anteriores al marker.
+In Deck, `SessionTaint` (`deck/server/src/pi/session-taint.ts`) holds the
+classification and the rebuild. On untrusted content the Guard marks the
+Session in `deck.db` (`session_taint` table), outside pi's session file.
+When a Session's pi starts, it starts tainted and is rebuilt from that
+mark, or from every entry of its pi file (results from before the mark
+included, whatever branch is active).
 
-La contaminación se conserva para toda la conversación, aunque se navegue
-a otra rama de su árbol. Una conversación nueva y limpia conserva acceso a
-host exec. Si falla la persistencia, la sesión actual sigue bloqueada.
+The taint lasts for the whole Session: a relaunch, a restart of Deck or a
+lost pi file keeps it. A new, clean Session keeps host exec. If the mark
+cannot be written, the running Session stays blocked.
 
 ## Alcance de delegación
 

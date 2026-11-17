@@ -185,6 +185,7 @@ export class SessionManager extends EventEmitter {
         modelAccess,
         profile,
         sessionId,
+        taintMarks: this.store.sessionTaint,
         canvases: this.deps.canvases,
         instanceSoulFile: isClosed(profile) ? this.deps.instanceSoulFile : undefined,
         thinkingLevel: session.thinking_level || undefined,

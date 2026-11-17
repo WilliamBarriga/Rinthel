@@ -28,6 +28,14 @@ _Avoid_: API key, token de servicio.
 Lo que el Agente lee una sola vez, en el primer prompt de toda Sesión con dueño, sea `task` o `agent`: el nombre y el rol de su dueño, o, si escribe un Admin en una Sesión ajena, que la Sesión actúa por su dueño y el Admin solo supervisa. Informa al Agente; no calibra confianza.
 _Avoid_: Encuadre de Grupo.
 
+**Guard**:
+La política que corre en toda Sesión, en cada resultado y cada llamada a una herramienta. Envuelve como no confiable lo que trae palabras ajenas (comandos de red en `bash` o `rinthel_host_exec`, MCP, el browser propio de la Sesión, la respuesta de un subagent) antes de que el modelo lo lea, y deja la Sesión contaminada. Decide solo, con reglas fijas, sin aprobaciones ni reglas por usuario. Cada llamada que revisa queda como evento `portal_guard` (`allow` o `deny`) en el historial de su Sesión; el transcript muestra los rechazos. No hay otro registro.
+_Avoid_: Registro del Guard (ya no existe), filtro, sandbox (el Guard limita lo que hace un turno, no lo aísla del sistema).
+
+**Sesión contaminada**:
+Una Sesión que leyó palabras ajenas. Lo es para siempre: la marca se guarda en `deck.db` y sobrevive a relanzar la Sesión, reiniciar Deck o perder el archivo de pi; al arrancar, la Sesión cuenta como contaminada hasta que el Guard la reconstruye. Pierde del todo host-exec, `subagent` y la escritura en Memoria, y se le rechazan las formas peligrosas de una llamada (publicar, subir datos, programar trabajo, escribir en el PATH, leer credenciales, reescribir los archivos propios del Agente).
+_Avoid_: Sesión sucia, taint a secas.
+
 **Slot de la Sesión**:
 El estado del Local model que Deck guarda por Sesión en el disco de `llama-server` (`data/deck/llama-slots`): se restaura antes de cada llamada al modelo y se guarda después, así volver a una Sesión no relee todo su historial. Es de un dueño, un Local model y una Sesión; se va con la Sesión y, pasado el tope de bytes, se borra el usado hace más tiempo.
 _Avoid_: Caché de sesión, KV cache a secas.

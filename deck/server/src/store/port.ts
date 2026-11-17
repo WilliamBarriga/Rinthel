@@ -135,7 +135,7 @@ export interface SessionsRepo {
   setBrowser(id: string, on: boolean): Promise<void>;
   /** The Staff framing is delivered once, never again for this session. */
   markStaffFramingSent(id: string): Promise<void>;
-  /** Removes the session together with its events, notes and canvases. */
+  /** Removes the session together with its events, notes, canvases and taint mark. */
   delete(id: string): Promise<void>;
   /**
    * For boot: a session left `running` cannot be running, its process died with
@@ -169,9 +169,21 @@ export interface SessionsRepo {
   takeNotes(sessionId: string): Promise<string[]>;
 }
 
+/**
+ * Whether a Session has read something untrusted, kept apart from pi's own file so a relaunch, a
+ * restart of Deck or a lost pi file still starts the Session tainted. Written once, never cleared:
+ * the mark goes only with its Session.
+ */
+export interface SessionTaintRepo {
+  isTainted(sessionId: string): Promise<boolean>;
+  /** Idempotent. Throws for a Session that does not exist. */
+  markTainted(sessionId: string): Promise<void>;
+}
+
 export interface PortalStore {
   sessions: SessionsRepo;
   canvases: CanvasesRepo;
   settings: SettingsRepo;
+  sessionTaint: SessionTaintRepo;
   close(): Promise<void>;
 }

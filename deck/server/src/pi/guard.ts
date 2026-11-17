@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import type { GuardNotice } from "@deck/contract";
+import { SUBAGENT_TOOLS, type SessionTaint } from "./session-taint.js";
 
 /**
  * A blast-radius limiter for prompt injection.
@@ -12,19 +13,16 @@ import type { GuardNotice } from "@deck/contract";
  * Two halves:
  *
  * 1. `tool_result`: output from a source that carries other people's words is wrapped in an envelope
- *    saying so, and the Session is marked tainted.
- * 2. `tool_call`: once tainted, the handful of actions that turn a bad suggestion into a lasting
+ *    saying so, and the Session is marked tainted (`SessionTaint`, kept in the store: a relaunch or a
+ *    restart of Deck starts it tainted again).
+ * 2. `tool_call`: once tainted, the admin tools that reach past the Session are gone
+ *    (`TAINT_REVOKED_TOOLS`), and the handful of actions that turn a bad suggestion into a lasting
  *    problem are refused (`RULES`, fixed).
  *
- * The Guard decides alone and keeps no Registro: a refused call is reported (`report`) and lands in
- * the Session's transcript as a `portal_guard` event. These are heuristics: the point is to make the
- * easy path stop working, and to make an attempt visible instead of silent.
- *
- * The taint lives in memory for the life of the Session's pi (`GuardTaint`): a relaunch starts clean.
+ * The Guard decides alone and keeps no Registro: every call it checks is reported (`report`) and lands
+ * in the Session's transcript as a `portal_guard` event, `allow` or `deny`. These are heuristics: the
+ * point is to make the easy path stop working, and to make an attempt visible instead of silent.
  */
-
-/** Commands whose output is somebody else's words. */
-const UNTRUSTED_COMMAND = /\b(himalaya|mutt|neomutt|notmuch|offlineimap|mbsync|curl|wget|lynx|w3m)\b/;
 
 interface Rule {
   name: string;
@@ -130,22 +128,26 @@ const envelope = (id: string) => ({
   close: `<<</untrusted:${id}>>>`,
 });
 
-/** A Session's taint, shared between its Guard and whoever hands it untrusted words directly. */
-export interface GuardTaint {
-  tainted: boolean;
-}
-
-export function newTaint(initial = false): GuardTaint {
-  return { tainted: initial };
-}
+/**
+ * What a tainted Session loses outright, whatever the input: host exec runs on the real host, a
+ * subagent acts out of the Guard's sight, and Memoria is read by every later Session. No pattern in
+ * `RULES` could make some form of them safe. Reading Memoria stays.
+ */
+export const TAINT_REVOKED_TOOLS: ReadonlySet<string> = new Set([
+  "rinthel_host_exec",
+  "rinthel_host_exec_history",
+  ...SUBAGENT_TOOLS,
+  "understory_memory_add",
+  "understory_memory_update",
+]);
 
 /**
  * A prompt whose untrusted blocks ride beside `message`: each in its own envelope, and the Session
  * tainted before the model sees any of them. Without blocks, nothing changes.
  */
-export function untrustedPrompt(message: string, blocks: readonly string[], taint: GuardTaint): string {
+export async function untrustedPrompt(message: string, blocks: readonly string[], taint: SessionTaint): Promise<string> {
   if (blocks.length === 0) return message;
-  taint.tainted = true;
+  await taint.taint();
   const wrapped = blocks.map((block) => {
     const { open, close } = envelope(randomBytes(8).toString("hex"));
     return `${open}\n${deface(block)}\n${close}`;
@@ -156,24 +158,23 @@ export function untrustedPrompt(message: string, blocks: readonly string[], tain
 export interface GuardOptions {
   /** The Deck Session, for the log line of a refusal. */
   sessionId: string;
-  /** Told of every call the Guard stopped, for the transcript. Never decides anything. */
+  /** Told of every call the Guard checked, allowed or stopped, for the transcript. Never decides anything. */
   report?: (notice: GuardNotice) => void;
   /** A closed profile's list: anything else is refused, whatever the SDK left registered. */
   allowedTools?: ReadonlySet<string>;
-  /** Where this Session's taint lives, so a prompt carrying untrusted blocks can set it. */
-  taint?: GuardTaint;
+  /** This Session's taint, rebuilt here at `session_start`; shared with whoever hands it untrusted words. */
+  taint: SessionTaint;
 }
 
 /** An ExtensionFactory (pi's inline extension), one instance per Session. */
-export function guardExtension({ sessionId, report = () => {}, allowedTools, taint = newTaint() }: GuardOptions) {
+export function guardExtension({ sessionId, report = () => {}, allowedTools, taint }: GuardOptions) {
   return (pi: any): void => {
-    pi.on("tool_result", (event: any) => {
-      const source = event.toolName === "bash" ? cmd(event.input ?? {}) : String(event.toolName ?? "");
-      // MCP tools reach servers Deck does not control: their output is someone else's words, like mail.
-      const untrusted = UNTRUSTED_COMMAND.test(source) || /^mcp(_|$)/.test(source);
-      if (!untrusted || event.isError) return undefined;
+    pi.on("session_start", async (_event: any, ctx: any) => {
+      await taint.restore(ctx?.sessionManager?.getEntries?.() ?? []);
+    });
 
-      taint.tainted = true;
+    pi.on("tool_result", async (event: any) => {
+      if (!(await taint.observe(event))) return undefined;
       const { open, close } = envelope(randomBytes(8).toString("hex"));
       const content = (Array.isArray(event.content) ? event.content : []).map((part: any) =>
         part?.type === "text" && typeof part.text === "string" ? { ...part, text: deface(part.text) } : part,
@@ -190,8 +191,23 @@ export function guardExtension({ sessionId, report = () => {}, allowedTools, tai
         report({ tool, verdict: "deny", reason });
         return { block: true, reason: `Refused: ${reason}.` };
       }
-      const rule = taint.tainted ? RULES.find((r) => r.hit(tool, event.input ?? {})) : undefined;
-      if (!rule) return undefined;
+      if (taint.isTainted() && TAINT_REVOKED_TOOLS.has(tool)) {
+        const reason = `${tool}: not available once the Session has read untrusted content`;
+        console.warn(`[guard ${sessionId}] blocked ${tool}: tainted`);
+        report({ tool, verdict: "deny", reason });
+        return {
+          block: true,
+          reason:
+            `Refused: this session has read untrusted content, and ${tool} is not available in it in any form. ` +
+            "If a human asked for this, they can do it themselves or start a session that has not read " +
+            "anything untrusted. Do not try to work around this — say it was refused.",
+        };
+      }
+      const rule = taint.isTainted() ? RULES.find((r) => r.hit(tool, event.input ?? {})) : undefined;
+      if (!rule) {
+        report({ tool, verdict: "allow", reason: "" });
+        return undefined;
+      }
 
       const reason = `${rule.name}: ${rule.why}`;
       console.warn(`[guard ${sessionId}] blocked ${tool}: ${rule.name}`);

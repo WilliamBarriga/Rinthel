@@ -4,7 +4,9 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { PiClient, PiCommand, PiState, PiStats } from "./types.js";
 import { acceptPrompt } from "./accept-prompt.js";
-import { guardExtension, guardReporter, newTaint, type GuardTaint } from "./guard.js";
+import { guardExtension, guardReporter } from "./guard.js";
+import { SessionTaint } from "./session-taint.js";
+import type { SessionTaintRepo } from "../store/port.js";
 import { routedModel, rinthelProviderExtension } from "./rinthel-provider.js";
 import type { ModelAccess } from "../session-proxy.js";
 import { isClosed, type ToolProfile } from "../tool-profile.js";
@@ -69,6 +71,8 @@ export interface SdkLaunch {
   profile: ToolProfile;
   /** The Deck Session id, for the Guard's log. */
   sessionId: string;
+  /** Where the Session's taint mark is kept, so a relaunch starts it tainted again. */
+  taintMarks: SessionTaintRepo;
   /** The Canvases the Agent writes in this Session; without them it has no canvas tools. */
   canvases?: Canvases;
   /** The Instance SOUL a member's Session loads in place of a SOUL.md of its home (set for a closed profile only). */
@@ -85,7 +89,7 @@ export class SdkPiClient extends EventEmitter implements PiClient {
   private pendingUi = new Map<string, (r: { cancelled?: boolean; value?: unknown }) => void>();
   private unsubscribe: () => void = () => {};
   /** This Session's taint, shared with its Guard. */
-  taint: GuardTaint = newTaint();
+  taint!: SessionTaint;
   /** The Agent's Canvas tools for this Session: they follow its events and are closed when it stops. */
   private canvasTools?: CanvasTools;
 
@@ -110,7 +114,8 @@ export class SdkPiClient extends EventEmitter implements PiClient {
     let liveSession: any;
     const allowedTools: Set<string> | undefined = isClosed(profile) ? new Set(profile.tools) : undefined;
     const guard = guardReporter();
-    const taint = newTaint();
+    // Tainted until the Guard rebuilds it at session_start, from the stored mark and pi's file.
+    const taint = new SessionTaint(opts.sessionId, opts.taintMarks);
     const factories: { name: string; factory: (pi: any) => void }[] = [
       // Every Session, unconditionally: any Session can read something untrusted.
       { name: "guard", factory: guardExtension({ sessionId: opts.sessionId, report: guard.report, allowedTools, taint }) },

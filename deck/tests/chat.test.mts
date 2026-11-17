@@ -267,3 +267,36 @@ test('the event stream replays what was stored and then goes on live, ending the
   await until(/"type":"portal_prompt"[^\n]*"dos"[^]*"type":"agent_settled"/);
   controller.abort();
 });
+
+const guardVerdicts = (events: { type: string; payload: any }[]) =>
+  events.filter((e) => e.type === 'portal_guard').map((e) => [e.payload.tool, e.payload.verdict]);
+
+test('every call the Guard checks lands in the Session\'s transcript, and a refusal says why', async () => {
+  await call('POST', '/api/workspaces', ADMIN, { name: 'guardado' });
+  const id = (await call('POST', '/api/sessions', ADMIN, { workspace: 'guardado' })).body.id;
+  // `echo curl` reads nothing, but the Guard judges the command: its output counts as fetched.
+  llama.toolCalls = [{ name: 'bash', arguments: { command: 'echo curl' } }, { name: 'bash', arguments: { command: 'git push' } }];
+  await call('POST', `/api/sessions/${id}/prompt`, ADMIN, { message: 'trae la página y publica' });
+  const events = await settled(id, ADMIN);
+  assert.deepEqual(guardVerdicts(events), [['bash', 'allow'], ['bash', 'deny']]);
+  assert.match(events.find((e) => e.type === 'portal_guard' && e.payload.verdict === 'deny')!.payload.reason, /^publish:/);
+  assert.match(promptText(llama.bodies.at(-1)), /Refused \(publish\)/);
+});
+
+test('a tainted Session stays tainted across a restart of Deck, even with its pi file gone', async () => {
+  await call('POST', '/api/workspaces', ADMIN, { name: 'reinicio' });
+  const id = (await call('POST', '/api/sessions', ADMIN, { workspace: 'reinicio' })).body.id;
+  llama.toolCalls = [{ name: 'bash', arguments: { command: 'echo wget' } }];
+  await call('POST', `/api/sessions/${id}/prompt`, ADMIN, { message: 'lee el correo' });
+  await settled(id, ADMIN);
+
+  await sessions.shutdown();
+  const file = (await store.sessions.get(id))!.pi_session_file!;
+  assert.ok(existsSync(file));
+  rmSync(file);
+
+  llama.toolCalls = [{ name: 'bash', arguments: { command: 'git push' } }];
+  await call('POST', `/api/sessions/${id}/prompt`, ADMIN, { message: 'publica' });
+  const events = await settled(id, ADMIN);
+  assert.deepEqual(guardVerdicts(events).at(-1), ['bash', 'deny']);
+});

@@ -20,6 +20,8 @@ export interface FakeLlama {
   bodies: any[];
   /** What each completion answers, word by word. */
   answer: string[];
+  /** Tool calls the next completions answer with, one per completion, before falling back to `answer`. */
+  toolCalls: { name: string; arguments: Record<string, unknown> }[];
   /** Answer completions with this status instead (`null`: answer normally). */
   failWith: number | null;
   /** Keep every completion that starts from now on open until the returned function is called. */
@@ -37,8 +39,10 @@ export async function fakeLlama(slotDir: string, slotBytes = 64): Promise<FakeLl
     log: [] as string[],
     bodies: [] as any[],
     answer: ["hola"],
+    toolCalls: [] as { name: string; arguments: Record<string, unknown> }[],
     failWith: null as number | null,
   };
+  let calls = 0;
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://llama");
     let raw = "";
@@ -80,6 +84,14 @@ export async function fakeLlama(slotDir: string, slotBytes = 64): Promise<FakeLl
         res.write(`data: ${JSON.stringify({ prompt_progress: { total: 100, cache: 60, processed: 100, time_ms: 40 } })}\n\n`);
       }
       res.write(chunk(body.model, { role: "assistant", content: "" }));
+      const toolCall = state.toolCalls.shift();
+      if (toolCall) {
+        const call = { index: 0, id: `call_${++calls}`, type: "function", function: { name: toolCall.name, arguments: JSON.stringify(toolCall.arguments) } };
+        res.write(chunk(body.model, { tool_calls: [call] }));
+        res.write(chunk(body.model, {}, "tool_calls"));
+        res.end("data: [DONE]\n\n");
+        return;
+      }
       for (const word of state.answer) res.write(chunk(body.model, { content: word }));
       res.write(chunk(body.model, {}, "stop"));
       res.end("data: [DONE]\n\n");
@@ -95,6 +107,8 @@ export async function fakeLlama(slotDir: string, slotBytes = 64): Promise<FakeLl
     get bodies() { return state.bodies; },
     get answer() { return state.answer; },
     set answer(words: string[]) { state.answer = words; },
+    get toolCalls() { return state.toolCalls; },
+    set toolCalls(calls) { state.toolCalls = calls; },
     get failWith() { return state.failWith; },
     set failWith(status: number | null) { state.failWith = status; },
     hold() {
