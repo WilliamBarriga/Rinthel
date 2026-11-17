@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Code review for quality, security and maintainability
-tools: read, grep, find, ls, bash, web_search, source_check, fetch_content
+tools: read, grep, find, ls, bash
 thinking: low
 timeout: 1200
 maxTurns: 60

@@ -51,19 +51,22 @@ The image carries these, next to the factory
 
 | Type | What it does | Tools |
 | --- | --- | --- |
-| `scout` | Quick reconnaissance of a codebase; returns compressed context for another agent | read, grep, find, ls, bash, web_search, source_check, fetch_content |
-| `planner` | Turns context and requirements into an implementation plan; changes nothing | read, grep, find, ls, web_search, source_check, fetch_content |
-| `researcher` | Web and document research with cited sources; changes nothing | read, grep, find, ls, web_search, source_check, fetch_content |
-| `worker` | General-purpose developer with full capabilities | read, write, edit, grep, find, ls, bash, web_search, source_check, fetch_content |
-| `reviewer` | Code review for quality, security and maintainability; bash read-only | read, grep, find, ls, bash, web_search, source_check, fetch_content |
+| `scout` | Quick reconnaissance of a codebase; returns compressed context for another agent | read, grep, find, ls, bash |
+| `planner` | Turns context and requirements into an implementation plan; changes nothing | read, grep, find, ls |
+| `researcher` | Web and document research with cited sources; changes nothing (bash only to fetch) | read, grep, find, ls, bash |
+| `worker` | General-purpose developer with full capabilities | read, write, edit, grep, find, ls, bash |
+| `reviewer` | Code review for quality, security and maintainability; bash read-only | read, grep, find, ls, bash |
 | `debugger` | Reproduces a bug and finds its root cause; does not fix it | read, grep, find, ls, bash |
 | `builder` | Runs builds, tests and checks, and reports; does not change code | read, grep, find, ls, bash |
 | `writer` | Drafts and edits documentation and other text | read, write, edit, grep, find, ls |
 | `custom` | Generic agent whose role is the call's `persona` | read, grep, find, ls, bash |
 
-`web_search`, `source_check` and `fetch_content` exist only when a package that
-provides them is installed in Deck's agentDir; without it those agents work
-with the rest.
+These are pi's built-in tools: Deck registers no web search tool of its own,
+so the researcher fetches pages with `curl` through `bash` (a network command,
+so what it reads is untrusted, like any child's answer). Every child also gets
+`understory_memory_query` when the Session has Memoria. To give an agent a
+tool a package provides, install the package in Deck's agentDir and put a copy
+of the agent file with that tool in its `tools` on the volume (below).
 
 An agent type is a Markdown file: frontmatter with `name` and `description`
 (required), `tools` (pi's allowlist for the child; absent, pi's defaults),

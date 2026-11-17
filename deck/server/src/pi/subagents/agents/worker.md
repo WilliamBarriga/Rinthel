@@ -1,7 +1,7 @@
 ---
 name: worker
 description: General-purpose developer with full capabilities, in an isolated context
-tools: read, write, edit, grep, find, ls, bash, web_search, source_check, fetch_content
+tools: read, write, edit, grep, find, ls, bash
 thinking: high
 timeout: 1800
 maxTurns: 60

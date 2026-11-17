@@ -1,7 +1,7 @@
 ---
 name: scout
 description: Quick reconnaissance of a codebase; returns compressed context to hand off to other agents
-tools: read, grep, find, ls, bash, web_search, source_check, fetch_content
+tools: read, grep, find, ls, bash
 thinking: low
 timeout: 1200
 maxTurns: 60

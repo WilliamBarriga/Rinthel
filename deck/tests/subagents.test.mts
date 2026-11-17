@@ -31,6 +31,8 @@ writeFileSync(
 const { subagentExtension, SUBAGENT_TOOL } = await import('../server/src/pi/subagents/subagent-tool.ts');
 const { TAINT_REVOKED_TOOLS } = await import('../server/src/pi/guard.ts');
 const { SUBAGENT_TOOLS } = await import('../server/src/pi/session-taint.ts');
+const { discoverAgents } = await import('../server/src/pi/subagents/agents.ts');
+const { MEMORIA_CHILD_TOOLS } = await import('../server/src/pi/admin-tool.ts');
 const { createMemoryStore } = await import('../server/src/store/memory/index.ts');
 const { createDeckApp } = await import('../server/src/app.ts');
 const { ACCESS_COOKIE } = await import('../server/src/identity.ts');
@@ -74,6 +76,22 @@ test("the image's agents and the volume's are offered together, the volume's win
   assert.match(description, /scout: The volume's scout/);
   assert.equal(lines.filter((l) => /scout/.test(l)).length, 1, lines.join('\n'));
   assert.match(lines.find((l) => /scout/.test(l))!, new RegExp(path.join(agentDir, 'agents', 'scout.md').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test("every tool an image agent type lists is one a child can have: pi's built-ins or what Deck adds to a child", async () => {
+  const pi: Record<string, unknown> = await import('@earendil-works/pi-coding-agent');
+  const builtins = Object.entries(pi)
+    .filter(([name]) => /^create\w+ToolDefinition$/.test(name))
+    .map(([, make]) => (make as (cwd: string) => { name: string })(root).name);
+  const known = new Set([...builtins, ...MEMORIA_CHILD_TOOLS]);
+  const emptyVolume = mkdtempSync(path.join(tmpdir(), 'deck-agents-'));
+  try {
+    const agents = await discoverAgents(emptyVolume);
+    assert.ok(agents.length >= 9);
+    for (const agent of agents) for (const tool of agent.tools ?? []) assert.ok(known.has(tool), `${agent.name} lists ${tool}, which nothing registers`);
+  } finally {
+    rmSync(emptyVolume, { recursive: true, force: true });
+  }
 });
 
 test('the role is checked on every call: no longer an admin, or no answer about it, and no child runs', async () => {

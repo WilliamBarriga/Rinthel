@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Turns context and requirements into an implementation plan
-tools: read, grep, find, ls, web_search, source_check, fetch_content
+tools: read, grep, find, ls
 thinking: high
 timeout: 1200
 maxTurns: 60
