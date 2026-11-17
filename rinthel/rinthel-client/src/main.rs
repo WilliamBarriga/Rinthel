@@ -16,7 +16,9 @@ async fn main() -> io::Result<()> {
         app::set_daemon_port(port);
     }
     let daemon = app::daemon_base();
-    let theme: Theme = reqwest::get(format!("{daemon}/theme"))
+    let theme: Theme = app::http()
+        .get(format!("{daemon}/theme"))
+        .send()
         .await
         .expect("GET /theme — ¿está corriendo el daemon? (.venv/bin/python -m rinthel_tui.daemon)")
         .json()

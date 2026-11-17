@@ -18,8 +18,10 @@ from typing import Any
 
 from rinthel_tui.instance import Instance
 
-# Audit log lives under logs/ at the Instance root.
-LOG_PATH = Instance.discover(Path(__file__).resolve().parent).logs_dir / "hostexecd.log"
+
+def log_path() -> Path:
+    """The audit log, under ``logs/`` at the Instance root (``RINTHEL_INSTANCE_ROOT`` wins)."""
+    return Instance.discover().logs_dir / "hostexecd.log"
 
 
 def record(
@@ -47,8 +49,9 @@ def record(
         "timed_out": timed_out,
     }
     try:
-        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with LOG_PATH.open("a", encoding="utf-8") as f:
+        path = log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except OSError:
         pass
@@ -58,11 +61,12 @@ def read_recent(limit: int = 20) -> list[dict[str, Any]]:
     """Últimas ``limit`` entradas, más reciente primero. Lee el archivo
     entero y se queda con la cola — el log de un daemon de un solo usuario
     no crece lo bastante rápido como para justificar un índice o un tail
-    binario (comparar con ``_tail_lines`` en ``rinthel_tui/daemon.py``, que
+    binario (comparar con ``tail`` en ``monitoring/adapters/log_file.py``, que
     sí lo necesita para el log de llama-server, mucho más verboso)."""
-    if not LOG_PATH.exists():
+    path = log_path()
+    if not path.exists():
         return []
-    lines = LOG_PATH.read_text(encoding="utf-8").splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines()
     out: list[dict[str, Any]] = []
     for line in lines[-limit:]:
         line = line.strip()

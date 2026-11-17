@@ -1,176 +1,29 @@
-"""Motor genérico de "servicio gestionado" — reemplaza el spawn/wait/kill
-triplicado (llama-server, whisper, tts) y el up/down duplicado (Understory,
-Pithagoras) que antes vivían como funciones ``phase_*`` casi idénticas por
-servicio en ``phases.py``.
+"""Las definiciones de "servicio gestionado": qué es cada servicio y cómo se
+deriva de la config. ``LocalProcessService`` describe un binario local (puerto,
+log, cómo armar su ``argv`` a partir de ``cfg``); ``DockerComposeService``, un
+servicio de un stack ``docker compose``. Las instancias concretas
+(LLAMA_SERVICE, etc.) viven en ``services.py``, construidas a partir de los
+sub-configs de ``config.py``.
 
-``LocalProcessService`` describe un binario local (puerto, log, cómo armar
-su ``argv`` a partir de ``cfg``); ``DockerComposeService`` describe un stack
-``docker compose``. Las instancias concretas (LLAMA_SERVICE, etc.) viven en
-``services.py``, construidas a partir de los sub-configs de ``config.py``.
-
-Todas las fases genéricas de acá respetan la firma ``(cfg, report, **kwargs)``
-que exige ``PhaseSpec`` (``lifecycle/specs.py``) — cada ``PhaseSpec`` pasa el
-``service`` correspondiente por ``kwargs`` en vez de haber una función
-distinta por servicio.
+Una definición conoce a ``RinthelConfig`` y las phases no: ``spec(cfg)`` la
+convierte en el ``LocalProcessSpec``/``DockerComposeSpec`` ya armado que
+reciben las phases de ``lifecycle/domain/phases/managed_service.py``. Los
+labels del menú (``menu_label``, ``wait_label``, ``kill_label``) alimentan los
+``PhaseSpec`` de ``specs.py`` y no viajan al dominio.
 """
 
-import asyncio
-import os
-import socket
-import subprocess
-import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Sequence
-
-import psutil
 
 from rinthel_tui.config import RinthelConfig
-from rinthel_tui.lifecycle.types import PhaseError, PhaseReport
-
-
-def _platform_spawn_argv(argv: Sequence[str], *, platform: str = os.name) -> list[str]:
-    """Adapta entrypoints de desarrollo al modelo de procesos del host."""
-    resolved = list(argv)
-    if platform == "nt" and resolved and Path(resolved[0]).suffix.casefold() == ".py":
-        resolved.insert(0, sys.executable)
-    return resolved
-
-# ── helpers de subprocess/red — sin cambios de comportamiento respecto a
-# los que vivían en phases.py, solo mudados acá ──────────────────────────
-
-
-async def _run(
-    cmd: Sequence[str],
-    report: PhaseReport,
-    *,
-    cwd: Path | None = None,
-    env: dict[str, str] | None = None,
-) -> int:
-    """Corre un comando, reporta stdout+stderr combinados, devuelve el returncode."""
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        cwd=str(cwd) if cwd else None,
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    out, _ = await proc.communicate()
-    text = out.decode(errors="replace").rstrip()
-    if text:
-        report.info(text)
-    return proc.returncode
-
-
-async def _docker_compose(
-    args: Sequence[str],
-    cwd: Path,
-    report: PhaseReport,
-    extra_env: dict[str, str] | None = None,
-) -> int:
-    env = os.environ.copy()
-    if extra_env:
-        env.update(extra_env)
-    return await _run(["docker", "compose", *args], report, cwd=cwd, env=env)
-
-
-async def _port_in_use(port: int) -> bool:
-    def _check() -> bool:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            return s.connect_ex(("127.0.0.1", port)) == 0
-
-    return await asyncio.to_thread(_check)
-
-
-async def _http_ok(url: str, timeout: float = 2.0) -> bool:
-    import urllib.request
-
-    def _check() -> bool:
-        try:
-            with urllib.request.urlopen(url, timeout=timeout):
-                return True
-        except OSError:
-            return False
-
-    return await asyncio.to_thread(_check)
-
-
-async def _signal_processes_on_port(port: int, *, force: bool = False) -> list[int]:
-    """Termina los procesos que escuchan en ``port`` sin depender de
-    ``fuser``. ``psutil`` funciona tanto en Linux como en Windows."""
-    def _signal() -> list[int]:
-        try:
-            connections = psutil.net_connections(kind="tcp")
-        except (OSError, psutil.Error):
-            return []
-        pids = {
-            conn.pid
-            for conn in connections
-            if conn.pid
-            and conn.status == psutil.CONN_LISTEN
-            and conn.laddr
-            and conn.laddr.port == port
-        }
-        signalled: list[int] = []
-        for pid in sorted(pids):
-            try:
-                process = psutil.Process(pid)
-                process.kill() if force else process.terminate()
-                signalled.append(pid)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-        return signalled
-
-    return await asyncio.to_thread(_signal)
-
-
-_MAX_LOG_BYTES = 10 * 1024 * 1024  # 10MB — arriba de esto, rotamos antes de escribir más
-
-
-def _rotate_log_if_large(log: Path, max_bytes: int = _MAX_LOG_BYTES) -> None:
-    """Rota ``log`` a ``log.1`` (un solo backup) si ya pasó ``max_bytes`` —
-    sin esto, un log de un proceso de larga vida (llama-server corriendo
-    semanas) crece sin límite. Se llama en cada ``phase_spawn``, así que
-    cubre cada BOOT/RELOAD; no protege dentro de una misma corrida larga sin
-    reinicio, para eso hace falta logrotate a nivel de sistema."""
-    if log.exists() and log.stat().st_size > max_bytes:
-        rotated = log.with_name(log.name + ".1")
-        rotated.unlink(missing_ok=True)
-        log.rename(rotated)
-
-
-async def _wait_http_ready(
-    url: str,
-    *,
-    timeout: float,
-    interval: float,
-    max_interval: float,
-    backoff: float,
-) -> bool:
-    """Poll de ``url`` con backoff exponencial (capeado en ``max_interval``)
-    hasta que responda 200 o se agote ``timeout``. Arranca en ``interval``
-    para no perder la respuesta rápida de servicios livianos (tts) y crece
-    para no saturar el endpoint de un servicio que tarda en cargar (modelos
-    grandes en llama-server) con polls cada 2s durante 90s. Devuelve True si
-    llegó a responder."""
-    waited = 0.0
-    while not await _http_ok(url):
-        if waited >= timeout:
-            return False
-        sleep_for = min(interval, timeout - waited)
-        await asyncio.sleep(sleep_for)
-        waited += sleep_for
-        interval = min(interval * backoff, max_interval)
-    return True
-
+from rinthel_tui.lifecycle.domain.types import ComposeService, DockerComposeSpec, LocalProcessSpec
 
 # ── campos compartidos por LocalProcessService y DockerComposeService ────
 #
-# Ambos tipos de servicio se esperan igual (wait_ready pollea ready_url_of
-# con el mismo backoff) y se listan igual en menú/report, así que ese
-# subconjunto de campos vive acá una sola vez — evita mantenerlo duplicado
-# entre las dos dataclasses y permite que phase_wait_ready (más abajo) sea
-# una sola función en vez de una por tipo de servicio.
+# Ambos tipos de servicio se esperan igual (wait_ready pollea ready_url con el
+# mismo backoff) y se listan igual en menú/report, así que ese subconjunto de
+# campos vive acá una sola vez.
 # kw_only=True porque las subclases suman sus propios campos requeridos
 # (build_argv/log_of, dir_of/compose_service_name) después de los que ya
 # tienen default acá — sin kw_only, un dataclass no lo permite.
@@ -179,17 +32,18 @@ async def _wait_http_ready(
 @dataclass(frozen=True, kw_only=True)
 class _ServiceBase:
     # display_name: usado en los mensajes de report ("llama-server murió al
-    # instante", "no relanzo whisper-server"). menu_label/wait_label/
-    # kill_label: texto de los PhaseSpec en specs.py — separados de
-    # display_name porque no siempre coinciden (ej. "TTS — PIPER" en el menú
-    # vs. "tts-piper" en los mensajes).
+    # instante"). menu_label/wait_label/kill_label: texto de los PhaseSpec en
+    # specs.py — separados de display_name porque no siempre coinciden (ej.
+    # "LLAMA-SERVER  --  Qwen3.6" en el menú vs. "llama-server" en los
+    # mensajes).
     display_name: str
     menu_label: str
     wait_label: str
     kill_label: str
-    port_of: Callable[[RinthelConfig], int]
-    # Filtra el servicio de INSTALL/BOOT/DOWN/RELOAD cuando da False (ver
-    # ``specs.py`` a partir de Fase 3) — default True porque hoy los 5
+    # None en un servicio sin puerto propio.
+    port_of: Callable[[RinthelConfig], int] | None = None
+    # Filtra el servicio de INSTALL/BOOT/TERMINATE/RELOAD cuando da False (ver
+    # ``specs.py``) — default True porque hoy los 5
     # servicios corren siempre.
     enabled_of: Callable[[RinthelConfig], bool] = lambda cfg: True
     # None en un DockerComposeService que no expone healthcheck HTTP propio
@@ -208,131 +62,49 @@ class _ServiceBase:
     # la tiene hoy ("Levanta el modelo local antes de usar understory.").
     on_timeout_hint: str | None = None
 
+    def _shared(self, cfg: RinthelConfig) -> dict:
+        """Los campos de ``ServiceSpec``, evaluados contra ``cfg``."""
+        return {
+            "display_name": self.display_name,
+            "port": self.port_of(cfg) if self.port_of is not None else None,
+            "enabled": self.enabled_of(cfg),
+            "ready_url": self.ready_url_of(cfg) if self.ready_url_of is not None else None,
+            "ready_timeout": self.default_ready_timeout,
+            "ready_poll_interval": self.ready_poll_interval,
+            "ready_poll_backoff": self.ready_poll_backoff,
+            "ready_poll_max_interval": self.ready_poll_max_interval,
+            "on_timeout_hint": self.on_timeout_hint,
+        }
 
-# ── LocalProcessService: llama-server / whisper / tts ────────────────────
+
+# ── LocalProcessService: llama-server ───────────────────────────────────
 
 
 @dataclass(frozen=True, kw_only=True)
 class LocalProcessService(_ServiceBase):
     build_argv: Callable[[RinthelConfig], list[str]]
     log_of: Callable[[RinthelConfig], Path]
+    # Variables que el proceso recibe además del entorno del daemon.
+    env_of: Callable[[RinthelConfig], dict[str, str]] = lambda cfg: {}
+    # Archivos que el proceso lee al arrancar, derivados de la config (p. ej.
+    # el ``server.json`` de audio.cpp): se reescriben en cada spawn.
+    files_of: Callable[[RinthelConfig], dict[Path, str]] = lambda cfg: {}
+    # Directorios que el proceso necesita existentes al arrancar (p. ej. el
+    # ``--slot-save-path`` de llama-server).
+    dirs_of: Callable[[RinthelConfig], list[Path]] = lambda cfg: []
 
-
-async def phase_spawn(cfg: RinthelConfig, report: PhaseReport, *, service: LocalProcessService) -> None:
-    port = service.port_of(cfg)
-    if await _port_in_use(port):
-        report.warn(f"Ya hay algo escuchando en :{port} — no relanzo {service.display_name}")
-        return
-    log = service.log_of(cfg)
-    log.parent.mkdir(parents=True, exist_ok=True)
-    _rotate_log_if_large(log)
-    log_file = open(log, "ab")
-    argv = _platform_spawn_argv(service.build_argv(cfg))
-    process_options: dict[str, object] = {}
-    if os.name == "nt":
-        process_options["creationflags"] = (
-            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+    def spec(self, cfg: RinthelConfig) -> LocalProcessSpec:
+        return LocalProcessSpec(
+            **self._shared(cfg),
+            argv=tuple(self.build_argv(cfg)),
+            log=self.log_of(cfg),
+            env=self.env_of(cfg),
+            files=self.files_of(cfg),
+            dirs=tuple(self.dirs_of(cfg)),
         )
-    else:
-        process_options["start_new_session"] = True
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *argv,
-            stdout=log_file,
-            stderr=asyncio.subprocess.STDOUT,
-            **process_options,
-        )
-    finally:
-        log_file.close()
-    # Sin esto, un binario/flag roto que crashea al instante queda reportado
-    # como "lanzado" y la fase siguiente solo se entera 90s después con un
-    # timeout genérico.
-    try:
-        rc = await asyncio.wait_for(proc.wait(), timeout=1.5)
-    except asyncio.TimeoutError:
-        report.success(f"{service.display_name} lanzado en background (PID {proc.pid}) — log: {log}")
-    else:
-        report.error(f"{service.display_name} murió al instante (rc {rc}) — revisa {log}")
-        raise PhaseError(f"{service.display_name} exited immediately (rc {rc})")
 
 
-async def check_ready(cfg: RinthelConfig, service: _ServiceBase) -> bool:
-    """Chequeo puntual de ``service.ready_url_of`` — un solo GET, sin el
-    backoff/retry de ``phase_wait_ready`` ni un ``PhaseReport`` para
-    escribirle. Pensado para telemetría en vivo fuera de una fase de boot/
-    reload (ver ``daemon.py::llama_status_task``): ahí lo que importa es el
-    estado actual en cada tick, no esperar a que aparezca."""
-    if service.ready_url_of is None:
-        return False
-    return await _http_ok(service.ready_url_of(cfg))
-
-
-async def phase_wait_ready(
-    cfg: RinthelConfig, report: PhaseReport, *, service: _ServiceBase, timeout: int | None = None
-) -> None:
-    """Poll de ``service.ready_url_of`` — compartido entre LocalProcessService
-    y DockerComposeService (ambos son ``_ServiceBase``, con los mismos campos
-    de ready/poll). Antes eran dos funciones casi idénticas; la única
-    diferencia real era este guard de ``ready_url_of is None``, que en un
-    LocalProcessService nunca dispara (siempre define uno)."""
-    if service.ready_url_of is None:
-        return
-    timeout = service.default_ready_timeout if timeout is None else timeout
-    ready = await _wait_http_ready(
-        service.ready_url_of(cfg),
-        timeout=timeout,
-        interval=service.ready_poll_interval,
-        max_interval=service.ready_poll_max_interval,
-        backoff=service.ready_poll_backoff,
-    )
-    if not ready:
-        report.warn(f"AVISO: nada respondiendo en :{service.port_of(cfg)} tras {timeout}s")
-        if service.on_timeout_hint:
-            report.info(service.on_timeout_hint)
-        return
-    report.success(f"{service.display_name} respondiendo en :{service.port_of(cfg)}")
-
-
-async def phase_kill(cfg: RinthelConfig, report: PhaseReport, *, service: LocalProcessService) -> None:
-    # Matamos por puerto (no por PID guardado) — mismo criterio que el
-    # código original: lo que importa es quién sea que esté escuchando ahí.
-    port = service.port_of(cfg)
-    if not await _port_in_use(port):
-        report.warn(f"No había {service.display_name} corriendo en :{port}")
-        return
-    pids = await _signal_processes_on_port(port)
-    if not pids:
-        report.warn(f"No pude identificar el proceso que escucha en :{port}")
-    for _ in range(10):
-        if not await _port_in_use(port):
-            report.success(f"{service.display_name} parado en :{port}")
-            return
-        await asyncio.sleep(1)
-    await _signal_processes_on_port(port, force=True)
-    if await _port_in_use(port):
-        report.warn(f"AVISO: :{port} sigue ocupado tras intentar matar el proceso")
-    else:
-        report.success(f"{service.display_name} parado en :{port} (terminación forzada)")
-
-
-async def phase_wait_port_free(
-    cfg: RinthelConfig, report: PhaseReport, *, port_of: Callable[[RinthelConfig], int], timeout: int = 30
-) -> None:
-    """Genérico a propósito (no atado a ``LocalProcessService`` ni a un
-    puerto fijo): RELOAD lo usa para esperar a que el puerto de un servicio
-    puntual (hoy llama-server) quede libre entre el shutdown y el boot."""
-    port = port_of(cfg)
-    waited = 0
-    while await _port_in_use(port):
-        if waited >= timeout:
-            report.warn(f"AVISO: :{port} sigue ocupado tras {timeout}s — continuando de todos modos")
-            return
-        await asyncio.sleep(1)
-        waited += 1
-    report.success(f"Puerto :{port} libre")
-
-
-# ── DockerComposeService: Understory / Pithagoras ────────────────────────
+# ── DockerComposeService: Understory / portal ─────────────────────────
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -340,45 +112,23 @@ class DockerComposeService(_ServiceBase):
     dir_of: Callable[[RinthelConfig], Path]
     compose_service_name: str
     extra_env_of: Callable[[RinthelConfig], dict[str, str]] = lambda cfg: {}
-    # Solo Pithagoras rebuildea la imagen del frontend antes de levantar.
+    # Solo el portal rebuildea su imagen antes de levantar.
     build_args: tuple[str, ...] | None = None
+    # (build arg, paquete npm): el build recibe la última versión publicada
+    # del paquete. Con el cache de Docker prendido, es lo que rehace la capa
+    # que instala ``@latest`` cuando sale una versión nueva, y solo entonces.
+    npm_build_args: tuple[tuple[str, str], ...] = ()
+    # Profile de compose del servicio: sin él activo, el ``up -d`` del
+    # proyecto entero (el de cualquier otro servicio) no lo levanta.
+    profile: str | None = None
     # Los stacks docker tardan menos en levantar que llama-server cargando
     # un modelo grande — pisa el default de 90s de _ServiceBase.
     default_ready_timeout: int = 60
 
-
-async def phase_up(
-    cfg: RinthelConfig, report: PhaseReport, *, service: DockerComposeService, no_cache: bool = False
-) -> None:
-    directory = service.dir_of(cfg)
-    if not directory.is_dir():
-        report.warn(f"{directory} no encontrado — omitido")
-        return
-    extra_env = service.extra_env_of(cfg)
-    if no_cache and service.build_args:
-        report.warn(f"Reconstruyendo imagen {service.display_name.lower()}…")
-        rc = await _docker_compose(list(service.build_args), directory, report, extra_env)
-        if rc != 0:
-            report.error(f"{service.display_name}: docker compose build falló (rc {rc})")
-            raise PhaseError(f"{service.display_name.lower()} build failed (rc {rc})")
-    rc = await _docker_compose(["up", "-d", service.compose_service_name], directory, report, extra_env)
-    await _docker_compose(["logs", "--tail", "5", service.compose_service_name], directory, report, extra_env)
-    if rc != 0:
-        report.error(f"{service.display_name}: docker compose up falló (rc {rc})")
-        raise PhaseError(f"{service.display_name.lower()} up failed (rc {rc})")
-    report.success(f"{service.display_name} levantado")
-
-
-async def phase_down(cfg: RinthelConfig, report: PhaseReport, *, service: DockerComposeService) -> None:
-    directory = service.dir_of(cfg)
-    if not directory.is_dir():
-        report.warn(f"{directory} no encontrado — omitido")
-        return
-    # Service name explícito: desde Fase 2 los 3 DockerComposeService
-    # comparten un mismo compose project (docker-compose.yaml en la raíz,
-    # ver services.py) — un `down` a secas tumbaría los otros dos también.
-    rc = await _docker_compose(["down", service.compose_service_name], directory, report)
-    if rc != 0:
-        report.error(f"{service.display_name}: docker compose down falló (rc {rc})")
-        raise PhaseError(f"{service.display_name.lower()} down failed (rc {rc})")
-    report.success(f"{service.display_name} parado")
+    def spec(self, cfg: RinthelConfig) -> DockerComposeSpec:
+        return DockerComposeSpec(
+            **self._shared(cfg),
+            stack=ComposeService(self.dir_of(cfg), self.compose_service_name, self.profile, self.extra_env_of(cfg)),
+            build_args=self.build_args,
+            npm_build_args=self.npm_build_args,
+        )

@@ -4,7 +4,7 @@
 //! comportamiento propio por comando del lado cliente.
 //!
 //! El estado (`phase_rows`/`phase_log`) vive en `App`, no en un struct de
-//! screen propio — mismo patrón que `capture.rs` (`command_in_flight` +
+//! screen propio (`command_in_flight` +
 //! `last_command_result`), porque `app.rs` no tiene un stack de screens.
 //! `app::finish_phase_sequence` llena `phase_log` con el cierre (mensaje/
 //! banner de cierre, o "secuencia cortada") cuando llega la respuesta del
@@ -59,8 +59,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     f.render_widget(hint, rows[2]);
 }
 
-/// "No hay POST /boot/terminate/reload/install en vuelo" — mismo truco que
-/// `screens::capture::done`.
+/// "No hay POST /boot/terminate/reload/install en vuelo".
 pub fn done(app: &App) -> bool {
     app.command_in_flight.is_none()
 }

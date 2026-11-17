@@ -20,6 +20,14 @@ _Avoid_: Start/stop, up/down.
 Reemplazo coordinado del estado en ejecución mediante Terminate seguido de Boot y reconstrucción de los servicios que lo requieran.
 _Avoid_: Restart; Reload expresa el ciclo completo administrado por Rinthel.
 
+**Lifecycle plan**:
+Lo que corre un comando de ciclo de vida entero (Install, Boot, Terminate, Reload): tandas ordenadas de unidades, una por managed service, y una política de fallo que dice si corta en la primera unidad que falla o sigue con las que quedan.
+_Avoid_: Script, secuencia de fases.
+
+**Instance**:
+Una instalación de Rinthel: su raíz, el `.env` único que es fuente de verdad de su configuración y sus secretos, y los directorios `data/` y `logs/`.
+_Avoid_: Repo, checkout, despliegue.
+
 **Service outcome**:
 Resultado de una managed service dentro de una operación de ciclo de vida: indica éxito o fallo y aporta un mensaje comprensible para la persona usuaria.
 

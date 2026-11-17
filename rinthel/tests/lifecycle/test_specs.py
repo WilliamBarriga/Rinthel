@@ -1,12 +1,13 @@
-"""BOOT/DOWN/RELOAD filtrados por ``enabled_of`` (Fase 3 del plan de
-servicios configurables) — un servicio con ``enabled=False`` en su
-sub-config queda afuera de las 3 secuencias.
-"""
+"""Forma de cada Lifecycle plan (ver GLOSSARY.md) contra el ``cfg`` del test:
+qué unidades corre cada comando, en qué tandas y con qué failure policy, y
+que un servicio con ``enabled=False`` en su sub-config queda afuera."""
 
 import dataclasses
-import re
+
+import pytest
 
 from rinthel_tui.lifecycle import specs
+from rinthel_tui.lifecycle.domain.phases import data_dir
 
 
 def _disable(cfg, attr):
@@ -14,130 +15,125 @@ def _disable(cfg, attr):
     return dataclasses.replace(cfg, **{attr: dataclasses.replace(sub, enabled=False)})
 
 
-# ── boot_units / down_units ───────────────────────────────────────────────
-# Un ServiceOutcome por servicio en vez de un resultado por fase (ver
-# docs/adr/0001).
+def _services(plan):
+    return [unit.service for batch in plan.batches for unit in batch.units]
 
 
-def test_boot_units_groups_two_phases_per_service(cfg):
-    units = dict(specs.boot_units(cfg))
-    assert set(units) == {"llama-server", "understory", "pithagoras"}
-    for service_specs in units.values():
-        assert len(service_specs) == 2  # spawn/up + wait, siempre en pares
+PLANS = {
+    "boot": specs.boot_plan,
+    "terminate": specs.terminate_plan,
+    "reload": specs.reload_plan,
+    "install": specs.install_plan,
+}
 
 
-def test_boot_units_does_not_include_the_docker_check(cfg):
-    # phases.phase_check_docker no es de ningún servicio — el caller
-    # (daemon.py) lo corre aparte, con su propio ServiceOutcome("docker").
-    units = specs.boot_units(cfg)
-    all_labels = [s.label for _, unit_specs in units for s in unit_specs]
-    assert not any("DOCKER" in l for l in all_labels)
+@pytest.mark.parametrize(
+    ("plan", "disabled"),
+    [
+        ("boot", "understory"), ("boot", "pithagoras"), ("terminate", "pithagoras"),
+        ("reload", "understory"), ("install", "understory"), ("install", "pithagoras"),
+    ],
+)
+def test_a_disabled_service_is_left_out_of_the_plan_and_nothing_else_changes(cfg, plan, disabled):
+    build = PLANS[plan]
+
+    assert disabled in _services(build(cfg))
+    assert _services(build(_disable(cfg, disabled))) == [s for s in _services(build(cfg)) if s != disabled]
 
 
-def test_boot_units_excludes_disabled_service(cfg):
-    disabled = _disable(cfg, "understory")
-    units = dict(specs.boot_units(disabled))
-    assert set(units) == {"llama-server", "pithagoras"}
-
-
-def test_down_units_groups_one_phase_per_service(cfg):
-    units = dict(specs.down_units(cfg))
-    assert set(units) == {"llama-server", "understory", "pithagoras"}
-    for service_specs in units.values():
-        assert len(service_specs) == 1
-
-
-def test_down_units_excludes_disabled_service(cfg):
-    disabled = _disable(cfg, "pithagoras")
-    units = dict(specs.down_units(disabled))
-    assert set(units) == {"llama-server", "understory"}
-
-
-# ── reload_units ───────────────────────────────────────────────────────────
-# Las 3 tandas de RELOAD (shutdown → boot → rebuild), agrupadas por servicio
-# — un ServiceOutcome por unidad, mismo criterio que boot_units/down_units.
-
-
-def test_reload_units_shutdown_groups_kill_and_down(cfg):
-    shutdown, _boot, _rebuild = specs.reload_units(cfg)
-    # "llama-server" aparece 2 veces (kill + wait-port-free, unidades
-    # separadas con el mismo nombre de servicio) — no colapsar con dict().
-    assert [service for service, _ in shutdown] == [
-        "llama-server",
-        "understory",
-        "pithagoras",
-        "llama-server",
+def _shape(plan: specs.Plan) -> list[tuple[str | None, str, list[str]]]:
+    return [
+        (batch.marker, unit.service, [phase.label for phase in unit.phases])
+        for batch in plan.batches
+        for unit in batch.units
     ]
-    understory_specs = next(specs_ for service, specs_ in shutdown if service == "understory")
-    assert len(understory_specs) == 1  # down, sin wait
-    port_wait_specs = shutdown[-1][1]
-    assert len(port_wait_specs) == 1
-    assert "PUERTO" in port_wait_specs[0].label and "LIBRE" in port_wait_specs[0].label
 
 
-def test_reload_units_boot_is_local_only_no_docker_check(cfg):
-    _shutdown, boot, _rebuild = specs.reload_units(cfg)
-    units = dict(boot)
-    assert set(units) == {"llama-server"}  # único LOCAL_SERVICES hoy
-    assert len(units["llama-server"]) == 2  # spawn + wait
-    all_labels = [s.label for _, unit_specs in boot for s in unit_specs]
-    assert not any("DOCKER" in l for l in all_labels)  # lo corre daemon.py aparte
+def test_boot_plan_checks_docker_then_spawns_llama_then_ups_each_docker_service(cfg):
+    plan = specs.boot_plan(cfg)
+
+    assert plan.on_failure == "stop"
+    assert _shape(plan) == [
+        (None, "docker", ["◈ DOCKER"]),
+        (None, "llama-server", ["◈ LLAMA-SERVER", "◈ ESPERANDO LLAMA-SERVER"]),
+        (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER", "◈ ESPERANDO UNDERSTORY"]),
+        (None, "pithagoras", [
+            "◈ DATOS DEL PORTAL  --  DUEÑO DEL DIRECTORIO",
+            "◈ PITHAGORAS  --  PI TASK PORTAL",
+            "◈ ESPERANDO PITHAGORAS",
+        ]),
+    ]
 
 
-def test_reload_units_rebuild_is_docker_only_with_no_cache(cfg):
-    _shutdown, _boot, rebuild = specs.reload_units(cfg)
-    units = dict(rebuild)
-    assert set(units) == {"understory", "pithagoras"}
-    for service, unit_specs in rebuild:
-        up_spec = unit_specs[0]
-        assert up_spec.kwargs["no_cache"] is True
+def test_a_disabled_llama_server_is_neither_spawned_nor_awaited_on_reload(cfg):
+    services = _services(specs.reload_plan(_disable(cfg, "llama")))
+
+    assert "llama-server" not in services
 
 
-def test_reload_units_excludes_llama_port_wait_when_llama_disabled(cfg):
-    disabled = _disable(cfg, "llama")
-    shutdown, boot, _rebuild = specs.reload_units(disabled)
-    assert dict(shutdown).get("llama-server") is None
-    assert dict(boot).get("llama-server") is None
+def test_terminate_plan_stops_every_service_and_continues_on_failure(cfg):
+    plan = specs.terminate_plan(cfg)
+
+    assert plan.on_failure == "continue"
+    assert _shape(plan) == [
+        (None, "llama-server", ["◈ LLAMA-SERVER  --  Qwen3.6-35B-A3B-MTP"]),
+        (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER"]),
+        (None, "pithagoras", ["◈ PITHAGORAS  --  PI TASK PORTAL"]),
+    ]
 
 
-def test_reload_units_excludes_disabled_service(cfg):
-    disabled = _disable(cfg, "understory")
-    shutdown, _boot, rebuild = specs.reload_units(disabled)
-    assert "understory" not in dict(shutdown)
-    assert "understory" not in dict(rebuild)
+def test_reload_plan_shuts_down_then_boots_local_then_rebuilds_docker(cfg):
+    plan = specs.reload_plan(cfg)
+
+    assert plan.on_failure == "stop"
+    assert _shape(plan) == [
+        (None, "llama-server", ["◈ LLAMA-SERVER  --  Qwen3.6-35B-A3B-MTP"]),
+        (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER"]),
+        (None, "pithagoras", ["◈ PITHAGORAS  --  PI TASK PORTAL"]),
+        (None, "llama-server", ["◈ PUERTO LLAMA-SERVER LIBRE"]),
+        ("boot", "docker", ["◈ DOCKER"]),
+        ("boot", "llama-server", ["◈ LLAMA-SERVER", "◈ ESPERANDO LLAMA-SERVER"]),
+        ("rebuild", "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER", "◈ ESPERANDO UNDERSTORY"]),
+        ("rebuild", "pithagoras", [
+            "◈ DATOS DEL PORTAL  --  DUEÑO DEL DIRECTORIO",
+            "◈ PITHAGORAS  --  PI TASK PORTAL",
+            "◈ ESPERANDO PITHAGORAS",
+        ]),
+    ]
+    rebuild = next(batch for batch in plan.batches if batch.marker == "rebuild")
+    assert all(any(phase.kwargs.get("rebuild") is True for phase in unit.phases) for unit in rebuild.units)
 
 
-# ── install_units ──────────────────────────────────────────────────────────
-# Vista agrupada por InstallUnit — un ServiceOutcome por unidad instalable
-# (mismo criterio que boot_units/reload_units), más PREFLIGHT como su propia
-# unidad.
+def test_install_plan_preflight_first_then_every_unit_and_stops_on_failure(cfg):
+    plan = specs.install_plan(cfg)
+
+    assert plan.on_failure == "stop"
+    assert _shape(plan) == [
+        (None, "preflight", ["◈ PREFLIGHT — GPU/CUDA/cmake/docker"]),
+        (None, "llama.cpp + modelo", [
+            "◈ LLAMA.CPP — clone", "◈ LLAMA.CPP — build CUDA (native)", "◈ MODELO GGUF — descarga",
+        ]),
+        (None, "instance", ["◈ INSTANCE — secretos del .env"]),
+        (None, "pithagoras", ["◈ PITHAGORAS — clone + configurar"]),
+        (None, "understory", ["◈ UNDERSTORY — scaffold + configurar"]),
+    ]
 
 
-def test_install_units_groups_preflight_and_every_unit_by_default(cfg):
-    units = dict(specs.install_units(cfg))
-    assert set(units) == {"preflight", "llama.cpp + modelo", "pithagoras", "understory"}
+def _portal_data_phase(plan: specs.Plan) -> specs.PhaseSpec:
+    portal = next(unit for batch in plan.batches for unit in batch.units if unit.service == "pithagoras")
+    return portal.phases[0]
 
 
-def test_install_units_preflight_is_first_and_a_single_phase(cfg):
-    units = specs.install_units(cfg)
-    assert units[0][0] == "preflight"
-    assert len(units[0][1]) == 1
+def test_the_portal_data_directory_is_prepared_for_the_container_user_of_the_env(cfg):
+    cfg.instance.env_path.write_text("PUID=1234\nPGID=5678\n")
+
+    phase = _portal_data_phase(specs.boot_plan(cfg))
+
+    assert phase.fn is data_dir.phase_ensure_data_dir
+    assert phase.kwargs == {"path": cfg.instance.root / "data" / "pithagoras", "uid": 1234, "gid": 5678}
 
 
-def test_install_units_llama_groups_all_three_steps(cfg):
-    units = dict(specs.install_units(cfg))
-    assert len(units["llama.cpp + modelo"]) == 3
+def test_the_portal_data_directory_defaults_to_the_compose_default_user(cfg):
+    phase = _portal_data_phase(specs.boot_plan(cfg))
 
-
-def test_install_units_excludes_disabled_service(cfg):
-    disabled = _disable(cfg, "understory")
-    units = dict(specs.install_units(disabled))
-    assert set(units) == {"preflight", "llama.cpp + modelo", "pithagoras"}
-
-
-def test_install_units_does_not_number_labels(cfg):
-    # install_units no numera — el daemon solo necesita qué corrió y si
-    # salió bien, no un checklist.
-    units = specs.install_units(cfg)
-    all_labels = [s.label for _, unit_specs in units for s in unit_specs]
-    assert not any(re.search(r"\[\d+/\d+\]", l) for l in all_labels)
+    assert (phase.kwargs["uid"], phase.kwargs["gid"]) == (1000, 1000)

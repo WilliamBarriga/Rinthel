@@ -17,59 +17,47 @@ salvo el caso especial de llama-server, que antes no tenía prefijo propio y
 ahora es consistente con el resto de los servicios (``RINTHEL_LLAMA_PORT``/
 ``RINTHEL_LLAMA_MODEL_PATH``/``RINTHEL_LLAMA_LOG_PATH``).
 
-Si existe un ``.env`` en la raíz de este repo, se carga automáticamente vía
-``python-dotenv`` antes de leer el entorno — sin ``.env``, los defaults de
-``default_config()`` quedan idénticos al comportamiento anterior.
+``default_config(instance)`` lee el ``.env`` de la Instance (ver
+``instance.py``) directo del archivo, sin tocar ``os.environ`` — las
+``RINTHEL_*`` del shell ganan sobre el archivo.
 """
 
 import os
 import sys
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 from rinthel_tui.instance import Instance
-
-# Raíz del repo — ancla tanto la búsqueda de .env como los defaults de
-# understory.dir/pithagoras.dir más abajo, independiente de con qué cwd se
-# lance el TUI/daemon (y de a qué profundidad viva este archivo).
-REPO_ROOT = Instance.discover(Path(__file__).resolve().parent).root
-
-# find_dotenv()/load_dotenv() sin argumentos busca a partir del cwd del
-# proceso, no de este archivo — si el TUI se lanza desde fuera del repo
-# (p. ej. el menú principal, o cualquier launcher con otro cwd), el .env
-# queda mudo y default_config() vuelve a sus defaults en vez de lo que diga
-# .env, sin ningún aviso. Anclamos la búsqueda a la
-# raíz del repo (padre de este archivo) para que sea independiente del cwd.
-load_dotenv(REPO_ROOT / ".env")
 
 
 def _p(path: str) -> Path:
     return Path(path).expanduser()
 
 
-def _str_env(name: str, default: str) -> str:
-    return os.environ.get(name, default)
+def _str_env(name: str, default: str, env: Mapping[str, str] | None = None) -> str:
+    return (os.environ if env is None else env).get(name, default)
 
 
-def _path_env(name: str, default: str) -> Path:
-    return _p(os.environ.get(name, default))
+def _path_env(name: str, default: str, env: Mapping[str, str] | None = None) -> Path:
+    return _p((os.environ if env is None else env).get(name, default))
 
 
-def _int_env(name: str, default: int) -> int:
-    val = os.environ.get(name, "").strip()
+def _int_env(name: str, default: int, env: Mapping[str, str] | None = None) -> int:
+    val = (os.environ if env is None else env).get(name, "").strip()
     return int(val) if val else default
 
 
-def _float_env(name: str, default: float) -> float:
-    val = os.environ.get(name, "").strip()
+def _float_env(name: str, default: float, env: Mapping[str, str] | None = None) -> float:
+    val = (os.environ if env is None else env).get(name, "").strip()
     return float(val) if val else default
 
 
-def _bool_env(name: str, default: bool) -> bool:
-    val = os.environ.get(name, "").strip().lower()
+def _bool_env(name: str, default: bool, env: Mapping[str, str] | None = None) -> bool:
+    val = (os.environ if env is None else env).get(name, "").strip().lower()
     if not val:
         return default
     return val in ("1", "on", "true", "yes")
@@ -101,7 +89,7 @@ class Field:
     group: str = ""
 
 
-_LOADERS: dict[type, Callable[[str, Any], Any]] = {
+_LOADERS: dict[type, Callable[[str, Any, Mapping[str, str]], Any]] = {
     Path: _path_env,
     int: _int_env,
     float: _float_env,
@@ -133,14 +121,25 @@ KIND_NAMES: dict[type, str] = {
 }
 
 
-def _load(cls: type, fields: list[Field], *, defaults: dict[str, Any] | None = None, **extra: Any) -> Any:
+def _load(
+    cls: type,
+    fields: list[Field],
+    source: Mapping[str, str],
+    instance: Instance,
+    *,
+    defaults: dict[str, Any] | None = None,
+) -> Any:
     """Instancia ``cls`` (un dataclass de config) leyendo cada ``Field`` de
-    su env var — ``extra`` cubre los pocos campos que no salen 1:1 de una
-    env var (ej. ``LlamaConfig.env``, sintetizado a partir de otros valores)."""
+    ``source``. ``defaults`` pisa el default de algunos campos (el Validated profile de
+    una Platform). Un ``default`` callable es un default de layout: se
+    resuelve contra la ``instance`` (ej. ``understory.dir``)."""
     defaults = defaults or {}
-    kwargs = {f.attr: _LOADERS[f.kind](f.env, defaults.get(f.attr, f.default)) for f in fields}
-    kwargs.update(extra)
-    return cls(**kwargs)
+
+    def default_of(f: Field) -> Any:
+        value = defaults.get(f.attr, f.default)
+        return value(instance) if callable(value) else value
+
+    return cls(**{f.attr: _LOADERS[f.kind](f.env, default_of(f), source) for f in fields})
 
 
 # Variables del fork thecodacus/llama.cpp que llama.cpp upstream no tiene: un
@@ -154,17 +153,12 @@ _LEGACY_ENV: dict[str, str] = {
 }
 
 
-def _legacy_env_warnings() -> list[str]:
-    return [f"{name} ya no se usa: {why}" for name, why in _LEGACY_ENV.items() if name in os.environ]
-
-
 @dataclass(frozen=True)
 class LlamaConfig:
     bin: Path
     model: Path
     port: int
     log: Path
-    env: dict[str, str]
     enabled: bool
     ngl: str
     context_window: int
@@ -199,9 +193,6 @@ class LlamaConfig:
     cache_type_v: str
 
 
-# ``env`` queda afuera — son variables fijas de ``default_config()``, no
-# salen de una env var propia.
-#
 # `fit_to_memory` arma el flag `-fit` (`services.py::_llama_argv`), que
 # ajusta los args no seteados para entrar en memoria del device — no tiene
 # relación con flash attention pese a lo que sugeriría un nombre distinto.
@@ -209,7 +200,7 @@ LLAMA_FIELDS: list[Field] = [
     Field("bin", "RINTHEL_LLAMA_BIN", Path, "~/llama.cpp/src/build-cuda/bin/llama-server", exists=True, group="general"),
     Field("model", "RINTHEL_LLAMA_MODEL_PATH", Path, "~/llama.cpp/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf", exists=True, group="general"),
     Field("port", "RINTHEL_LLAMA_PORT", int, 8080, port=True, group="general"),
-    Field("log", "RINTHEL_LLAMA_LOG_PATH", Path, "~/Rinthel-general/logs/llama-server.log", group="general"),
+    Field("log", "RINTHEL_LLAMA_LOG_PATH", Path, lambda i: str(i.logs_dir / "llama-server.log"), group="general"),
     Field("enabled", "RINTHEL_LLAMA_ENABLED", bool, True, group="general"),
     Field("ngl", "RINTHEL_NGL", str, "all", group="compute"),
     Field("context_window", "RINTHEL_CONTEXT_WINDOW", int, 112000, positive=True, group="general"),
@@ -281,10 +272,9 @@ class UnderstoryConfig:
 
 
 UNDERSTORY_FIELDS: list[Field] = [
-    # Subtree del monorepo (Fase 1) desde la migración a Fase 2 — ya no
-    # ~/understory-poc. Estado real (bundle) vive en REPO_ROOT/data/
-    # understory, fuera del subtree; ver docker-compose.yaml de la raíz.
-    Field("dir", "RINTHEL_UNDERSTORY_DIR", Path, str(REPO_ROOT / "understory")),
+    # Subtree del monorepo. Estado real (bundle) vive en la raíz de la
+    # Instance, en data/understory; ver docker-compose.yaml de la raíz.
+    Field("dir", "RINTHEL_UNDERSTORY_DIR", Path, lambda i: str(i.understory_dir)),
     Field("port", "RINTHEL_UNDERSTORY_PORT", int, 3800, port=True),
     Field("enabled", "RINTHEL_UNDERSTORY_ENABLED", bool, True),
 ]
@@ -292,30 +282,37 @@ UNDERSTORY_FIELDS: list[Field] = [
 
 @dataclass(frozen=True)
 class PithagorasConfig:
+    """El portal heredado, hasta que Deck lo reemplace."""
+
     dir: Path
     port: int
     enabled: bool
-    opencode_api_key: str
 
 
 PITHAGORAS_FIELDS: list[Field] = [
-    # Subtree del monorepo — ya no ~/pithagoras. Estado real (portal.db/
-    # sessions) vive en REPO_ROOT/data/pithagoras.
-    Field("dir", "RINTHEL_PITHAGORAS_DIR", Path, str(REPO_ROOT / "pithagoras")),
+    # Subtree del monorepo. Estado real vive en la raíz de la Instance, en data/.
+    Field("dir", "RINTHEL_PITHAGORAS_DIR", Path, lambda i: str(i.portal_dir)),
     Field("port", "RINTHEL_PITHAGORAS_PORT", int, 4100, port=True),
     Field("enabled", "RINTHEL_PITHAGORAS_ENABLED", bool, True),
-    # Única env var de secreto con Field propio: no es RINTHEL_* porque la
-    # lee docker-compose (`environment:` de pithagoras/docker-compose.yml)
-    # y pi dentro del contenedor (providers `opencode`/`opencode-go`), pero
-    # se expone acá para poder editarla desde [N] CONFIGURAR sin abrir el
-    # .env a mano. group="" → aparece al final del panel de Pithagoras sin
-    # header (detail_rows itera solo GROUP_ORDER, que es de llama-server).
-    # Vacío = sin key: getModels() de SdkPiClient filtra los modelos sin
-    # auth resoluble, así que los de OpenCode Zen no aparecen en el picker.
-    # Sin validación (str sin port/positive/exists): una key vacía es un
-    # estado válido, no un error de configuración.
-    Field("opencode_api_key", "OPENCODE_API_KEY", str, ""),
 ]
+
+
+@dataclass(frozen=True)
+class Secrets:
+    """Los secretos de la Instance que el daemon lee. Van aparte de
+    ``_ENTRIES``: ``GET /config`` nunca los muestra. ``service`` es el que
+    exige la policy ``service`` (la TUI); ``panel`` firma los Panel tokens.
+    Sin default real: un secreto vacío no deja pasar a nadie. Los genera
+    INSTALL (``phase_install_instance_secrets``) y el boot (``service``)."""
+
+    service: str
+    panel: str
+
+
+SECRET_ENVS: dict[str, str] = {
+    "service": "RINTHEL_SERVICE_SECRET",
+    "panel": "RINTHEL_PANEL_SECRET",
+}
 
 
 @dataclass(frozen=True)
@@ -366,21 +363,15 @@ class ConfigError(Exception):
 
 @dataclass(frozen=True)
 class RinthelConfig:
+    instance: Instance
     llama: LlamaConfig
     moe: MoeConfig
     understory: UnderstoryConfig
     pithagoras: PithagorasConfig
     install: InstallConfig
-
-    def apply_env(self) -> None:
-        """Aplica llama.env al entorno del proceso y valida la config
-        (llamar una vez al arrancar). Levanta ConfigError si algo rompe
-        seguro (puertos duplicados/fuera de rango, numéricos inválidos);
-        imprime a stderr los warnings de paths que todavía no existen."""
-        os.environ.update(self.llama.env)
-        self.llama.log.parent.mkdir(parents=True, exist_ok=True)
-        for warning in self.validate():
-            print(f"[rinthel] aviso: {warning}", file=sys.stderr)
+    secrets: Secrets = Secrets("", "")
+    # Las variables legacy presentes al construir el cfg (shell o ``.env``).
+    legacy_env: tuple[str, ...] = ()
 
     def validate(self) -> list[str]:
         """Devuelve warnings de paths que no existen todavía (no bloquean:
@@ -425,7 +416,7 @@ class RinthelConfig:
                 path = getattr(sub, f.attr)
                 if not path.exists():
                     warnings.append(f"{f.env}={path} no existe todavía")
-        warnings.extend(_legacy_env_warnings())
+        warnings.extend(f"{name} ya no se usa: {_LEGACY_ENV[name]}" for name in self.legacy_env)
         warnings.extend(self._mtp_warnings())
         return warnings
 
@@ -514,27 +505,42 @@ def with_overrides(cfg: RinthelConfig, overrides: dict[str, str]) -> RinthelConf
     return replace(cfg, **kwargs)
 
 
-def default_config(*, platform: str | None = None) -> RinthelConfig:
+def set_in_shell(env: str) -> bool:
+    """Si ``env`` viene del entorno del proceso: ahí gana sobre el ``.env``
+    (``default_config``), así que reescribir el archivo no la cambia."""
+    return env in os.environ
+
+
+def with_secret(cfg: RinthelConfig, env: str, value: str) -> RinthelConfig:
+    """``cfg`` con el secreto ``env`` (una de ``SECRET_ENVS``) reemplazado."""
+    (attr,) = [a for a, name in SECRET_ENVS.items() if name == env]
+    return replace(cfg, secrets=replace(cfg.secrets, **{attr: value}))
+
+
+def default_config(instance: Instance | None = None, *, platform: str | None = None) -> RinthelConfig:
+    """Config construida desde el ``.env`` de ``instance`` (default:
+    ``Instance.discover()``), leído del archivo en cada llamada — sin
+    ``load_dotenv`` al importar. Las ``RINTHEL_*`` del shell ganan.
+    ``platform`` (``os.name`` por defecto) elige el Validated profile."""
+    instance = instance or Instance.discover()
     platform = os.name if platform is None else platform
+    file_env = {k: v for k, v in dotenv_values(instance.env_path).items() if v is not None}
+    env = {**file_env, **os.environ}
+
     llama = _load(
         LlamaConfig,
         LLAMA_FIELDS,
+        env,
+        instance,
         defaults=_WINDOWS_LLAMA_DEFAULTS if platform == "nt" else None,
-        env={
-            "GGML_CUDA_REGISTER_HOST": "1",
-        },
     )
-    moe = _load(MoeConfig, MOE_FIELDS)
-    understory = _load(UnderstoryConfig, UNDERSTORY_FIELDS)
-    pithagoras = _load(PithagorasConfig, PITHAGORAS_FIELDS)
-    install = _load(InstallConfig, INSTALL_FIELDS)
-
     return RinthelConfig(
-        llama=llama, moe=moe,
-        understory=understory, pithagoras=pithagoras, install=install,
+        instance=instance,
+        llama=llama,
+        moe=_load(MoeConfig, MOE_FIELDS, env, instance),
+        understory=_load(UnderstoryConfig, UNDERSTORY_FIELDS, env, instance),
+        pithagoras=_load(PithagorasConfig, PITHAGORAS_FIELDS, env, instance),
+        install=_load(InstallConfig, INSTALL_FIELDS, env, instance),
+        secrets=Secrets(**{attr: _str_env(name, "", env) for attr, name in SECRET_ENVS.items()}),
+        legacy_env=tuple(name for name in _LEGACY_ENV if name in env),
     )
-
-
-# Toggle global de efectos visuales (glow, glitch, ripple, etc.) — apagable
-# para terminales lentos o CI. Leído una vez al importar, como CONFIG.
-EFFECTS_ENABLED = _bool_env("RINTHEL_EFFECTS", True)

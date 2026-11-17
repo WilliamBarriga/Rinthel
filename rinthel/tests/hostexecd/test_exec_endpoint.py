@@ -7,7 +7,7 @@ import json
 import pytest
 from fastapi import HTTPException
 
-from hostexecd import audit, daemon
+from hostexecd import daemon
 
 TOKEN = "test-token"
 
@@ -15,7 +15,7 @@ TOKEN = "test-token"
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("RINTHEL_HOSTEXECD_TOKEN", TOKEN)
-    monkeypatch.setattr(audit, "LOG_PATH", tmp_path / "hostexecd.log")
+    monkeypatch.setenv("RINTHEL_INSTANCE_ROOT", str(tmp_path))
 
 
 def run(payload: dict) -> dict:

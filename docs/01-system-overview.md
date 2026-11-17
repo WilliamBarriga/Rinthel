@@ -78,6 +78,11 @@ closing) if it isn't already up, then launches the Rust client. The client
 opens straight on the menu (glitch-reveal title, no separate splash screen)
 and drives everything through the daemon's HTTP/WS API — see
 [`docs/adr/0001-daemon-protocol-shape.md`](adr/0001-daemon-protocol-shape.md).
+Every route the client calls requires the service secret
+(`X-Rinthel-Service-Secret`, or `?token=` on the `/ws/monitor` handshake):
+`rinthel-boot.sh`/`.ps1` generate `RINTHEL_SERVICE_SECRET` in the root `.env`
+if it is missing and export it to the client. Without it the daemon answers
+401 (the WebSocket closes with 4401).
 
 ```
 MONITOR     -- Services/Docker/GPU/CPU status (live via /ws/monitor)
@@ -85,7 +90,6 @@ BOOT        -- Bring everything up               (POST /boot)
 RELOAD      -- Full shutdown + restart            (POST /reload)
 TERMINATE   -- Full shutdown                      (POST /terminate)
 CONFIGURAR  -- Active services and parameters     (GET/POST /config)
-CAPTURE     -- Capture MoE profile (simulated, no-op)     (POST /capture)
 LOGS        -- Watch llama-server live
 INSTALL     -- Initial setup (CUDA/model/Pithagoras/Understory) (POST /install)
 SALIR       -- exit prompt ("¿apagar también el daemon?") → farewell
@@ -97,7 +101,7 @@ Rinthel Client (Ratatui)
        ▼
 Rinthel Daemon (FastAPI, persistent — pidfile, survives client exit)
        │
-       ├── INSTALL    ──▶ 6 phases: preflight → build → pithagoras → understory
+       ├── INSTALL    ──▶ preflight → llama.cpp + model → instance secrets → pithagoras → understory
        ├── BOOT        ──▶ docker → llama-server → understory → pithagoras
        ├── RELOAD      ──▶ 3 tandas (con phase_batch por WS): shutdown → boot → rebuild
        └── TERMINATE   ──▶ full shutdown (sigue con lo que queda si una unidad falla)
@@ -119,30 +123,37 @@ docker-compose.yaml           # root — include: understory/ + pithagoras/
 understory/                  # git subtree (WilliamBarriga/understory fork)
 pithagoras/                  # git subtree (WilliamBarriga/pithagoras fork)
 rinthel_tui/                 # daemon (FastAPI) — headless, no UI code
-├── daemon.py                 # entry point — routes, cfg owner, /ws/monitor
-├── phase_bridge.py            # PhaseReport -> ServiceOutcome + phase_status/phase_log
-├── config_routes.py           # GET/POST /config shape + validate-before-write
-├── config.py                  # RinthelConfig — defaults + .env loading
+├── daemon.py                 # entry point — builds the app and serves it
+├── api/                      # HTTP layer, one package per area (config, ws, lifecycle, secrets)
+│   ├── __init__.py            # create_app: the ordered list of areas
+│   ├── adapters.py            # the only place that picks real adapters
+│   └── access.py              # access policy per route (public, service)
+├── config.py                  # RinthelConfig — defaults + .env of the Instance
+├── config_edits.py            # GET/POST /config shape + validate-before-write, secret rotation
+├── instance.py                # Instance layout and secrets (also a CLI for the boot scripts)
 ├── env_file.py                 # writes .env overrides
 ├── theme/
 │   └── palette.py               # canonical palette — single source of truth
-├── monitoring/
-│   ├── resources.py              # GPU/CPU/RAM sampling
-│   └── services.py                # docker compose ps
+├── monitoring/                # Telemetry streams of /ws/monitor
+│   ├── domain/                  # Monitor, envelope, one port per source
+│   └── adapters/                # nvidia-smi, psutil, docker compose ps, log tail, HTTP readiness, in-memory
 └── lifecycle/
-    ├── install.py                 # INSTALL phases
-    ├── phases.py                   # BOOT/DOWN/RELOAD phases
-    ├── managed_service.py           # LocalProcessService/DockerComposeService
-    ├── services.py                   # argv builders per service
-    ├── specs.py                       # declarative phase lists
-    └── runner.py                       # async runner with per-phase progress
+    ├── domain/                  # Host (8 ports), types, phases (managed service, docker, data dir)
+    ├── adapters/                # real adapter per Host port
+    ├── composition.py           # real_host(): picks the adapters
+    ├── install.py / install_tasks.py  # INSTALL phases and their tasks
+    ├── managed_service.py       # LocalProcessService/DockerComposeService definitions
+    ├── services.py              # argv builders per service
+    ├── specs.py                 # Lifecycle plans (batches, units, failure policy)
+    ├── executor.py              # runs a plan, broadcasts phase_status/phase_log/phase_batch
+    └── commands.py              # Lifecycle: boot/terminate/reload/install
 
 rinthel-client/               # TUI (Ratatui) — the only UI, talks HTTP+WS to the daemon
 ├── src/
 │   ├── main.rs                 # entry point
 │   ├── app.rs                    # event loop, daemon base URL, effect state
 │   ├── protocol.rs                 # serde structs mirroring the daemon's JSON
-│   ├── screens/                     # menu, monitor, logs, capture, phase_runner,
+│   ├── screens/                     # menu, monitor, logs, phase_runner,
 │   │                                  settings, exit_prompt, farewell
 │   ├── widgets/                      # checklist, log_tail
 │   └── effects/                       # flicker (glitch reveal), tagline, transitions

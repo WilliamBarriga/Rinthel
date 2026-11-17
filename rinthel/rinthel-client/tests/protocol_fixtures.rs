@@ -79,13 +79,6 @@ fn terminate_result_shape() {
 }
 
 #[test]
-fn capture_result_shape() {
-    let result: CommandResult =
-        serde_json::from_str(&fixture("capture_result.json")).expect("capture_result.json no matchea CommandResult");
-    assert!(!result.results.is_empty());
-}
-
-#[test]
 fn config_payload_shape() {
     let payload: ConfigPayload = serde_json::from_str(&fixture("config_payload.json"))
         .expect("config_payload.json no matchea ConfigPayload");

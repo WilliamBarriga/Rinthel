@@ -1,21 +1,19 @@
 """Instancias concretas de ``LocalProcessService``/``DockerComposeService``
 — un lugar único para agregar un servicio nuevo (llama-server local, o
-Understory/Pithagoras vía docker compose) sin tocar ``managed_service.py``
-ni triplicar fases en ``phases.py`` como antes de este refactor.
+Understory y el portal vía docker compose) sin tocar ``managed_service.py``.
 """
 
-import os
 from pathlib import Path
 
-from rinthel_tui.config import REPO_ROOT, RinthelConfig
+from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle.managed_service import DockerComposeService, LocalProcessService
 
-
-# ── argv builders — idénticos a los que armaba cada phase_spawn_* antes
-# de este refactor, solo movidos acá ─────────────────────────────────────
+# ── argv builders ─────────────────────────────────────────────────────────
 
 
 def _llama_argv(cfg: RinthelConfig) -> list[str]:
+    """El argv del Validated profile: cualquier cambio de orden o de flags
+    pide un benchmark nuevo (``docs/05-windows-validation.md``)."""
     argv = [
         str(cfg.llama.bin), "-m", str(cfg.llama.model),
         "-ngl", cfg.llama.ngl,
@@ -51,11 +49,11 @@ def _llama_argv(cfg: RinthelConfig) -> list[str]:
         "--cache-type-v", cfg.llama.cache_type_v,
     ]
     # --mmproj se omite con MTP: llama.cpp no lo soporta junto a spec
-    # decoding (handoff/03 de test-tarkAIrk). El path y su toggle quedan
-    # guardados igual — solo se saltea el flag en este arranque.
+    # decoding. El path y su toggle quedan guardados igual — solo se saltea
+    # el flag en este arranque.
     if cfg.llama.mmproj_enabled and cfg.llama.mmproj and not cfg.llama.mtp_enabled:
-        # str (no Path) en LlamaConfig -- expandimos "~" a mano acá, ya que
-        # el argv va directo a Popen sin pasar por un shell.
+        # str (no Path) en LlamaConfig: expandimos "~" acá, el argv va
+        # directo al proceso sin pasar por un shell.
         argv += ["--mmproj", str(Path(cfg.llama.mmproj).expanduser())]
     if cfg.moe.cache_mib > 0:
         argv += ["--moe-cache-mib", str(cfg.moe.cache_mib)]
@@ -67,7 +65,7 @@ def _llama_argv(cfg: RinthelConfig) -> list[str]:
 # menu_label/wait_label/kill_label alimentan directamente los labels de
 # PhaseSpec en specs.py — agregar un servicio nuevo acá (más su entrada en
 # LOCAL_SERVICES/DOCKER_SERVICES más abajo) alcanza para que aparezca en
-# BOOT/DOWN/RELOAD sin tocar specs.py.
+# BOOT/TERMINATE/RELOAD sin tocar specs.py.
 
 LLAMA_SERVICE = LocalProcessService(
     display_name="llama-server",
@@ -86,48 +84,41 @@ LLAMA_SERVICE = LocalProcessService(
 
 # ── DockerComposeService ──────────────────────────────────────────────
 #
-# Fase 2 de plataforma-corp: los 2 comparten un único docker-compose.yaml en
-# la raíz del repo (`include:` de understory/pithagoras — ver
-# docker-compose.yaml), así que los 2 ``dir_of`` apuntan a ``REPO_ROOT``
-# en Linux (no a ``cfg.understory.dir``/``cfg.pithagoras.dir``, que describen
-# dónde vive el *código fuente* del subtree, usado por install.py — un
-# concepto distinto de "desde dónde corro docker compose"). Windows usa
-# los stacks standalone que INSTALL adapta bajo Rinthel-data.
-
-def _compose_directory(standalone_dir: Path) -> Path:
-    # Windows INSTALL prepares standalone stacks under Rinthel-data.
-    # Linux uses the shared monorepo Compose project.
-    return standalone_dir if os.name == "nt" else REPO_ROOT
-
+# Comparten un único docker-compose.yaml en la raíz de la Instance
+# (`include:` de understory/ y del portal), así que todos los ``dir_of``
+# apuntan a ``cfg.instance.root`` — no a ``cfg.understory.dir``/
+# ``cfg.pithagoras.dir``, que describen dónde vive el *código fuente* del
+# subtree (lo usa install.py), un concepto distinto de "desde dónde corro
+# docker compose".
 
 UNDERSTORY_SERVICE = DockerComposeService(
     display_name="Understory",
     menu_label="UNDERSTORY  --  MCP MEMORY LAYER",
     wait_label="UNDERSTORY",
     kill_label="UNDERSTORY  --  MCP MEMORY LAYER",
-    dir_of=lambda cfg: _compose_directory(cfg.understory.dir),
+    dir_of=lambda cfg: cfg.instance.root,
     port_of=lambda cfg: cfg.understory.port,
     enabled_of=lambda cfg: cfg.understory.enabled,
     compose_service_name="understory",
     ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.understory.port}/",
 )
 
+# El portal heredado, hasta que Deck lo reemplace.
 PITHAGORAS_SERVICE = DockerComposeService(
     display_name="Pithagoras",
     menu_label="PITHAGORAS  --  PI TASK PORTAL",
     wait_label="PITHAGORAS",
     kill_label="PITHAGORAS  --  PI TASK PORTAL",
-    dir_of=lambda cfg: _compose_directory(cfg.pithagoras.dir),
+    dir_of=lambda cfg: cfg.instance.root,
     port_of=lambda cfg: cfg.pithagoras.port,
     enabled_of=lambda cfg: cfg.pithagoras.enabled,
     compose_service_name="portal",
     extra_env_of=lambda cfg: {"PORT": str(cfg.pithagoras.port)},
-    build_args=("build", "--no-cache", "portal"),
+    build_args=("build", "portal"),
     ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.pithagoras.port}/",
 )
 
-# Orden de aparición en BOOT/DOWN/RELOAD — agregar o sacar un servicio de
-# estas listas alcanza para que las 4 secuencias lo reflejen (specs.py no
-# tiene ninguna referencia hardcodeada a un servicio puntual).
+# Orden de aparición en BOOT/TERMINATE/RELOAD — agregar o sacar un servicio de
+# estas listas alcanza para que los planes lo reflejen.
 LOCAL_SERVICES: list[LocalProcessService] = [LLAMA_SERVICE]
 DOCKER_SERVICES: list[DockerComposeService] = [UNDERSTORY_SERVICE, PITHAGORAS_SERVICE]

@@ -1,7 +1,7 @@
 [project]
 name = "rinthel-tui"
 version = "0.1.0"
-description = "TUI para gestionar el ciclo de vida de llama-server + Understory + Pithagoras"
+description = "TUI para gestionar el ciclo de vida de llama-server + Understory + el portal"
 requires-python = ">=3.13"
 dependencies = [
     "psutil>=5.9", "python-dotenv>=1.0",
@@ -34,3 +34,5 @@ rinthel_tui = ["install/templates/*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Los tests se importan entre sí (`tests.lifecycle.fakes`).
+pythonpath = ["."]

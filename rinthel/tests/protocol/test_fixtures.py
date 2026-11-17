@@ -1,33 +1,24 @@
-"""Fixture dorada: un JSON por forma de mensaje del protocolo daemon<->
-cliente, fuente única compartida con los tests Rust
+"""Fixture dorada de los envelopes del WebSocket: un JSON por forma de
+mensaje del protocolo daemon<->cliente, fuente única compartida con los tests Rust
 (``rinthel-client/tests/protocol_fixtures.rs``) — ver
 ``../protocol_fixtures/``. Cierra el riesgo de drift que ADR 0001 aceptó al
 descartar codegen: si el daemon cambia una forma sin tocar el fixture, este
-test y su espejo en Rust divergen visiblemente en vez de en silencio.
+test y su espejo en Rust divergen visiblemente en vez de en silencio. Las fixtures de rutas HTTP se
+validan contra la respuesta real en
+``tests/daemon/test_protocol_fixtures_http.py``.
 """
 
 import json
 from pathlib import Path
 
-from rinthel_tui.monitoring.resources import CpuRamSample, GpuSample
-from rinthel_tui.monitoring.services import DockerContainer
+from rinthel_tui.monitoring.domain.envelope import MessageType
+from rinthel_tui.monitoring.domain.types import CpuRamSample, DockerContainer, GpuSample
 
 FIXTURES = Path(__file__).parent.parent / "protocol_fixtures"
 
 
 def _load(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text())
-
-
-def test_theme_shape():
-    theme = _load("theme.json")
-    assert set(theme["canonical"]) == {
-        "fg", "accent", "electric", "warn", "success", "hot",
-        "caution", "glow", "dim", "bg",
-    }
-    assert isinstance(theme["extended"], dict)
-    assert isinstance(theme["frame_chars"], list)
-    assert all(isinstance(c, str) for c in theme["frame_chars"])
 
 
 def test_docker_status_shape():
@@ -60,45 +51,29 @@ def test_log_line_shape():
 def test_llama_status_shape():
     envelope = _load("llama_status.json")
     assert envelope["type"] == "llama_status"
+    assert envelope["data"].keys() == {"ready"}
     assert isinstance(envelope["data"]["ready"], bool)
 
 
-def _assert_command_result_shape(result: dict) -> None:
-    assert result["results"]
-    for outcome in result["results"]:
-        assert outcome.keys() == {"service", "ok", "message"}
-        assert isinstance(outcome["service"], str)
-        assert isinstance(outcome["ok"], bool)
-        assert isinstance(outcome["message"], str)
+def test_phase_status_shape():
+    envelope = _load("phase_status.json")
+    assert envelope["type"] == MessageType.PHASE_STATUS
+    assert envelope["data"].keys() == {"label", "status"}
+    assert envelope["data"]["status"] in {"running", "done", "error"}
 
 
-def test_boot_result_shape():
-    _assert_command_result_shape(_load("boot_result.json"))
+def test_phase_log_shape():
+    envelope = _load("phase_log.json")
+    assert envelope["type"] == MessageType.PHASE_LOG
+    assert envelope["data"].keys() == {"kind", "message"}
+    assert envelope["data"]["kind"] in {"info", "success", "warn", "error"}
 
 
-def test_terminate_result_shape():
-    _assert_command_result_shape(_load("terminate_result.json"))
+def test_phase_batch_shape():
+    envelope = _load("phase_batch.json")
+    assert envelope["type"] == MessageType.PHASE_BATCH
+    assert envelope["data"]["batch"] in {"boot", "rebuild"}
 
 
-def test_capture_result_shape():
-    _assert_command_result_shape(_load("capture_result.json"))
-
-
-def test_config_payload_shape():
-    payload = _load("config_payload.json")
-    assert payload["services"]
-    by_attr = {s["attr"]: s for s in payload["services"]}
-    # moe: sin enabled/enabled_env (no es un LocalProcessService/DockerComposeService).
-    assert by_attr["moe"]["enabled"] is None
-    assert by_attr["moe"]["enabled_env"] is None
-    for svc in payload["services"]:
-        for f in svc["fields"]:
-            assert f.keys() == {"attr", "env", "kind", "group", "value"}
-            assert f["kind"] in {"bool", "int", "float", "str", "path"}
-            assert isinstance(f["value"], str)  # siempre stringificado, ver config.stringify
-
-
-def test_config_save_result_shape():
-    result = _load("config_save_result.json")
-    assert result["ok"] is False
-    assert result["errors"]
+def test_every_message_type_has_a_fixture():
+    assert {_load(f"{t}.json")["type"] for t in MessageType} == set(MessageType)

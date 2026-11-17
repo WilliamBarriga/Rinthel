@@ -60,8 +60,32 @@ pub fn daemon_base() -> String {
     format!("http://127.0.0.1:{}", daemon_port())
 }
 
+/// El secreto de servicio que exige el daemon en cada ruta de la TUI
+/// (`X-Rinthel-Service-Secret`): `rinthel-boot.sh`/`.ps1` lo exporta como
+/// `RINTHEL_SERVICE_SECRET` antes de lanzar este binario. Vacío si falta: el
+/// daemon contesta 401 y el error se ve en la barra de estado.
+fn service_secret() -> &'static str {
+    static SECRET: OnceLock<String> = OnceLock::new();
+    SECRET.get_or_init(|| std::env::var("RINTHEL_SERVICE_SECRET").unwrap_or_default())
+}
+
+/// Cliente HTTP con el secreto de servicio en cada request — todo pedido al
+/// daemon sale por acá.
+pub fn http() -> reqwest::Client {
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Ok(value) = reqwest::header::HeaderValue::from_str(service_secret()) {
+        headers.insert("x-rinthel-service-secret", value);
+    }
+    reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .expect("cliente HTTP del daemon")
+}
+
+/// Un handshake WebSocket no lleva headers custom: el secreto viaja en
+/// `?token=` (el daemon lo compara igual que el header).
 fn ws_url() -> String {
-    format!("ws://127.0.0.1:{}/ws/monitor", daemon_port())
+    format!("ws://127.0.0.1:{}/ws/monitor?token={}", daemon_port(), service_secret())
 }
 const HIST_LEN: usize = 60;
 /// Columnas por pulsación de `Left`/`Right` sobre el log_tail.
@@ -86,8 +110,7 @@ pub enum AppEvent {
     PhaseBatch(String),
     /// `llama_status`: estado parado, no un evento de corrida.
     LlamaStatus(bool),
-    /// `GET /config` resuelto — disparado al entrar a `ScreenId::Settings`,
-    /// mismo trigger-on-entry que `MenuAction::Capture`.
+    /// `GET /config` resuelto — disparado al entrar a `ScreenId::Settings`.
     ConfigLoaded(ConfigPayload),
     ConfigLoadFailed(String),
     /// `POST /config` resuelto con `ok: true`.
@@ -114,8 +137,6 @@ pub enum EffectFollowUp {
     /// SignalNoise antes de BOOT/RELOAD/TERMINATE/INSTALL — dispara el POST
     /// recién cuando termina.
     StartPhaseRun { name: &'static str, path: &'static str, title: &'static str },
-    /// SignalNoise antes de CAPTURE.
-    StartCapture,
     /// Cierre de BOOT/TERMINATE/RELOAD/INSTALL exitosos: banner al log +
     /// farewell si corresponde (TERMINATE) — recién acá se libera
     /// `command_in_flight`, así que Esc queda bloqueado hasta este punto.
@@ -481,11 +502,6 @@ impl App {
         match std::mem::replace(&mut self.effect_followup, EffectFollowUp::None) {
             EffectFollowUp::None => {}
             EffectFollowUp::StartPhaseRun { name, path, title } => self.start_phase_run(name, path, title, tx),
-            EffectFollowUp::StartCapture => {
-                self.screen = ScreenId::Capture;
-                self.command_in_flight = Some("capture");
-                tokio::spawn(run_command("capture", "/capture", tx.clone()));
-            }
             EffectFollowUp::FinishClosing { banner, show_farewell } => {
                 self.phase_log.push_back(("success".to_string(), format!("◈ {banner}")));
                 if show_farewell {
@@ -526,7 +542,6 @@ impl App {
                 path: "/terminate",
                 title: "SHUTDOWN SEQUENCE",
             }),
-            MenuAction::Capture => self.begin_pre_transition(EffectFollowUp::StartCapture),
             MenuAction::Install => self.begin_pre_transition(EffectFollowUp::StartPhaseRun {
                 name: "install",
                 path: "/install",
@@ -687,11 +702,8 @@ impl App {
                                 (ScreenId::Logs | ScreenId::Monitor, KeyCode::End) => {
                                     self.scroll_log_x(i32::MAX);
                                 }
-                                // Capture/PhaseRunner bloquean "volver" hasta
-                                // terminar — acá eso es "no hay POST en vuelo".
-                                (ScreenId::Capture, KeyCode::Esc) if screens::capture::done(&self) => {
-                                    self.screen = ScreenId::Menu;
-                                }
+                                // PhaseRunner bloquea "volver" hasta terminar —
+                                // acá eso es "no hay POST en vuelo".
                                 (ScreenId::PhaseRunner, KeyCode::Esc) if screens::phase_runner::done(&self) => {
                                     self.screen = ScreenId::Menu;
                                 }
@@ -776,7 +788,7 @@ async fn ws_task(tx: mpsc::UnboundedSender<AppEvent>) {
 
 async fn run_command(name: &'static str, path: &str, tx: mpsc::UnboundedSender<AppEvent>) {
     let url = format!("{}{path}", daemon_base());
-    match reqwest::Client::new().post(&url).send().await {
+    match http().post(&url).send().await {
         Ok(resp) => match resp.json::<CommandResult>().await {
             Ok(result) => {
                 let _ = tx.send(AppEvent::CommandDone(name, result));
@@ -791,10 +803,9 @@ async fn run_command(name: &'static str, path: &str, tx: mpsc::UnboundedSender<A
     }
 }
 
-/// `GET /config` — disparado al entrar a `ScreenId::Settings`, mismo
-/// trigger-on-entry que `run_command("capture", ...)`.
+/// `GET /config` — disparado al entrar a `ScreenId::Settings`.
 async fn fetch_config(tx: mpsc::UnboundedSender<AppEvent>) {
-    let ev = match reqwest::get(format!("{}/config", daemon_base())).await {
+    let ev = match http().get(format!("{}/config", daemon_base())).send().await {
         Ok(resp) => match resp.json::<ConfigPayload>().await {
             Ok(payload) => AppEvent::ConfigLoaded(payload),
             Err(e) => AppEvent::ConfigLoadFailed(e.to_string()),
@@ -810,7 +821,7 @@ async fn fetch_config(tx: mpsc::UnboundedSender<AppEvent>) {
 /// terminan ambas en `ConfigSaveFailed`, mostradas igual (líneas de error).
 pub(crate) async fn save_config(overrides: HashMap<String, String>, tx: mpsc::UnboundedSender<AppEvent>) {
     let body = serde_json::json!({ "overrides": overrides });
-    let ev = match reqwest::Client::new().post(format!("{}/config", daemon_base())).json(&body).send().await {
+    let ev = match http().post(format!("{}/config", daemon_base())).json(&body).send().await {
         Ok(resp) => match resp.json::<ConfigSaveResult>().await {
             Ok(result) if result.ok => AppEvent::ConfigSaved { written: result.written, warnings: result.warnings },
             Ok(result) => AppEvent::ConfigSaveFailed(result.errors),

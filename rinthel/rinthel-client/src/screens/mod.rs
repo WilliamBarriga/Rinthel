@@ -2,7 +2,6 @@
 //! para que agregar una screen/opción de menú no toque el loop principal en
 //! `app.rs`.
 
-pub mod capture;
 pub mod exit_prompt;
 pub mod farewell;
 pub mod logs;
@@ -24,7 +23,6 @@ pub enum ScreenId {
     Menu,
     Monitor,
     Logs,
-    Capture,
     /// Checklist + log en vivo de BOOT/TERMINATE/RELOAD/INSTALL.
     PhaseRunner,
     /// "¿Apagar también el daemon?" — antes de `Farewell` en el camino
@@ -46,15 +44,12 @@ pub enum MenuAction {
     /// `specs.reload_units` corren del lado daemon; el cliente no distingue
     /// reload de un boot/terminate más largo).
     Reload,
-    /// Distinta de `Navigate`: entrar a Capture dispara `POST /capture` de
-    /// una — no es solo cambiar de screen.
-    Capture,
     /// Reusa `ScreenId::PhaseRunner` tal cual, mismo argumento que `Reload`:
     /// con `specs.install_units` orquestando todo del lado daemon, no queda
     /// comportamiento propio para una screen de Install en el cliente.
     Install,
-    /// Distinta de `Navigate`: entrar dispara `GET /config` de una, mismo
-    /// argumento que `Capture` con `POST /capture`.
+    /// Distinta de `Navigate`: entrar dispara `GET /config` de una — no es
+    /// solo cambiar de screen.
     Settings,
     Quit,
 }
@@ -95,7 +90,6 @@ pub const MENU_ENTRIES: &[MenuItem] = &[
     MenuItem::Entry(MenuEntry { label: "RELOAD", action: MenuAction::Reload }),
     MenuItem::Entry(MenuEntry { label: "TERMINATE", action: MenuAction::Terminate }),
     MenuItem::Entry(MenuEntry { label: "CONFIGURAR", action: MenuAction::Settings }),
-    MenuItem::Entry(MenuEntry { label: "CAPTURE", action: MenuAction::Capture }),
     MenuItem::Entry(MenuEntry { label: "LOGS", action: MenuAction::Navigate(ScreenId::Logs) }),
     MenuItem::Entry(MenuEntry { label: "INSTALL", action: MenuAction::Install }),
     MenuItem::Entry(MenuEntry { label: "SALIR", action: MenuAction::Quit }),
@@ -161,7 +155,6 @@ pub fn draw(id: ScreenId, f: &mut Frame, app: &App) {
         ScreenId::Menu => menu::draw(f, app),
         ScreenId::Monitor => monitor::draw(f, app),
         ScreenId::Logs => logs::draw(f, app),
-        ScreenId::Capture => capture::draw(f, app),
         ScreenId::PhaseRunner => phase_runner::draw(f, app),
         ScreenId::ExitPrompt => {
             let remaining = app.exit_prompt_timer.as_ref().map(|t| t.remaining_secs()).unwrap_or(0);
@@ -209,7 +202,6 @@ fn status_line(app: &App) -> Line<'static> {
             ScreenId::Menu => " ↑↓=mover  Enter=elegir  q=salir ",
             ScreenId::Monitor => " Esc=menu  q=salir  ←→=scroll log ",
             ScreenId::Logs => " q/Esc=volver  ←→=scroll  Home/End ",
-            ScreenId::Capture => " Esc=volver (al terminar) ",
             ScreenId::PhaseRunner => " Esc=volver (al terminar) ",
             ScreenId::ExitPrompt => " Y/n=elegir  q=salir sin apagar ",
             ScreenId::Farewell => " cerrando sesión… ",

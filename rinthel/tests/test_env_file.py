@@ -1,7 +1,5 @@
 """``update_env_file`` — helper genérico para parchear un .env preservando
-comentarios y valores no tocados (Fase 5 del plan de servicios
-configurables). Migrado de los tests de ``install._write_env_from_example``,
-que generalizó."""
+comentarios y valores no tocados."""
 
 import os
 import stat
@@ -63,10 +61,9 @@ def test_update_env_file_starts_empty_without_seed_when_path_missing(tmp_path):
     assert target.read_text() == "RINTHEL_TTS_ENABLED=false\n"
 
 
-# ── escritura atómica (punto #4 del reporte de robustez) ─────────────────
+# ── escritura atómica ─────────────────
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Windows no conserva bits de modo POSIX")
 def test_update_env_file_preserves_the_original_file_mode(tmp_path):
     target = tmp_path / ".env"
     target.write_text("UNDERSTORY_TOKEN=abc123\n")
@@ -78,22 +75,18 @@ def test_update_env_file_preserves_the_original_file_mode(tmp_path):
     assert "UNDERSTORY_TOKEN=def456" in target.read_text()
 
 
-def test_update_env_file_leaves_original_untouched_and_cleans_up_tmp_on_write_failure(tmp_path, monkeypatch):
+@pytest.mark.skipif(os.geteuid() == 0, reason="root escribe en un directorio de solo lectura")
+def test_update_env_file_leaves_original_untouched_and_cleans_up_tmp_on_write_failure(tmp_path):
     target = tmp_path / ".env"
     original_content = "PORTAL_PASSWORD=changeme\n"
     target.write_text(original_content)
 
-    real_replace = os.replace
-
-    def _boom(*args, **kwargs):
-        raise OSError("disco lleno (simulado)")
-
-    monkeypatch.setattr(os, "replace", _boom)
+    tmp_path.chmod(0o500)  # el directorio no deja crear el temporal: un fallo real del filesystem
     try:
         with pytest.raises(OSError):
             update_env_file(target, overrides={"PORTAL_PASSWORD": "s3cr3t"})
     finally:
-        monkeypatch.setattr(os, "replace", real_replace)
+        tmp_path.chmod(0o700)
 
     assert target.read_text() == original_content
     leftover = [p for p in tmp_path.iterdir() if p.name.startswith(".env.") and p.name.endswith(".tmp")]

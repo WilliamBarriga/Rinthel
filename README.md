@@ -149,7 +149,6 @@ BOOT        -- Bring everything up
 RELOAD      -- Full shutdown + restart
 TERMINATE   -- Full shutdown
 CONFIGURAR  -- Active services and parameters
-CAPTURE     -- Capture MoE profile (simulated, no-op)
 LOGS        -- Watch llama-server live
 INSTALL     -- Initial setup (CUDA/model/Pithagoras/Understory)
 SALIR       -- Exit (prompts whether to also stop the daemon)

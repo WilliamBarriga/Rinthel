@@ -128,6 +128,13 @@ build_client
 # Provision before either daemon reads .env; reruns preserve existing secrets.
 "$PYTHON" -m rinthel_tui.install.host_exec "$ROOT" "$ROOT/pithagoras"
 
+# Mismo secreto que valida la access policy `service` del daemon: la TUI lo
+# manda en cada request (`X-Rinthel-Service-Secret`). Se genera acá si falta,
+# antes de arrancar el daemon — sin él ni `POST /install` pasaría en una
+# Instance nueva. `ensure-secret` es idempotente y deja el `.env` en 600.
+"$PYTHON" -m rinthel_tui.instance --root "$ROOT" ensure-secret RINTHEL_SERVICE_SECRET
+SERVICE_SECRET="$("$PYTHON" -m rinthel_tui.instance --root "$ROOT" get RINTHEL_SERVICE_SECRET)"
+
 PORT="$(port_from_env RINTHEL_DAEMON_PORT 8765)"
 pid="$(running_pid "$PIDFILE")"
 
@@ -140,7 +147,7 @@ elif port_in_use "$PORT"; then
 else
     echo "[boot] daemon no está corriendo — autostarteando en puerto $PORT..."
     mkdir -p "$(dirname "$DAEMON_LOG")"
-    RINTHEL_DAEMON_PORT="$PORT" nohup "$PYTHON" -m rinthel_tui.daemon >>"$DAEMON_LOG" 2>&1 &
+    RINTHEL_DAEMON_PORT="$PORT" PYTHONUNBUFFERED=1 nohup "$PYTHON" -m rinthel_tui.daemon >>"$DAEMON_LOG" 2>&1 &
     echo $! >"$PIDFILE"
     disown
     tries=0
@@ -185,4 +192,4 @@ else
     echo "[boot] hostexecd arriba (PID $(cat "$HOSTEXECD_PIDFILE"))."
 fi
 
-exec "$BINARY" --port "$PORT" "$@"
+RINTHEL_SERVICE_SECRET="$SERVICE_SECRET" exec "$BINARY" --port "$PORT" "$@"

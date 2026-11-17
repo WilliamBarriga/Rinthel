@@ -7,6 +7,9 @@ Puro: sin subprocess/red, solo un ``RinthelConfig`` (fixture ``cfg`` de
 
 import dataclasses
 
+from rinthel_tui.config import default_config
+from rinthel_tui.instance import Instance
+from rinthel_tui.lifecycle import services
 from rinthel_tui.lifecycle.services import _llama_argv
 
 
@@ -59,3 +62,53 @@ def test_argv_has_no_fork_only_flags(cfg):
     argv = _llama_argv(cfg)
     for flag in ("--moe-cache-profile", "--moe-cache-slots", "--no-sched-async-cpu"):
         assert flag not in argv
+
+
+# ── el argv completo del Validated profile ─────────────────────────────
+# Cambiar un flag, un valor o el orden pide un benchmark nuevo: estos dos
+# fijan el argv que arranca hoy cada Platform con un ``.env`` vacío.
+
+_PROFILE_ENV = (
+    "RINTHEL_CONTEXT_WINDOW", "RINTHEL_N_CPU_MOE", "RINTHEL_UBATCH_SIZE", "RINTHEL_BATCH_SIZE",
+    "RINTHEL_SPEC_TYPE", "RINTHEL_CACHE_TYPE_K", "RINTHEL_CACHE_TYPE_V", "RINTHEL_MTP_ENABLED",
+    "RINTHEL_LLAMA_MODEL_PATH", "RINTHEL_LLAMA_PORT", "RINTHEL_MOE_CACHE_MIB", "RINTHEL_LLAMA_MMPROJ_PATH",
+)
+
+
+def _argv_tail(platform, tmp_path, monkeypatch):
+    for name in _PROFILE_ENV:
+        monkeypatch.delenv(name, raising=False)
+    argv = _llama_argv(default_config(Instance(tmp_path), platform=platform))
+    assert argv[1] == "-m"
+    return argv[3:]
+
+
+def test_the_linux_argv_is_the_validated_one(tmp_path, monkeypatch):
+    assert _argv_tail("posix", tmp_path, monkeypatch) == [
+        "-ngl", "all", "-c", "112000", "-fa", "on", "-fit", "off",
+        "--host", "0.0.0.0", "--port", "8080",
+        "--n-cpu-moe", "60", "--threads-batch", "7", "--threads", "8",
+        "--ubatch-size", "512", "--batch-size", "512", "--parallel", "1",
+        "--temp", "0.7", "--top-p", "0.8", "--top-k", "20", "--min-p", "0.1", "--repeat-penalty", "1.05",
+        "--cache-reuse", "256", "--cache-ram", "-1", "--load-mode", "mlock",
+        "--spec-type", "none", "--spec-draft-n-max", "2",
+        "--cache-type-k", "f16", "--cache-type-v", "f16",
+    ]
+
+
+def test_the_windows_argv_is_the_validated_one(tmp_path, monkeypatch):
+    assert _argv_tail("nt", tmp_path, monkeypatch) == [
+        "-ngl", "all", "-c", "65536", "-fa", "on", "-fit", "off",
+        "--host", "0.0.0.0", "--port", "8080",
+        "--n-cpu-moe", "34", "--threads-batch", "7", "--threads", "8",
+        "--ubatch-size", "2048", "--batch-size", "2048", "--parallel", "1",
+        "--temp", "0.7", "--top-p", "0.8", "--top-k", "20", "--min-p", "0.1", "--repeat-penalty", "1.05",
+        "--cache-reuse", "256", "--cache-ram", "-1", "--load-mode", "mlock",
+        "--spec-type", "none", "--spec-draft-n-max", "2",
+        "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
+    ]
+
+
+def test_compose_services_run_from_the_instance_root(cfg):
+    for service in services.DOCKER_SERVICES:
+        assert service.spec(cfg).stack.directory == cfg.instance.root

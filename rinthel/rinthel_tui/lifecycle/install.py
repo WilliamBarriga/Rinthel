@@ -1,55 +1,235 @@
 """Fases de INSTALL — bootstrap de infra en una máquina nueva: build CUDA de
-llama.cpp, descarga del modelo GGUF, scaffolding de Pithagoras/Understory.
+llama.cpp, descarga del modelo GGUF, scaffolding del portal y Understory,
+secretos de la Instance.
 
-Mismo protocolo que el resto de lifecycle/ (``async def phase_*(cfg, report)
--> None``, ``PhaseError``); reusa ``_run`` (subprocess) de
-``managed_service.py`` y ``phase_check_docker`` de ``phases.py`` por import,
-no duplica lógica. INSTALL **configura**, no bootea — nunca hace ``docker
-compose up``; para eso está ``[1] BOOT`` (``specs.boot_units``). Cada fase
-es idempotente: reruns seguros, nunca pisa algo que ya funciona.
+Mismo protocolo que el resto de lifecycle/ (``async def phase_*(host, report,
+**kwargs) -> None``, ``PhaseError``): comandos por ``Host.runner``, lo que la
+máquina dice por ``Host.host_info`` y la tarea de cada fase (``install_tasks.py``)
+por ``kwargs``. INSTALL **configura**, no bootea — nunca hace ``docker
+compose up``; para eso está ``[1] BOOT`` (``specs.boot_plan``). Cada fase es
+idempotente: reruns seguros, nunca pisa algo que ya funciona.
 """
 
-import asyncio
 import importlib.resources
 import json
-import os
 import secrets
-import shutil
-import subprocess
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from typing import Any
 
-from rinthel_tui.config import REPO_ROOT, RinthelConfig
+from dotenv import dotenv_values
+
+from rinthel_tui.config import RinthelConfig
 from rinthel_tui.env_file import update_env_file
+from rinthel_tui.install import ubuntu
 from rinthel_tui.install.host_exec import prepare_host_exec
-from rinthel_tui.lifecycle.managed_service import _run
-from rinthel_tui.lifecycle.phases import phase_check_docker
-from rinthel_tui.lifecycle.types import PhaseError, PhaseReport
+from rinthel_tui.instance import Instance, RotatableSecret
+from rinthel_tui.lifecycle import install_tasks
+from rinthel_tui.lifecycle.domain.errors import PhaseError
+from rinthel_tui.lifecycle.domain.host import Host
+from rinthel_tui.lifecycle.domain.outcome import PhaseReport, require_ok
+from rinthel_tui.lifecycle.domain.phases.docker import phase_check_docker
+from rinthel_tui.lifecycle.install_tasks import (
+    InstanceSecrets,
+    LlamaCppInstall,
+    ModelDownload,
+    PortalInstall,
+    UnderstoryInstall,
+)
 
-PhaseFn = Callable[[RinthelConfig, PhaseReport], Coroutine[Any, Any, None]]
-
-# Hardcodeados igual que otros detalles de infra que no tiene sentido
-# overridear vía config (mismo criterio que el puerto de llama-server no
-# siendo la branch de git que se clona): la branch es parte de "qué versión
-# de la fuente de verdad clonamos", no un parámetro de usuario.
-_LLAMACPP_BRANCH = "master"
-_PITHAGORAS_BRANCH = "rinthel-pithagoras"
+PhaseFn = Callable[..., Coroutine[Any, Any, None]]
 
 _UNDERSTORY_BUNDLE_DIRS = ("agents", "extensions", "projects", "reference", "users")
 
+_WINDOWS_TOOL_HINTS = {
+    "git": "instala Git for Windows (winget install --id Git.Git -e)",
+    "curl": "actualiza Windows o instala curl y agrégalo a PATH",
+    "cmake": "instala CMake (winget install --id Kitware.CMake -e)",
+}
 
-def _prepare_pithagoras_for_windows(
-    pithagoras_dir: Path,
+
+def _tool_hint(host: Host, name: str) -> str:
+    if host.host_info.platform() == "windows":
+        return _WINDOWS_TOOL_HINTS[name]
+    return f"sudo apt-get install -y {name}"
+
+
+def _require_tool(host: Host, name: str, report: PhaseReport, hint: str) -> str:
+    path = host.host_info.which(name)
+    if path is None:
+        report.error(f"falta '{name}' — {hint}")
+        raise PhaseError(f"{name} not found")
+    report.success(f"{name} encontrado")
+    return path
+
+
+def _require_nvcc(host: Host, report: PhaseReport) -> str:
+    nvcc = host.host_info.find_nvcc()
+    if nvcc is None:
+        report.error("falta nvcc — instalá el CUDA toolkit antes de continuar")
+        raise PhaseError("nvcc not found")
+    return nvcc
+
+
+async def _run_or_fail(
+    host: Host,
     report: PhaseReport,
+    cmd: list[str],
+    what: str,
     *,
-    platform: str = os.name,
+    label: str | None = None,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
 ) -> None:
-    """Adapta el compose Linux del fork a Docker Desktop de forma idempotente."""
-    if platform != "nt":
+    """``what`` es para el ``PhaseError``; ``label`` es lo que lee el admin
+    (por defecto, el programa que falló)."""
+    result = await host.runner.run(cmd, cwd=cwd, env=env)
+    require_ok(report, result, failed=f"{label or Path(cmd[0]).name} falló", error=f"{what} failed at {cmd[:3]}")
+
+
+async def phase_install_preflight(host: Host, report: PhaseReport) -> None:
+    """Detecta lo que hace falta para compilar/correr todo — no instala
+    drivers ni el CUDA toolkit, solo avisa qué falta con un mensaje
+    accionable."""
+    for tool in ("git", "curl", "cmake"):
+        _require_tool(host, tool, report, _tool_hint(host, tool))
+    driver = _require_tool(host, "nvidia-smi", report, "instalá el driver NVIDIA antes de continuar")
+    result = await host.runner.run([driver])
+    require_ok(
+        report, result,
+        failed="nvidia-smi falló — revisá el driver NVIDIA antes de continuar",
+        error="nvidia-smi execution failed — revisá el driver NVIDIA antes de continuar",
+    )
+    nvcc = _require_nvcc(host, report)
+    result = await host.runner.run([nvcc, "--version"])
+    require_ok(
+        report, result,
+        failed="nvcc falló — revisá el CUDA toolkit antes de continuar",
+        error="nvcc execution failed — revisá el CUDA toolkit antes de continuar",
+    )
+    report.success("nvcc operativo")
+    await phase_check_docker(host, report)
+
+
+async def _git_clone(
+    host: Host, report: PhaseReport, url: str, dest: Path, what: str, *, branch: str | None = None
+) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    cmd = ["git", "clone", *(["--branch", branch] if branch else []), url, str(dest)]
+    await _run_or_fail(host, report, cmd, what, label="git clone")
+
+
+async def phase_install_clone_llamacpp(host: Host, report: PhaseReport, *, task: LlamaCppInstall) -> None:
+    if (task.repo_dir / ".git").exists():
+        report.warn(f"{task.repo_dir} ya existe — omito clone")
+        origin = await host.runner.run(["git", "-C", str(task.repo_dir), "remote", "get-url", "origin"])
+        if origin.rc == 0 and "thecodacus/llama.cpp" in origin.output:
+            report.warn(
+                "ese checkout es el fork viejo thecodacus/llama.cpp (rama perf): Rinthel ahora "
+                "usa llama.cpp upstream — cloná ggml-org/llama.cpp en otro directorio, "
+                "compilalo y apuntá RINTHEL_LLAMACPP_REPO_DIR y RINTHEL_LLAMA_BIN ahí"
+            )
+        return
+    await _git_clone(host, report, task.repo_url, task.repo_dir, "llama.cpp clone", branch=task.branch)
+    report.success(f"llama.cpp clonado en {task.repo_dir}")
+
+
+def _llama_server_binary(build_dir: Path) -> Path:
+    candidates = (
+        build_dir / "bin" / "llama-server",
+        build_dir / "bin" / "llama-server.exe",
+        build_dir / "bin" / "Release" / "llama-server.exe",
+    )
+    return next((candidate for candidate in candidates if candidate.exists()), candidates[0])
+
+
+async def phase_install_build_llamacpp(host: Host, report: PhaseReport, *, task: LlamaCppInstall) -> None:
+    build_dir = task.repo_dir / "build-cuda"
+    existing = _llama_server_binary(build_dir)
+    if existing.exists():
+        report.warn(f"{existing} ya existe — omito build")
         return
 
-    compose_path = pithagoras_dir / "docker-compose.yml"
+    nvcc = _require_nvcc(host, report)
+    report.warn("Compilando llama.cpp con CUDA — puede tardar 10-30 minutos")
+    await _run_or_fail(
+        host,
+        report,
+        [
+            "cmake", "-B", str(build_dir),
+            "-DGGML_CUDA=ON",
+            f"-DCMAKE_CUDA_COMPILER={nvcc}",
+            "-DCMAKE_BUILD_TYPE=Release",
+            # native, no el 89 hardcodeado de la máquina original — compila
+            # para la arquitectura real de la GPU de cada máquina.
+            "-DCMAKE_CUDA_ARCHITECTURES=native",
+        ],
+        "llama.cpp cmake configure",
+        label="cmake configure",
+        cwd=task.repo_dir,
+    )
+    await _run_or_fail(
+        host,
+        report,
+        [
+            "cmake", "--build", str(build_dir),
+            # `--config Release`: los generadores multi-config (Visual Studio)
+            # lo necesitan; los de un solo config lo ignoran.
+            "--config", "Release",
+            "--parallel", str(host.host_info.cpu_count()),
+            "--target", "llama-server",
+        ],
+        "llama.cpp build",
+        label="cmake build",
+        cwd=task.repo_dir,
+    )
+    report.success(f"llama.cpp compilado en {build_dir}")
+
+
+async def phase_install_download(host: Host, report: PhaseReport, *, task: ModelDownload) -> None:
+    """Reanuda en un ``.part`` y publica solo tras validar la descarga.
+
+    Por compatibilidad, un final no vacío sin hash conocido se conserva.
+    Con hash, solo se omite un final verificado; no se reemplaza hasta validar
+    la descarga nueva. Un parcial con hash incorrecto se elimina para reintentar.
+    """
+    dest = task.dest
+    if dest.exists() and dest.stat().st_size > 0:
+        if task.sha256 is None or await host.host_info.sha256(dest) == task.sha256:
+            report.warn(f"{dest} ya existe — omito descarga")
+            return
+        report.warn(f"sha256 de {dest.name} no coincide — descargo reemplazo")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    partial = dest.with_name(dest.name + ".part")
+    size = f" ({task.size_hint})" if task.size_hint else ""
+    report.warn(f"Descargando {task.what}{size} a {dest} — puede tardar bastante")
+    await _run_or_fail(
+        host, report, ["curl", "--fail", "-L", "-C", "-", "-o", str(partial), task.url], f"{task.what} download", label="descarga"
+    )
+    if not partial.exists() or partial.stat().st_size == 0:
+        report.error(f"{task.what}: descarga vacía")
+        raise PhaseError(f"{task.what} empty download")
+    if task.sha256 is not None:
+        got = await host.host_info.sha256(partial)
+        if got != task.sha256:
+            partial.unlink()
+            report.error(f"sha256 de {dest.name} no coincide ({got}) — lo borro")
+            raise PhaseError(f"{task.what} sha256 mismatch")
+    partial.replace(dest)
+    report.success(f"{task.what} descargado en {dest}")
+
+
+# ── el portal heredado: sale entero cuando Deck lo reemplace ────────────────
+
+
+def _ubuntu_profile(host: Host, instance: Instance) -> bool:
+    return host.host_info.platform() == "linux" and ubuntu.is_selected(instance.variable("COMPOSE_FILE"))
+
+
+def prepare_portal_for_windows(portal_dir: Path, report: PhaseReport) -> None:
+    """Adapta el compose Linux del portal a Docker Desktop de forma idempotente."""
+    compose_path = portal_dir / "docker-compose.yml"
     if compose_path.exists():
         compose = compose_path.read_text()
         updated = compose.replace(
@@ -71,9 +251,9 @@ def _prepare_pithagoras_for_windows(
             updated = updated.replace(mount_anchor, mount_anchor + models_mount)
         if updated != compose:
             compose_path.write_text(updated)
-            report.success("Pithagoras adaptado a la red local de Docker Desktop")
+            report.success("Portal adaptado a la red local de Docker Desktop")
 
-    dockerfile_path = pithagoras_dir / "Dockerfile"
+    dockerfile_path = portal_dir / "Dockerfile"
     if dockerfile_path.exists():
         dockerfile = dockerfile_path.read_text()
         updated = dockerfile
@@ -85,21 +265,11 @@ def _prepare_pithagoras_for_windows(
             )
         if updated != dockerfile:
             dockerfile_path.write_text(updated)
-            report.success("Permisos persistentes de Pithagoras preparados para Windows")
+            report.success("Permisos persistentes del portal preparados para Windows")
 
 
-def _write_local_model_config(
-    pi_agent_dir: Path,
-    model_path: Path,
-    llama_port: int,
-    report: PhaseReport,
-    *,
-    platform: str = os.name,
-) -> None:
+def write_local_model_config(pi_agent_dir: Path, model_path: Path, llama_port: int, report: PhaseReport) -> None:
     """Registra el llama-server de Windows como proveedor local de Pi."""
-    if platform != "nt":
-        return
-
     models_path = pi_agent_dir / "models.json"
     pi_agent_dir.mkdir(parents=True, exist_ok=True)
     config: dict[str, Any] = {"providers": {}}
@@ -130,287 +300,106 @@ def _write_local_model_config(
     report.success(f"Proveedor local de Pi configurado en {models_path}")
 
 
-def _require_tool(name: str, report: PhaseReport, hint: str) -> None:
-    if shutil.which(name) is None:
-        report.error(f"falta '{name}' — {hint}")
-        raise PhaseError(f"{name} not found")
-    report.success(f"{name} encontrado")
-
-
-def _nvcc_path() -> Path | None:
-    on_path = shutil.which("nvcc")
-    if on_path:
-        return Path(on_path).absolute()
-    candidates = [Path("/usr/local/cuda/bin/nvcc")]
-    candidates.extend(sorted(Path("/usr/local").glob("cuda*/bin/nvcc"), reverse=True))
-    cuda_path = os.environ.get("CUDA_PATH")
-    if cuda_path:
-        candidates.append(Path(cuda_path) / "bin" / "nvcc.exe")
-    program_files = os.environ.get("ProgramFiles")
-    if program_files:
-        candidates.extend(
-            Path(program_files).glob("NVIDIA GPU Computing Toolkit/CUDA/v*/bin/nvcc.exe")
-        )
-    return next((candidate.absolute() for candidate in candidates if candidate.is_file() and os.access(candidate, os.X_OK)), None)
-
-
-def _find_nvcc() -> bool:
-    return _nvcc_path() is not None
-
-
-def _tool_hint(name: str) -> str:
-    if os.name == "nt":
-        return {
-            "git": "instala Git for Windows (winget install --id Git.Git -e)",
-            "curl": "actualiza Windows o instala curl y agrégalo a PATH",
-            "cmake": "instala CMake (winget install --id Kitware.CMake -e)",
-        }[name]
-    return f"sudo apt-get install -y {name}"
-
-
-def _llama_server_binary(build_dir: Path) -> Path:
-    candidates = (
-        build_dir / "bin" / "llama-server",
-        build_dir / "bin" / "llama-server.exe",
-        build_dir / "bin" / "Release" / "llama-server.exe",
-    )
-    return next((candidate for candidate in candidates if candidate.exists()), candidates[0])
-
-
-async def phase_install_preflight(cfg: RinthelConfig, report: PhaseReport) -> None:
-    """Detecta lo que hace falta para compilar/correr todo — no instala
-    drivers ni el CUDA toolkit, solo avisa qué falta con un mensaje
-    accionable."""
-    _require_tool("git", report, _tool_hint("git"))
-    _require_tool("curl", report, _tool_hint("curl"))
-    _require_tool("cmake", report, _tool_hint("cmake"))
-    _require_tool("nvidia-smi", report, "instalá el driver NVIDIA antes de continuar")
-
-    if not _find_nvcc():
-        report.error("falta nvcc — instalá el CUDA toolkit antes de continuar")
-        raise PhaseError("nvcc not found")
-    report.success("nvcc encontrado")
-
-    await phase_check_docker(cfg, report)
-
-
-def _origin_url(repo_dir: Path) -> str:
-    try:
-        return subprocess.run(
-            ["git", "-C", str(repo_dir), "remote", "get-url", "origin"],
-            capture_output=True, text=True, timeout=10,
-        ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return ""
-
-
-async def phase_install_clone_llamacpp(cfg: RinthelConfig, report: PhaseReport) -> None:
-    if (cfg.install.llamacpp_repo_dir / ".git").exists():
-        report.warn(f"{cfg.install.llamacpp_repo_dir} ya existe — omito clone")
-        origin = await asyncio.to_thread(_origin_url, cfg.install.llamacpp_repo_dir)
-        if "thecodacus/llama.cpp" in origin:
-            report.warn(
-                "ese checkout es el fork viejo thecodacus/llama.cpp (rama perf): Rinthel ahora "
-                "usa llama.cpp upstream — cloná ggml-org/llama.cpp en otro directorio, "
-                "compilalo y apuntá RINTHEL_LLAMACPP_REPO_DIR y RINTHEL_LLAMA_BIN ahí"
-            )
-        return
-    cfg.install.llamacpp_repo_dir.parent.mkdir(parents=True, exist_ok=True)
-    rc = await _run(
-        ["git", "clone", "--branch", _LLAMACPP_BRANCH, cfg.install.llamacpp_repo_url, str(cfg.install.llamacpp_repo_dir)],
-        report,
-    )
-    if rc != 0:
-        report.error(f"git clone falló (rc {rc})")
-        raise PhaseError(f"llama.cpp clone failed (rc {rc})")
-    report.success(f"llama.cpp clonado en {cfg.install.llamacpp_repo_dir}")
-
-
-async def phase_install_build_llamacpp(cfg: RinthelConfig, report: PhaseReport) -> None:
-    build_dir = cfg.install.llamacpp_repo_dir / "build-cuda"
-    existing_binary = _llama_server_binary(build_dir)
-    if existing_binary.exists():
-        report.warn(f"{existing_binary} ya existe — omito build")
-        return
-
-    nvcc = _nvcc_path()
-    cuda_args = [f"-DCMAKE_CUDA_COMPILER={nvcc}"] if nvcc else []
-    report.warn("Compilando llama.cpp con CUDA — puede tardar 10-30 minutos")
-    rc = await _run(
-        [
-            "cmake", "-B", str(build_dir),
-            "-DGGML_CUDA=ON",
-            *cuda_args,
-            "-DCMAKE_BUILD_TYPE=Release",
-            # native, no el 89 hardcodeado de la máquina original — compila
-            # para la arquitectura real de la GPU de cada máquina.
-            "-DCMAKE_CUDA_ARCHITECTURES=native",
-        ],
-        report,
-        cwd=cfg.install.llamacpp_repo_dir,
-    )
-    if rc != 0:
-        report.error(f"cmake configure falló (rc {rc})")
-        raise PhaseError(f"llama.cpp cmake configure failed (rc {rc})")
-
-    rc = await _run(
-        [
-            "cmake", "--build", str(build_dir),
-            "--config", "Release",
-            "--parallel", str(os.cpu_count() or 4),
-            "--target", "llama-server",
-        ],
-        report,
-        cwd=cfg.install.llamacpp_repo_dir,
-    )
-    if rc != 0:
-        report.error(f"cmake build falló (rc {rc})")
-        raise PhaseError(f"llama.cpp build failed (rc {rc})")
-    report.success(f"llama.cpp compilado en {build_dir}")
-
-
-async def phase_install_download_model(cfg: RinthelConfig, report: PhaseReport) -> None:
-    if cfg.llama.model.exists() and cfg.llama.model.stat().st_size > 0:
-        report.warn(f"{cfg.llama.model} ya existe — omito descarga")
-        return
-    cfg.llama.model.parent.mkdir(parents=True, exist_ok=True)
-    report.warn(f"Descargando modelo (~22GB) a {cfg.llama.model} — puede tardar bastante")
-    rc = await _run(
-        ["curl", "-L", "-C", "-", "-o", str(cfg.llama.model), cfg.install.model_download_url],
-        report,
-    )
-    if rc != 0:
-        report.error(f"descarga falló (rc {rc})")
-        raise PhaseError(f"model download failed (rc {rc})")
-    report.success(f"Modelo descargado en {cfg.llama.model}")
-
-
-async def phase_install_setup_pithagoras(cfg: RinthelConfig, report: PhaseReport) -> None:
-    from rinthel_tui.install.ubuntu import is_selected, prepare
-    if os.name == "posix" and is_selected(os.environ.get("COMPOSE_FILE")):
-        prepare(REPO_ROOT)
+async def phase_install_setup_portal(host: Host, report: PhaseReport, *, task: PortalInstall) -> None:
+    if _ubuntu_profile(host, task.instance):
+        ubuntu.prepare(task.instance.root)
         report.success("Configuración del monorepositorio Ubuntu preparada")
         return
-    # ``.git`` propio (checkout standalone, pre-monorepo) o directorio no
-    # vacío (subtree del monorepo desde Fase 1 — sin ``.git`` propio, pero
-    # ya tiene contenido) — en los dos casos, no hay nada que clonar.
-    if (cfg.pithagoras.dir / ".git").exists() or (
-        cfg.pithagoras.dir.is_dir() and any(cfg.pithagoras.dir.iterdir())
-    ):
-        report.warn(f"{cfg.pithagoras.dir} ya existe — omito clone")
+    windows = host.host_info.platform() == "windows"
+    # ``.git`` propio (checkout standalone) o directorio no vacío (subtree del
+    # monorepo, sin ``.git`` propio pero con contenido): no hay nada que clonar.
+    if (task.dir / ".git").exists() or (task.dir.is_dir() and any(task.dir.iterdir())):
+        report.warn(f"{task.dir} ya existe — omito clone")
     else:
-        cfg.pithagoras.dir.parent.mkdir(parents=True, exist_ok=True)
-        rc = await _run(
-            ["git", "clone", "--branch", _PITHAGORAS_BRANCH, cfg.install.pithagoras_repo_url, str(cfg.pithagoras.dir)],
-            report,
-        )
-        if rc != 0:
-            report.error(f"git clone falló (rc {rc})")
-            raise PhaseError(f"pithagoras clone failed (rc {rc})")
-        report.success(f"Pithagoras clonado en {cfg.pithagoras.dir}")
+        await _git_clone(host, report, task.repo_url, task.dir, "portal clone", branch=task.branch)
+        report.success(f"Portal clonado en {task.dir}")
 
-    _prepare_pithagoras_for_windows(cfg.pithagoras.dir, report)
-    _write_local_model_config(
-        cfg.install.pi_agent_dir,
-        cfg.llama.model,
-        cfg.llama.port,
-        report,
-    )
+    if windows:
+        prepare_portal_for_windows(task.dir, report)
+        write_local_model_config(task.pi_agent_dir, task.llama_model, task.llama_port, report)
 
-    env_path = cfg.pithagoras.dir / ".env"
+    env_path = task.dir / ".env"
     if env_path.exists():
-        if os.name == "nt":
+        if windows:
             update_env_file(
                 env_path,
                 {
-                    "LLAMA_BASE_URL": f"http://host.docker.internal:{cfg.llama.port}",
+                    "LLAMA_BASE_URL": f"http://host.docker.internal:{task.llama_port}",
                     "PI_PROVIDER": "local-llm",
-                    "PI_MODEL": str(cfg.llama.model),
+                    "PI_MODEL": str(task.llama_model),
                 },
             )
             report.success("Ruta de llama.cpp actualizada para Docker Desktop")
         report.warn(f"{env_path} ya existe — conservo sus secretos")
     else:
-        example_path = cfg.pithagoras.dir / ".env.example"
+        example_path = task.dir / ".env.example"
         if not example_path.exists():
             report.error(f"{example_path} no existe — no puedo generar .env")
-            raise PhaseError("pithagoras .env.example missing")
-
+            raise PhaseError("portal .env.example missing")
         overrides = {
             "PORTAL_PASSWORD": secrets.token_urlsafe(16),
             "PORTAL_SECRET": secrets.token_hex(32),
             "UNDERSTORY_TOKEN": secrets.token_hex(24),
-            # No es un secreto — es la carpeta real que Pithagoras monta en
-            # /workspaces (ver RinthelConfig.workspaces_dir).
-            "WORKSPACES_DIR": str(cfg.install.workspaces_dir),
+            # No es un secreto — es la carpeta real que el portal monta en
+            # /workspaces (ver RinthelConfig.install.workspaces_dir).
+            "WORKSPACES_DIR": str(task.workspaces_dir),
             # Sin esto, Compose monta un directorio vacío donde Pi espera sus
             # paquetes y luego intenta instalar sobre un mount de solo lectura.
-            "PI_AGENT_DIR": str(cfg.install.pi_agent_dir),
+            "PI_AGENT_DIR": str(task.pi_agent_dir),
             # Con red bridge en Docker Desktop, 127.0.0.1 sería el propio
             # contenedor; este nombre reservado alcanza el llama-server de Windows.
             "LLAMA_BASE_URL": (
-                f"http://host.docker.internal:{cfg.llama.port}"
-                if os.name == "nt"
-                else f"http://127.0.0.1:{cfg.llama.port}"
+                f"http://host.docker.internal:{task.llama_port}" if windows else f"http://127.0.0.1:{task.llama_port}"
             ),
-            "PI_PROVIDER": "local-llm" if os.name == "nt" else "",
-            "PI_MODEL": str(cfg.llama.model) if os.name == "nt" else "",
+            "PI_PROVIDER": "local-llm" if windows else "",
+            "PI_MODEL": str(task.llama_model) if windows else "",
         }
         update_env_file(env_path, overrides, seed_from=example_path)
         report.success(f"{env_path} generado")
 
     try:
-        prepare_host_exec(REPO_ROOT, cfg.pithagoras.dir)
+        prepare_host_exec(task.instance.root, task.dir)
     except ValueError as exc:
         report.error(str(exc))
         raise PhaseError("host exec token conflict") from exc
     report.success("Token compartido de host exec preparado")
 
 
-def _read_understory_token(pithagoras_env: Path) -> str | None:
-    if not pithagoras_env.exists():
+def _read_understory_token(portal_env: Path) -> str | None:
+    if not portal_env.exists():
         return None
-    for line in pithagoras_env.read_text().splitlines():
-        if line.startswith("UNDERSTORY_TOKEN="):
-            return line.split("=", 1)[1].strip()
-    return None
+    return dotenv_values(portal_env).get("UNDERSTORY_TOKEN") or None
 
 
-async def phase_install_setup_understory(cfg: RinthelConfig, report: PhaseReport) -> None:
-    """Prepara el bundle Linux o el despliegue standalone heredado."""
-    from rinthel_tui.install.ubuntu import is_selected, prepare
-    if os.name == "posix" and is_selected(os.environ.get("COMPOSE_FILE")):
-        prepare(REPO_ROOT)
+async def phase_install_setup_understory(host: Host, report: PhaseReport, *, task: UnderstoryInstall) -> None:
+    """Prepara el bundle Linux o el despliegue standalone. Sin clone:
+    Understory corre desde su imagen publicada, no desde fuente."""
+    if _ubuntu_profile(host, task.instance):
+        ubuntu.prepare(task.instance.root)
         report.success("Configuración del monorepositorio Ubuntu preparada")
         return
-    cfg.understory.dir.mkdir(parents=True, exist_ok=True)
+    task.dir.mkdir(parents=True, exist_ok=True)
 
-    compose_path = cfg.understory.dir / "docker-compose.yml"
+    compose_path = task.dir / "docker-compose.yml"
     if compose_path.exists():
         report.warn(f"{compose_path} ya existe — omito")
     else:
-        template = (
-            importlib.resources.files("rinthel_tui.install")
-            / "templates" / "understory-docker-compose.yml"
-        )
+        template = importlib.resources.files("rinthel_tui.install") / "templates" / "understory-docker-compose.yml"
         compose_path.write_text(template.read_text())
         report.success(f"{compose_path} escrito")
 
-    env_path = cfg.understory.dir / ".env"
+    env_path = task.dir / ".env"
     if env_path.exists():
         report.warn(f"{env_path} ya existe — omito")
     else:
-        token = _read_understory_token(cfg.pithagoras.dir / ".env")
+        token = _read_understory_token(task.portal_env)
         if not token:
-            report.error(
-                f"no encontré UNDERSTORY_TOKEN en {cfg.pithagoras.dir / '.env'} "
-                "— corré [5/6] PITHAGORAS antes que esta fase"
-            )
+            report.error(f"no encontré UNDERSTORY_TOKEN en {task.portal_env} — corré la fase del portal antes que esta")
             raise PhaseError("understory: UNDERSTORY_TOKEN not found")
         env_path.write_text(f"AUTH_TOKEN={token}\n")
         report.success(f"{env_path} generado")
 
-    bundle_dir = cfg.understory.dir / "bundle"
+    bundle_dir = task.dir / "bundle"
     created = 0
     for sub in _UNDERSTORY_BUNDLE_DIRS:
         sub_dir = bundle_dir / sub
@@ -431,40 +420,78 @@ async def phase_install_setup_understory(cfg: RinthelConfig, report: PhaseReport
         report.warn("bundle/ ya estaba completo — omito")
 
 
+async def phase_install_instance_secrets(host: Host, report: PhaseReport, *, task: InstanceSecrets) -> None:
+    """Genera en el ``.env`` raíz los secretos que faltan: el de servicio
+    (la TUI ante el daemon) y el del panel (firma los Panel tokens). El
+    archivo es la fuente de verdad (``Instance.get``), no ``cfg``, que es una
+    foto del arranque."""
+    instance = task.instance
+    if not instance.env_path.exists() and not instance.env_example_path.exists():
+        report.error(f"{instance.env_example_path} no existe — no puedo generar los secretos")
+        raise PhaseError("root .env.example missing")
+    for key in RotatableSecret:
+        if instance.ensure_secret(key):
+            report.success(f"{key} generado en {instance.env_path} — reiniciá el daemon para que tome efecto")
+        else:
+            report.warn(f"{key} ya estaba seteado — omito")
+
+
 # ── unidades instalables — un servicio con enabled=False no aparece en
-# [0] INSTALL (ver specs.install_units), aunque sigue siendo relevante para
-# BOOT/DOWN/RELOAD vía enabled_of ─────────────────────────────────────────
+# [0] INSTALL (ver specs.install_plan), aunque sigue siendo relevante para
+# BOOT/TERMINATE/RELOAD vía enabled_of ─────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class InstallStep:
+    """Una fase de una unidad. ``task`` arma, desde ``cfg``, la tarea que la
+    fase recibe: ``fn(host, report, task=task(cfg))``."""
+
+    label: str
+    fn: PhaseFn
+    task: Callable[[RinthelConfig], Any]
+
+
+def _always(cfg: RinthelConfig) -> bool:
+    return True
 
 
 @dataclass(frozen=True, kw_only=True)
 class InstallUnit:
     label: str
-    enabled_of: Callable[[RinthelConfig], bool]
-    steps: tuple[tuple[str, PhaseFn], ...]
+    steps: tuple[InstallStep, ...]
+    enabled_of: Callable[[RinthelConfig], bool] = _always
 
 
 LLAMA_INSTALL = InstallUnit(
     label="LLAMA.CPP + modelo",
     enabled_of=lambda cfg: cfg.llama.enabled,
     steps=(
-        ("LLAMA.CPP — clone", phase_install_clone_llamacpp),
-        ("LLAMA.CPP — build CUDA (native)", phase_install_build_llamacpp),
-        ("MODELO GGUF — descarga", phase_install_download_model),
+        InstallStep("LLAMA.CPP — clone", phase_install_clone_llamacpp, install_tasks.llamacpp_install),
+        InstallStep("LLAMA.CPP — build CUDA (native)", phase_install_build_llamacpp, install_tasks.llamacpp_install),
+        InstallStep("MODELO GGUF — descarga", phase_install_download, install_tasks.llama_model),
+    ),
+)
+
+# Los secretos que la TUI y el daemon leen del ``.env`` raíz.
+SECRETS_INSTALL = InstallUnit(
+    label="INSTANCE",
+    steps=(
+        InstallStep("INSTANCE — secretos del .env", phase_install_instance_secrets, install_tasks.instance_secrets),
     ),
 )
 
 PITHAGORAS_INSTALL = InstallUnit(
     label="PITHAGORAS",
     enabled_of=lambda cfg: cfg.pithagoras.enabled,
-    steps=(("PITHAGORAS — clone + configurar", phase_install_setup_pithagoras),),
+    steps=(InstallStep("PITHAGORAS — clone + configurar", phase_install_setup_portal, install_tasks.portal_install),),
 )
 
 UNDERSTORY_INSTALL = InstallUnit(
     label="UNDERSTORY",
     enabled_of=lambda cfg: cfg.understory.enabled,
-    steps=(("UNDERSTORY — scaffold + configurar", phase_install_setup_understory),),
+    steps=(
+        InstallStep("UNDERSTORY — scaffold + configurar", phase_install_setup_understory, install_tasks.understory_install),
+    ),
 )
 
-INSTALL_UNITS: list[InstallUnit] = [
-    LLAMA_INSTALL, PITHAGORAS_INSTALL, UNDERSTORY_INSTALL,
-]
+INSTALL_UNITS: list[InstallUnit] = [LLAMA_INSTALL, SECRETS_INSTALL, PITHAGORAS_INSTALL, UNDERSTORY_INSTALL]

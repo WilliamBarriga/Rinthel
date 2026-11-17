@@ -28,7 +28,16 @@ use tokio::sync::mpsc;
 
 const DAEMON_PORT: u16 = 18765;
 const DAEMON: &str = "http://127.0.0.1:18765";
-const WS: &str = "ws://127.0.0.1:18765/ws/monitor";
+// El daemon exige el secreto de servicio: se lo pasa por el entorno y el
+// cliente lo manda en el header (HTTP) y en `?token=` (WS).
+const SECRET: &str = "e2e-service-secret";
+const WS: &str = "ws://127.0.0.1:18765/ws/monitor?token=e2e-service-secret";
+
+fn client() -> reqwest::Client {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("x-rinthel-service-secret", reqwest::header::HeaderValue::from_static(SECRET));
+    reqwest::Client::builder().default_headers(headers).build().expect("cliente HTTP")
+}
 
 // Puertos de prueba para los dobles de llama-server/Understory/Pithagoras —
 // distintos de los defaults reales (8080/3800/4100) y del puerto del propio
@@ -65,6 +74,7 @@ fn spawn_daemon() -> DaemonGuard {
         .args(["-m", "rinthel_tui.daemon"])
         .current_dir(repo_root)
         .env("RINTHEL_DAEMON_PORT", DAEMON_PORT.to_string())
+        .env("RINTHEL_SERVICE_SECRET", SECRET)
         .env("RINTHEL_LLAMA_BIN", &fake_bin)
         .env("RINTHEL_LLAMA_PORT", FAKE_LLAMA_PORT.to_string())
         .env("RINTHEL_LLAMA_LOG_PATH", scratch.join("llama.log"))
@@ -98,7 +108,7 @@ fn spawn_daemon() -> DaemonGuard {
 
 async fn wait_for_theme() -> Theme {
     for _ in 0..50 {
-        if let Ok(resp) = reqwest::get(format!("{DAEMON}/theme")).await {
+        if let Ok(resp) = client().get(format!("{DAEMON}/theme")).send().await {
             if let Ok(theme) = resp.json::<Theme>().await {
                 return theme;
             }
@@ -151,7 +161,7 @@ async fn boot_then_terminate_over_real_wire() {
     });
 
     // Comandos bloqueantes reales, en el orden boot→terminate→cerrar.
-    let client = reqwest::Client::new();
+    let client = client();
     let boot: CommandResult = client
         .post(format!("{DAEMON}/boot"))
         .send()
@@ -240,7 +250,7 @@ async fn reload_over_real_wire() {
         }
     });
 
-    let client = reqwest::Client::new();
+    let client = client();
     let boot: CommandResult = client
         .post(format!("{DAEMON}/boot"))
         .send()

@@ -72,6 +72,12 @@ if ($Cargo) {
     throw 'Falta cargo y tampoco existe rinthel.exe. Ejecuta .\rinthel\install.ps1.'
 }
 
+# Mismo secreto que valida la access policy `service` del daemon: la TUI lo
+# manda en cada request. Se genera si falta (idempotente) antes de arrancar.
+& $Python -m rinthel_tui.instance --root $InstanceRoot ensure-secret RINTHEL_SERVICE_SECRET
+if ($LASTEXITCODE -ne 0) { throw 'No se pudo preparar RINTHEL_SERVICE_SECRET en el .env.' }
+$ServiceSecret = (& $Python -m rinthel_tui.instance --root $InstanceRoot get RINTHEL_SERVICE_SECRET | Out-String).Trim()
+
 if (-not (Test-LocalPort $Port)) {
     New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
     $env:RINTHEL_DAEMON_PORT = [string]$Port
@@ -89,4 +95,5 @@ if (-not (Test-LocalPort $Port)) {
     }
 }
 
+$env:RINTHEL_SERVICE_SECRET = $ServiceSecret
 & $Client --port $Port

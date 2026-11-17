@@ -1,14 +1,13 @@
 """Escribe/actualiza un ``.env`` preservando todo lo que no se toca
 (comentarios incluidos) — generalización de lo que ``install.py`` ya hacía
-para el ``.env`` de Pithagoras/Understory, reusado también por la pantalla
+para el ``.env`` del portal y Understory, reusado también por la pantalla
 de configuración (``[N] CONFIGURAR``) para guardar cambios de ``enabled``/
 parámetros en el ``.env`` de la raíz del repo.
 """
 
-import os
-import stat
-import tempfile
 from pathlib import Path
+
+from rinthel_tui.atomic_write import atomic_write
 
 
 def update_env_file(path: Path, overrides: dict[str, str], *, seed_from: Path | None = None) -> None:
@@ -46,15 +45,4 @@ def update_env_file(path: Path, overrides: dict[str, str], *, seed_from: Path | 
         if key not in seen_keys:
             out.append(f"{key}={value}")
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    mode = path.stat().st_mode if path.exists() else None
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write("\n".join(out) + "\n")
-        if mode is not None:
-            os.chmod(tmp_name, stat.S_IMODE(mode))
-        os.replace(tmp_name, path)
-    except BaseException:
-        os.unlink(tmp_name)
-        raise
+    atomic_write(path, "\n".join(out) + "\n", new_mode=0o600)

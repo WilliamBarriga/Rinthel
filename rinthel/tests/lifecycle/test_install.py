@@ -1,191 +1,143 @@
-"""Fases de INSTALL — idempotencia (reruns seguros, omiten lo que ya existe)
-y generación de .env a partir de .env.example.
+"""Fases de INSTALL del portal, Understory y los secretos de la Instance —
+idempotencia (reruns seguros, omiten lo que ya existe) y generación de .env a
+partir de .env.example. Corren sobre el ``Host`` de dobles con ``tmp_path``
+real: ningún comando real, ningún parche."""
 
-Estilo de mocking: `install.py` importa `_run` directamente de `phases.py`
-(`from rinthel_tui.lifecycle.phases import _run`), así que se parchea sobre
-`install`, no sobre `phases` — es el nombre que install.py realmente usa.
-`shutil.which` y `asyncio.create_subprocess_exec` se parchean para
-`phase_install_preflight` (que no toca disco/red propios, solo detecta
-herramientas).
-"""
-
-import asyncio
-import dataclasses
 import json
-import os
-import shutil
+import stat
+from pathlib import Path
 
 import pytest
 from dotenv import dotenv_values
 
-from rinthel_tui.lifecycle import install
-from rinthel_tui.lifecycle.phases import PhaseError
+from rinthel_tui.instance import Instance
+from rinthel_tui.lifecycle import install, install_tasks
+from rinthel_tui.lifecycle.domain.errors import PhaseError
+from tests.lifecycle.fakes import RunCall, fake_host
 
 
 @pytest.fixture(autouse=True)
-def isolated_compose_profile(tmp_path, monkeypatch):
-    # The user's .env must not redirect standalone tests to the real repo.
+def isolated_env(monkeypatch):
+    # El entorno de quien corre los tests no debe elegir perfil ni token.
     monkeypatch.delenv("COMPOSE_FILE", raising=False)
     monkeypatch.delenv("RINTHEL_HOSTEXECD_TOKEN", raising=False)
-    monkeypatch.setattr(install, "REPO_ROOT", tmp_path, raising=False)
 
 
-def _recording_run(rc_by_first_arg: dict[str, int] | None = None):
-    rc_by_first_arg = rc_by_first_arg or {}
-    calls: list[list[str]] = []
-
-    async def fake(cmd, report, cwd=None, env=None):
-        calls.append(list(cmd))
-        return rc_by_first_arg.get(cmd[0], 0)
-
-    return fake, calls
+@pytest.fixture
+def host():
+    host, _ = fake_host()
+    host.runner.succeed_by_default()
+    return host
 
 
-# ── PREFLIGHT ─────────────────────────────────────────────────────
+@pytest.fixture
+def portal(cfg, tmp_path):
+    return install_tasks.PortalInstall(
+        instance=cfg.instance,
+        dir=tmp_path / "pithagoras",
+        repo_url="https://example.test/portal.git",
+        branch=install_tasks.PORTAL_BRANCH,
+        workspaces_dir=tmp_path / "workspaces",
+        pi_agent_dir=tmp_path / "pi",
+        llama_port=8080,
+        llama_model=tmp_path / "model.gguf",
+    )
 
 
-async def test_preflight_raises_when_tool_missing(monkeypatch, cfg, report):
-    monkeypatch.setattr(shutil, "which", lambda name: None)
-    try:
-        await install.phase_install_preflight(cfg, report)
-        raised = False
-    except PhaseError:
-        raised = True
-    assert raised
-    assert any("falta 'git'" in msg for msg in report.errors)
+def _clone_leaves_an_example(call: RunCall) -> None:
+    dest = call.cmd[-1]
+    Path(dest).mkdir(parents=True, exist_ok=True)
+    (Path(dest) / ".env.example").write_text("PORTAL_PASSWORD=changeme\n")
 
 
-async def test_preflight_succeeds_when_everything_present(monkeypatch, cfg, report):
-    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
-
-    async def fake_exec(*args, **kwargs):
-        class _Proc:
-            async def wait(self):
-                return 0
-
-        return _Proc()
-
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
-
-    await install.phase_install_preflight(cfg, report)
-
-    assert any("Docker daemon activo" in msg for msg in report.successes)
+# ── PORTAL ─────────────────────────────────────────────────────────
 
 
-# ── CLONE LLAMA.CPP ────────────────────────────────────────────────
+async def test_setup_portal_clones_and_generates_env(host, report, portal):
+    host.runner.on_success("git", _clone_leaves_an_example)
+
+    await install.phase_install_setup_portal(host, report, task=portal)
+
+    (clone,) = host.runner.ran("git")
+    assert {portal.repo_url, portal.branch, str(portal.dir)} <= set(clone.cmd)
+    content = (portal.dir / ".env").read_text()
+    assert "PORTAL_PASSWORD=" in content and "PORTAL_PASSWORD=changeme" not in content
+    assert f"WORKSPACES_DIR={portal.workspaces_dir}" in content
+    assert "LLAMA_BASE_URL=http://127.0.0.1:8080" in content
 
 
-def _with_llamacpp_repo_dir(cfg, repo_dir):
-    return dataclasses.replace(cfg, install=dataclasses.replace(cfg.install, llamacpp_repo_dir=repo_dir))
+async def test_setup_portal_skips_clone_and_env_when_they_already_exist(host, report, portal):
+    (portal.dir / ".git").mkdir(parents=True)
+    (portal.dir / ".env").write_text("EXISTING=1\n")
+
+    await install.phase_install_setup_portal(host, report, task=portal)
+
+    assert host.runner.calls == []
+    assert "EXISTING=1" in (portal.dir / ".env").read_text()
+    assert any("conservo sus secretos" in msg for msg in report.warnings)
 
 
-def _with_pithagoras_dir(cfg, pithagoras_dir):
-    return dataclasses.replace(cfg, pithagoras=dataclasses.replace(cfg.pithagoras, dir=pithagoras_dir))
+async def test_setup_portal_on_windows_points_pi_at_the_host_llama_server(host, report, portal):
+    host.host_info.os = "windows"
+    (portal.dir / ".git").mkdir(parents=True)
+    (portal.dir / ".env").write_text("EXISTING=1\n")
+
+    await install.phase_install_setup_portal(host, report, task=portal)
+
+    content = (portal.dir / ".env").read_text()
+    assert "LLAMA_BASE_URL=http://host.docker.internal:8080" in content
+    assert "PI_PROVIDER=local-llm" in content
+    assert f"PI_MODEL={portal.llama_model}" in content
+    assert json.loads((portal.pi_agent_dir / "models.json").read_text())["providers"]["local-llm"]
 
 
-def _with_understory_dir(cfg, understory_dir):
-    return dataclasses.replace(cfg, understory=dataclasses.replace(cfg.understory, dir=understory_dir))
+async def test_setup_portal_provisions_one_host_exec_token(host, report, portal, cfg):
+    portal.dir.mkdir()
+    (portal.dir / ".env.example").write_text("PORTAL_PASSWORD=changeme\n")
+
+    await install.phase_install_setup_portal(host, report, task=portal)
+
+    root_token = dotenv_values(cfg.instance.env_path).get("RINTHEL_HOSTEXECD_TOKEN")
+    assert root_token and len(root_token) >= 64
+    assert dotenv_values(portal.dir / ".env")["RINTHEL_HOSTEXECD_TOKEN"] == root_token
+    await install.phase_install_setup_portal(host, report, task=portal)
+    assert dotenv_values(cfg.instance.env_path)["RINTHEL_HOSTEXECD_TOKEN"] == root_token
 
 
-async def test_clone_llamacpp_skips_when_already_cloned(cfg, report, tmp_path):
-    repo_dir = tmp_path / "llama.cpp"
-    (repo_dir / ".git").mkdir(parents=True)
-    cfg = _with_llamacpp_repo_dir(cfg, repo_dir)
+async def test_setup_portal_preserves_existing_host_exec_secret(host, report, portal, cfg):
+    portal.dir.mkdir()
+    (portal.dir / ".env").write_text("PORTAL_PASSWORD=keep-me\nRINTHEL_HOSTEXECD_TOKEN=existing-token\n")
 
-    await install.phase_install_clone_llamacpp(cfg, report)
+    await install.phase_install_setup_portal(host, report, task=portal)
 
-    assert any("ya existe — omito clone" in msg for msg in report.warnings)
-
-
-async def test_clone_llamacpp_clones_when_missing(monkeypatch, cfg, report, tmp_path):
-    repo_dir = tmp_path / "llama.cpp"
-    cfg = _with_llamacpp_repo_dir(cfg, repo_dir)
-    fake, calls = _recording_run()
-    monkeypatch.setattr(install, "_run", fake)
-
-    await install.phase_install_clone_llamacpp(cfg, report)
-
-    assert calls[0][0] == "git"
-    assert any("clonado en" in msg for msg in report.successes)
+    assert dotenv_values(cfg.instance.env_path)["RINTHEL_HOSTEXECD_TOKEN"] == "existing-token"
+    assert dotenv_values(portal.dir / ".env")["PORTAL_PASSWORD"] == "keep-me"
 
 
-async def test_clone_llamacpp_raises_when_git_fails(monkeypatch, cfg, report, tmp_path):
-    repo_dir = tmp_path / "llama.cpp"
-    cfg = _with_llamacpp_repo_dir(cfg, repo_dir)
-    fake, _ = _recording_run({"git": 1})
-    monkeypatch.setattr(install, "_run", fake)
+async def test_setup_portal_rejects_conflicting_host_exec_secrets(host, report, portal, cfg):
+    portal.dir.mkdir()
+    cfg.instance.env_path.write_text("RINTHEL_HOSTEXECD_TOKEN=root-secret\n")
+    (portal.dir / ".env").write_text("RINTHEL_HOSTEXECD_TOKEN=portal-secret\n")
 
-    try:
-        await install.phase_install_clone_llamacpp(cfg, report)
-        raised = False
-    except PhaseError:
-        raised = True
-    assert raised
+    with pytest.raises(PhaseError):
+        await install.phase_install_setup_portal(host, report, task=portal)
+
+    assert dotenv_values(cfg.instance.env_path)["RINTHEL_HOSTEXECD_TOKEN"] == "root-secret"
+    assert dotenv_values(portal.dir / ".env")["RINTHEL_HOSTEXECD_TOKEN"] == "portal-secret"
 
 
-# ── BUILD LLAMA.CPP ────────────────────────────────────────────────
+async def test_setup_portal_raises_when_example_missing(host, report, portal):
+    (portal.dir / ".git").mkdir(parents=True)
+
+    with pytest.raises(PhaseError):
+        await install.phase_install_setup_portal(host, report, task=portal)
 
 
-async def test_build_llamacpp_skips_when_binary_exists(cfg, report, tmp_path):
-    repo_dir = tmp_path / "llama.cpp"
-    bin_path = repo_dir / "build-cuda" / "bin" / "llama-server"
-    bin_path.parent.mkdir(parents=True)
-    bin_path.write_text("fake binary")
-    cfg = _with_llamacpp_repo_dir(cfg, repo_dir)
-
-    await install.phase_install_build_llamacpp(cfg, report)
-
-    assert any("ya existe — omito build" in msg for msg in report.warnings)
-
-
-async def test_build_llamacpp_raises_when_cmake_configure_fails(monkeypatch, cfg, report, tmp_path):
-    repo_dir = tmp_path / "llama.cpp"
-    cfg = _with_llamacpp_repo_dir(cfg, repo_dir)
-    fake, _ = _recording_run({"cmake": 1})
-    monkeypatch.setattr(install, "_run", fake)
-
-    try:
-        await install.phase_install_build_llamacpp(cfg, report)
-        raised = False
-    except PhaseError:
-        raised = True
-    assert raised
-    assert any("cmake configure falló" in msg for msg in report.errors)
-
-
-# ── DOWNLOAD MODEL ─────────────────────────────────────────────────
-
-
-async def test_download_model_skips_when_already_downloaded(cfg, report, tmp_path):
-    model_path = tmp_path / "model.gguf"
-    model_path.write_bytes(b"not empty")
-    cfg = dataclasses.replace(cfg, llama=dataclasses.replace(cfg.llama, model=model_path))
-
-    await install.phase_install_download_model(cfg, report)
-
-    assert any("ya existe — omito descarga" in msg for msg in report.warnings)
-
-
-async def test_download_model_downloads_when_missing(monkeypatch, cfg, report, tmp_path):
-    model_path = tmp_path / "models" / "model.gguf"
-    cfg = dataclasses.replace(cfg, llama=dataclasses.replace(cfg.llama, model=model_path))
-    fake, calls = _recording_run()
-    monkeypatch.setattr(install, "_run", fake)
-
-    await install.phase_install_download_model(cfg, report)
-
-    assert calls[0][0] == "curl"
-    assert any("descargado en" in msg for msg in report.successes)
-
-
-# ── SETUP PITHAGORAS ─────────────────────────────────────────────
-
-
-def test_prepare_pithagoras_for_windows_is_idempotent(report, tmp_path):
-    pithagoras_dir = tmp_path / "pithagoras"
-    pithagoras_dir.mkdir()
-    compose_path = pithagoras_dir / "docker-compose.yml"
-    dockerfile_path = pithagoras_dir / "Dockerfile"
+def test_prepare_portal_for_windows_is_idempotent(report, tmp_path):
+    portal_dir = tmp_path / "pithagoras"
+    portal_dir.mkdir()
+    compose_path = portal_dir / "docker-compose.yml"
+    dockerfile_path = portal_dir / "Dockerfile"
     compose_path.write_text(
         "services:\n"
         "  portal:\n"
@@ -196,12 +148,12 @@ def test_prepare_pithagoras_for_windows_is_idempotent(report, tmp_path):
     )
     dockerfile_path.write_text("RUN mkdir -p /data/home /data/bin\n")
 
-    install._prepare_pithagoras_for_windows(pithagoras_dir, report, platform="nt")
+    install.prepare_portal_for_windows(portal_dir, report)
     first_compose = compose_path.read_text()
     first_dockerfile = dockerfile_path.read_text()
-    install._prepare_pithagoras_for_windows(pithagoras_dir, report, platform="nt")
+    install.prepare_portal_for_windows(portal_dir, report)
 
-    assert '127.0.0.1:${PORT:-4100}:${PORT:-4100}' in first_compose
+    assert "127.0.0.1:${PORT:-4100}:${PORT:-4100}" in first_compose
     assert "network_mode: host" not in first_compose
     assert "TS_AUTHKEY: ${TS_AUTHKEY:-}" in first_compose
     assert "chown -R node:node /data" in first_dockerfile
@@ -213,186 +165,89 @@ def test_write_local_model_config_is_idempotent(report, tmp_path):
     agent_dir = tmp_path / "agent"
     model_path = tmp_path / "model.gguf"
 
-    install._write_local_model_config(
-        agent_dir, model_path, 8080, report, platform="nt"
-    )
+    install.write_local_model_config(agent_dir, model_path, 8080, report)
     first = (agent_dir / "models.json").read_text()
-    install._write_local_model_config(
-        agent_dir, model_path, 8080, report, platform="nt"
-    )
+    install.write_local_model_config(agent_dir, model_path, 8080, report)
 
-    parsed = json.loads(first)
-    provider = parsed["providers"]["local-llm"]
+    provider = json.loads(first)["providers"]["local-llm"]
     assert provider["baseUrl"] == "http://host.docker.internal:8080/v1"
     assert provider["models"][0]["id"] == str(model_path)
     assert (agent_dir / "models.json").read_text() == first
 
 
-async def test_setup_pithagoras_clones_and_generates_env(monkeypatch, cfg, report, tmp_path):
-    pithagoras_dir = tmp_path / "pithagoras"
-    cfg = _with_pithagoras_dir(cfg, pithagoras_dir)
-    cfg = dataclasses.replace(
-        cfg,
-        install=dataclasses.replace(cfg.install, workspaces_dir=tmp_path, pi_agent_dir=tmp_path / "pi"),
-    )
-    fake, calls = _recording_run()
-
-    async def fake_run_and_write_example(*args, **kwargs):
-        # git clone no crea archivos de verdad acá — simulamos que el clone
-        # dejó un .env.example, como pasaría con el repo real.
-        pithagoras_dir.mkdir(parents=True, exist_ok=True)
-        (pithagoras_dir / ".env.example").write_text("PORTAL_PASSWORD=changeme\n")
-        calls.append(list(args[0]))
-        return 0
-
-    monkeypatch.setattr(install, "_run", fake_run_and_write_example)
-
-    await install.phase_install_setup_pithagoras(cfg, report)
-
-    env_path = pithagoras_dir / ".env"
-    assert env_path.exists()
-    content = env_path.read_text()
-    assert "PORTAL_PASSWORD=" in content
-    assert "PORTAL_PASSWORD=changeme" not in content
-    assert f"WORKSPACES_DIR={tmp_path}" in content
+# ── UNDERSTORY ──────────────────────────────────────────────────────
 
 
-async def test_setup_pithagoras_skips_env_when_already_exists(cfg, report, tmp_path):
-    pithagoras_dir = tmp_path / "pithagoras"
-    (pithagoras_dir / ".git").mkdir(parents=True)
-    (pithagoras_dir / ".env").write_text("EXISTING=1\n")
-    cfg = _with_pithagoras_dir(cfg, pithagoras_dir)
-
-    await install.phase_install_setup_pithagoras(cfg, report)
-
-    content = (pithagoras_dir / ".env").read_text()
-    assert "EXISTING=1" in content
-    if os.name == "nt":
-        assert f"LLAMA_BASE_URL=http://host.docker.internal:{cfg.llama.port}" in content
-        assert "PI_PROVIDER=local-llm" in content
-        assert f"PI_MODEL={cfg.llama.model}" in content
-    assert any("conservo sus secretos" in msg for msg in report.warnings)
+def _understory(cfg, tmp_path):
+    return install_tasks.UnderstoryInstall(cfg.instance, tmp_path / "understory", tmp_path / "pithagoras" / ".env")
 
 
-async def test_setup_pithagoras_provisions_one_host_exec_token(cfg, report, tmp_path):
-    portal = tmp_path / "pithagoras"
-    portal.mkdir()
-    (portal / ".env.example").write_text("PORTAL_PASSWORD=changeme\n")
-    cfg = _with_pithagoras_dir(cfg, portal)
-
-    await install.phase_install_setup_pithagoras(cfg, report)
-
-    root_token = dotenv_values(tmp_path / ".env").get("RINTHEL_HOSTEXECD_TOKEN")
-    assert root_token and len(root_token) >= 64
-    assert dotenv_values(portal / ".env")["RINTHEL_HOSTEXECD_TOKEN"] == root_token
-    await install.phase_install_setup_pithagoras(cfg, report)
-    assert dotenv_values(tmp_path / ".env")["RINTHEL_HOSTEXECD_TOKEN"] == root_token
-
-
-async def test_setup_pithagoras_preserves_existing_host_exec_secret(cfg, report, tmp_path):
-    portal = tmp_path / "pithagoras"
-    portal.mkdir()
-    (portal / ".env").write_text("PORTAL_PASSWORD=keep-me\nRINTHEL_HOSTEXECD_TOKEN=existing-token\n")
-    cfg = _with_pithagoras_dir(cfg, portal)
-
-    await install.phase_install_setup_pithagoras(cfg, report)
-
-    assert dotenv_values(tmp_path / ".env")["RINTHEL_HOSTEXECD_TOKEN"] == "existing-token"
-    assert dotenv_values(portal / ".env")["PORTAL_PASSWORD"] == "keep-me"
-
-
-async def test_setup_pithagoras_rejects_conflicting_host_exec_secrets(cfg, report, tmp_path):
-    portal = tmp_path / "pithagoras"
-    portal.mkdir()
-    (tmp_path / ".env").write_text("RINTHEL_HOSTEXECD_TOKEN=root-secret\n")
-    (portal / ".env").write_text("RINTHEL_HOSTEXECD_TOKEN=portal-secret\n")
-    cfg = _with_pithagoras_dir(cfg, portal)
-
+async def test_setup_understory_raises_when_token_missing(host, report, cfg, tmp_path):
     with pytest.raises(PhaseError):
-        await install.phase_install_setup_pithagoras(cfg, report)
-    assert dotenv_values(tmp_path / ".env")["RINTHEL_HOSTEXECD_TOKEN"] == "root-secret"
-    assert dotenv_values(portal / ".env")["RINTHEL_HOSTEXECD_TOKEN"] == "portal-secret"
+        await install.phase_install_setup_understory(host, report, task=_understory(cfg, tmp_path))
 
 
-async def test_setup_pithagoras_raises_when_example_missing(cfg, report, tmp_path):
-    pithagoras_dir = tmp_path / "pithagoras"
-    (pithagoras_dir / ".git").mkdir(parents=True)
-    cfg = _with_pithagoras_dir(cfg, pithagoras_dir)
+async def test_setup_understory_generates_env_and_bundle(host, report, cfg, tmp_path):
+    task = _understory(cfg, tmp_path)
+    task.portal_env.parent.mkdir(parents=True)
+    task.portal_env.write_text("UNDERSTORY_TOKEN=abc123\n")
 
-    try:
-        await install.phase_install_setup_pithagoras(cfg, report)
-        raised = False
-    except PhaseError:
-        raised = True
-    assert raised
+    await install.phase_install_setup_understory(host, report, task=task)
 
-
-# ── SETUP UNDERSTORY ──────────────────────────────────────────────
+    assert (task.dir / "docker-compose.yml").exists()
+    assert (task.dir / ".env").read_text() == "AUTH_TOKEN=abc123\n"
+    assert (task.dir / "bundle" / "agents" / "index.md").exists()
+    assert (task.dir / "bundle" / "index.md").exists()
 
 
-async def test_setup_understory_raises_when_token_missing(cfg, report, tmp_path):
-    cfg = _with_understory_dir(cfg, tmp_path / "understory")
-    cfg = _with_pithagoras_dir(cfg, tmp_path / "pithagoras")
-    try:
-        await install.phase_install_setup_understory(cfg, report)
-        raised = False
-    except PhaseError:
-        raised = True
-    assert raised
+# ── el perfil Ubuntu ────────────────────────────────────────────────
 
 
-async def test_setup_understory_generates_env_and_bundle(cfg, report, tmp_path):
-    pithagoras_dir = tmp_path / "pithagoras"
-    pithagoras_dir.mkdir(parents=True)
-    (pithagoras_dir / ".env").write_text("UNDERSTORY_TOKEN=abc123\n")
-    understory_dir = tmp_path / "understory"
-    cfg = _with_understory_dir(cfg, understory_dir)
-    cfg = _with_pithagoras_dir(cfg, pithagoras_dir)
-
-    await install.phase_install_setup_understory(cfg, report)
-
-    assert (understory_dir / "docker-compose.yml").exists()
-    assert (understory_dir / ".env").read_text() == "AUTH_TOKEN=abc123\n"
-    assert (understory_dir / "bundle" / "agents" / "index.md").exists()
-    assert (understory_dir / "bundle" / "index.md").exists()
-
-
-async def test_build_passes_discovered_cuda_compiler(monkeypatch, cfg, report, tmp_path):
-    cfg = _with_llamacpp_repo_dir(cfg, tmp_path / "llama.cpp")
-    compiler = tmp_path / "cuda" / "bin" / "nvcc"
-    monkeypatch.setattr(install, "_nvcc_path", lambda: compiler)
-    fake, calls = _recording_run()
-    monkeypatch.setattr(install, "_run", fake)
-    await install.phase_install_build_llamacpp(cfg, report)
-    assert f"-DCMAKE_CUDA_COMPILER={compiler}" in calls[0]
-
-
-def test_nvcc_path_prefers_path(monkeypatch, tmp_path):
-    compiler = tmp_path / "custom-cuda" / "nvcc"
-    monkeypatch.setattr(shutil, "which", lambda name: str(compiler))
-    assert install._nvcc_path() == compiler
-
-
-def test_nvcc_path_finds_toolkit_outside_path(monkeypatch, tmp_path):
-    from pathlib import Path
-    compiler = tmp_path / "cuda-test" / "bin" / "nvcc"
-    compiler.parent.mkdir(parents=True)
-    compiler.write_text("#!/bin/sh\n")
-    compiler.chmod(0o755)
-    monkeypatch.setattr(shutil, "which", lambda name: None)
-    monkeypatch.setattr(Path, "glob", lambda self, pattern: [compiler])
-    real_is_file = Path.is_file
-    monkeypatch.setattr(Path, "is_file", lambda self: self == compiler and real_is_file(self))
-    assert install._nvcc_path() == compiler
-
-
-@pytest.mark.skipif(os.name != "posix", reason="Linux profile")
-@pytest.mark.parametrize("phase", [install.phase_install_setup_pithagoras, install.phase_install_setup_understory])
-async def test_linux_profile_prepares_monorepo(monkeypatch, cfg, report, tmp_path, phase):
+@pytest.mark.parametrize("phase", ["portal", "understory"])
+async def test_the_ubuntu_profile_prepares_the_monorepo_from_the_instance_env(
+    host, report, cfg, tmp_path, portal, monkeypatch, phase
+):
     from rinthel_tui.install import ubuntu
-    monkeypatch.setenv("COMPOSE_FILE", "docker-compose.ubuntu.yml")
-    monkeypatch.setattr(install, "REPO_ROOT", tmp_path)
+
+    cfg.instance.env_path.write_text("COMPOSE_FILE=docker-compose.ubuntu.yml\n")
     calls = []
     monkeypatch.setattr(ubuntu, "prepare", calls.append)
-    await phase(cfg, report)
-    assert calls == [tmp_path]
+
+    if phase == "portal":
+        await install.phase_install_setup_portal(host, report, task=portal)
+    else:
+        await install.phase_install_setup_understory(host, report, task=_understory(cfg, tmp_path))
+
+    assert calls == [cfg.instance.root]
+
+
+# ── SECRETOS DE LA INSTANCE ─────────────────────────────────────────
+
+
+async def test_instance_secrets_are_generated_in_the_root_env(host, report, tmp_path):
+    instance = Instance(tmp_path)
+    instance.env_example_path.write_text("RINTHEL_SERVICE_SECRET=\nRINTHEL_PANEL_SECRET=\n")
+
+    await install.phase_install_instance_secrets(host, report, task=install_tasks.InstanceSecrets(instance))
+
+    assert len(instance.get("RINTHEL_SERVICE_SECRET")) == 64
+    assert len(instance.get("RINTHEL_PANEL_SECRET")) == 64
+    assert stat.S_IMODE(instance.env_path.stat().st_mode) == 0o600
+
+
+async def test_instance_secrets_skip_what_is_already_set(host, report, tmp_path):
+    instance = Instance(tmp_path)
+    instance.env_path.write_text("RINTHEL_SERVICE_SECRET=keep\n")
+
+    await install.phase_install_instance_secrets(host, report, task=install_tasks.InstanceSecrets(instance))
+
+    assert instance.get("RINTHEL_SERVICE_SECRET") == "keep"
+    assert instance.get("RINTHEL_PANEL_SECRET")
+    assert len(report.warnings) == 1
+
+
+async def test_instance_secrets_raise_when_neither_env_nor_example_exist(host, report, tmp_path):
+    with pytest.raises(PhaseError):
+        await install.phase_install_instance_secrets(
+            host, report, task=install_tasks.InstanceSecrets(Instance(tmp_path))
+        )
