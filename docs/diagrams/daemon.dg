@@ -48,9 +48,9 @@ model {
     modulo lifecycle "lifecycle" "Lifecycle plans of the managed services" {
       source { path "rinthel/rinthel_tui/lifecycle" }
       proceso lc-planes "Lifecycle" "boot, terminate, reload, install: plans run as units of phases under a global lock" {
-        source { path "rinthel/rinthel_tui/lifecycle/runner.py" }
+        source { path "rinthel/rinthel_tui/lifecycle/commands.py" }
       }
-      modulo lc-specs "specs / runner" "Plans as units of phases; the runner executes them and broadcasts progress" {
+      modulo lc-specs "specs / executor" "Plans as batches of units of phases; the executor runs them and broadcasts progress" {
         source { path "rinthel/rinthel_tui/lifecycle/specs.py" }
       }
       modulo lc-fases "phases / services" "Phases and the catalog of managed services (local process or compose)" {
@@ -72,7 +72,9 @@ model {
 
     modulo monitoring "monitoring" "Telemetry streams: host resources, managed services and the active model status" {
       source { path "rinthel/rinthel_tui/monitoring" }
-      adaptador mon-host "psutil_host / nvidia_smi"
+      puerto mon-puertos "ports" "One port per source: GPU, host, containers, llama-server log, readiness"
+      adaptador mon-host "psutil_host / nvidia_smi / docker_compose / log_file / http_readiness"
+      adaptador mon-memoria "memory" "Doubles with a contract suite"
     }
 
     modulo nu-config "config / instance" "Configuration, .env and instance.toml; Instance root discovery; deck.host_address builds every URL given to Deck" {
@@ -101,6 +103,8 @@ model {
   daemon.lifecycle.host-procesos -> daemon.lifecycle.host
   daemon.lifecycle.host-compose -> daemon.lifecycle.host
   daemon.lifecycle.host-sondeo -> daemon.lifecycle.host
+  daemon.monitoring.mon-host -> daemon.monitoring.mon-puertos
+  daemon.monitoring.mon-memoria -> daemon.monitoring.mon-puertos
   daemon.identity.id-sqlite -> daemon.identity.id-puertos
   daemon.identity.id-memoria -> daemon.identity.id-puertos
   daemon.identity -> daemon.session-host "delete user"
