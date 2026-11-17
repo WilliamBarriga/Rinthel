@@ -1,5 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { adminGate, serviceUrl, tokenRefused, type AdminToolAccess } from "../admin-tool.js";
+import { textResult, toolLabel } from "../tool-text.js";
 
 /**
  * Host exec: an admin's Agent runs shell commands on the real host, outside Deck's container, through
@@ -18,8 +20,8 @@ import { Type } from "typebox";
  * Session with it.
  */
 
-/** The tools this factory registers; the Guard revokes both from a tainted Session. */
-export const HOST_EXEC_TOOLS: readonly string[] = ["rinthel_host_exec", "rinthel_host_exec_history"];
+// The names live with the other admin-only tools, where the Guard reads them too.
+export { HOST_EXEC_TOOLS } from "../admin-tool.js";
 
 /** How Deck reaches hostexecd: what the daemon hands it by environment. */
 export interface HostExecAccess {
@@ -27,10 +29,7 @@ export interface HostExecAccess {
   token: string;
 }
 
-export interface HostExecOptions extends HostExecAccess {
-  /** Whether the Session's owner is an admin right now: asked before every call. */
-  adminNow: () => Promise<boolean>;
-}
+export interface HostExecOptions extends HostExecAccess, AdminToolAccess {}
 
 const TOKEN_HEADER = "X-Rinthel-Token";
 
@@ -53,34 +52,11 @@ interface HistoryEntry {
   timed_out: boolean;
 }
 
-/** hostexecd's base URL, or a throw: only an http(s) URL can be it. */
-function baseUrl(raw: string): string {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new Error(`hostexecd URL is not valid: "${raw}"`);
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`hostexecd URL must be http(s): "${raw}"`);
-  return url.href.replace(/\/+$/, "");
-}
-
-const textResult = (text: string, details: Record<string, unknown> = {}) => ({ content: [{ type: "text" as const, text }], details });
-
 /** An ExtensionFactory (pi's inline extension), one instance per admin Session. */
 export function hostExecExtension({ url, token, adminNow }: HostExecOptions) {
-  const base = baseUrl(url);
-
-  /** Fails closed: a member now, a gone owner or an identity that does not answer all refuse. */
-  async function requireAdmin(): Promise<void> {
-    let admin = false;
-    try {
-      admin = await adminNow();
-    } catch {
-      admin = false;
-    }
-    if (!admin) throw new Error("Refused: host exec is for an admin, and the owner of this Session is not one now (or that could not be checked).");
-  }
+  // Only an http(s) URL can be hostexecd: anything else fails the registration.
+  const base = serviceUrl(url, "hostexecd URL").href.replace(/\/+$/, "");
+  const requireAdmin = adminGate(adminNow, "host exec is");
 
   async function request(path: string, init: RequestInit = {}): Promise<any> {
     let res: Response;
@@ -90,7 +66,7 @@ export function hostExecExtension({ url, token, adminNow }: HostExecOptions) {
       const detail = err instanceof Error ? err.message : String(err);
       throw new Error(`Could not reach hostexecd at ${base} (${detail}). The daemon runs it with BOOT; tell the admin instead of retrying.`);
     }
-    if (res.status === 401) throw new Error("hostexecd refused the token (401): Deck and hostexecd do not share it. Needs the admin, not a retry.");
+    if (res.status === 401) throw tokenRefused("hostexecd", "RINTHEL_HOSTEXECD_TOKEN");
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new Error(`hostexecd answered ${res.status}: ${body || "(empty)"}`);
@@ -101,7 +77,7 @@ export function hostExecExtension({ url, token, adminNow }: HostExecOptions) {
   return (pi: ExtensionAPI): void => {
     pi.registerTool({
       name: "rinthel_host_exec",
-      label: "Host exec",
+      label: toolLabel("rinthel_host_exec"),
       description:
         "Run a shell command on the real host machine (outside Deck's container), as the user that runs " +
         "hostexecd, without sudo. Blocking: waits for the command to finish (with a timeout) and returns " +
@@ -131,7 +107,7 @@ export function hostExecExtension({ url, token, adminNow }: HostExecOptions) {
 
     pi.registerTool({
       name: "rinthel_host_exec_history",
-      label: "Host exec history",
+      label: toolLabel("rinthel_host_exec_history"),
       description:
         "The latest rinthel_host_exec runs, as hostexecd audited them: command, exit code, duration and time, " +
         "most recent first.",

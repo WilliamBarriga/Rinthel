@@ -211,13 +211,9 @@ export class SessionManager extends EventEmitter {
         canvases: this.deps.canvases,
         instanceSoulFile: isClosed(profile) ? this.deps.instanceSoulFile : undefined,
         // Admin only: loaded for the general profile, and the role asked again on every call.
-        hostExec: this.deps.hostExec && !isClosed(profile)
-          ? { ...this.deps.hostExec, adminNow: () => ownerIsAdminNow(owner, this.deps.identity) }
-          : undefined,
-        subagents: isClosed(profile) ? undefined : { adminNow: () => ownerIsAdminNow(owner, this.deps.identity) },
-        memoria: this.deps.memoria && !isClosed(profile)
-          ? { ...this.deps.memoria, adminNow: () => ownerIsAdminNow(owner, this.deps.identity) }
-          : undefined,
+        admin: isClosed(profile)
+          ? undefined
+          : { adminNow: () => ownerIsAdminNow(owner, this.deps.identity), hostExec: this.deps.hostExec, memoria: this.deps.memoria },
         thinkingLevel: session.thinking_level || undefined,
         voice: this.deps.voice,
         browser: this.browserFor(sessionId, owner, profile),

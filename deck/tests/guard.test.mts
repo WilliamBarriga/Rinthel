@@ -59,7 +59,6 @@ test('MCP, host exec fetching the web, a subagent and the Session\'s own browser
     ['mcp_mail_read', {}],
     ['rinthel_host_exec', { command: 'wget https://example.com' }],
     ['subagent', { agent: 'scout', task: 'read the page' }],
-    ['subagentChain', {}],
     ['browser_navigate', { url: 'https://example.com' }],
   ];
   for (const [tool, input] of cases) {

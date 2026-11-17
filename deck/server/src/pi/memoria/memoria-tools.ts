@@ -2,6 +2,8 @@ import http from "node:http";
 import https from "node:https";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { adminGate, MEMORIA_TOOLS, serviceUrl, tokenRefused, type AdminToolAccess } from "../admin-tool.js";
+import { textResult, toolLabel } from "../tool-text.js";
 
 /**
  * Memoria: what the Instance remembers between Sessions, kept in Understory. An admin's Agent asks
@@ -22,11 +24,8 @@ import { Type } from "typebox";
  * the token comes from Deck's environment.
  */
 
-/** The tools this factory registers, as the Agent sees them. */
-export const MEMORIA_TOOLS: readonly string[] = ["understory_memory_query", "understory_memory_add", "understory_memory_update"];
-
-/** What a subagent's child may call: reading only. */
-export const MEMORIA_CHILD_TOOLS: readonly string[] = ["understory_memory_query"];
+// The names live with the other admin-only tools, where the Guard reads them too.
+export { MEMORIA_CHILD_TOOLS, MEMORIA_TOOLS } from "../admin-tool.js";
 
 /** How long a call may take before it is an error: a query or a write runs an LLM inside Understory. */
 export const MEMORIA_TIMEOUT_MS = 40 * 60_000;
@@ -38,14 +37,10 @@ export interface MemoriaAccess {
   url: () => Promise<string | null>;
 }
 
-export interface MemoriaOptions extends MemoriaAccess {
-  /** Whether the Session's owner is an admin right now: asked before every call. */
-  adminNow: () => Promise<boolean>;
+export interface MemoriaOptions extends MemoriaAccess, AdminToolAccess {
   /** Overrides `MEMORIA_TIMEOUT_MS` (tests). */
   timeoutMs?: number;
 }
-
-const textResult = (text: string) => ({ content: [{ type: "text" as const, text }], details: {} });
 
 /** One JSON-RPC exchange over HTTP, without fetch's 5-minute header timeout: only `timeoutMs` and the abort end it. */
 function post(url: URL, token: string, body: string, signal: AbortSignal): Promise<{ status: number; text: string }> {
@@ -79,16 +74,7 @@ function post(url: URL, token: string, body: string, signal: AbortSignal): Promi
 export function memoriaExtension(opts: MemoriaOptions, tools: readonly string[] = MEMORIA_TOOLS) {
   const timeoutMs = opts.timeoutMs ?? MEMORIA_TIMEOUT_MS;
 
-  /** Fails closed: a member now, a gone owner or an identity that does not answer all refuse. */
-  async function requireAdmin(): Promise<void> {
-    let admin = false;
-    try {
-      admin = await opts.adminNow();
-    } catch {
-      admin = false;
-    }
-    if (!admin) throw new Error("Refused: Memoria is for an admin, and the owner of this Session is not one now (or that could not be checked).");
-  }
+  const requireAdmin = adminGate(opts.adminNow, "Memoria is");
 
   async function endpoint(): Promise<URL> {
     let raw: string | null;
@@ -98,14 +84,7 @@ export function memoriaExtension(opts: MemoriaOptions, tools: readonly string[] 
       throw new Error(`Memoria is unavailable: where Understory is could not be read (${err instanceof Error ? err.message : err}).`);
     }
     if (!raw) throw new Error("Memoria is unavailable: Understory is off on this Instance.");
-    let url: URL;
-    try {
-      url = new URL("mcp", raw.endsWith("/") ? raw : `${raw}/`);
-    } catch {
-      throw new Error(`Memoria is unavailable: "${raw}" is not a URL.`);
-    }
-    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`Memoria is unavailable: "${raw}" is not http(s).`);
-    return url;
+    return serviceUrl(raw, "Memoria is unavailable:", "mcp");
   }
 
   /** Calls one of Understory's MCP tools and returns its text, or throws what the Agent should read. */
@@ -123,7 +102,7 @@ export function memoriaExtension(opts: MemoriaOptions, tools: readonly string[] 
       const detail = err instanceof Error ? err.message : String(err);
       throw new Error(`Could not reach Understory (${detail}). The Session goes on without Memoria; tell the admin instead of retrying.`);
     }
-    if (res.status === 401) throw new Error("Understory refused the token (401): Deck and Understory do not share UNDERSTORY_TOKEN. Needs the admin, not a retry.");
+    if (res.status === 401) throw tokenRefused("Understory", "UNDERSTORY_TOKEN");
     if (res.status < 200 || res.status >= 300) throw new Error(`Understory answered ${res.status}: ${res.text.slice(0, 500) || "(empty)"}`);
     let rpc: any;
     try {
@@ -141,7 +120,6 @@ export function memoriaExtension(opts: MemoriaOptions, tools: readonly string[] 
   const all = [
     {
       name: "understory_memory_query",
-      label: "Memoria: consultar",
       description:
         "Ask the Instance's Memoria (what it remembers between Sessions, kept in Understory) a natural-language " +
         "question. An agent inside Understory searches it and answers with cited paths. One fact or concept per call. " +
@@ -152,7 +130,6 @@ export function memoriaExtension(opts: MemoriaOptions, tools: readonly string[] 
     },
     {
       name: "understory_memory_add",
-      label: "Memoria: agregar",
       description:
         "Record new knowledge in the Instance's Memoria (facts, decisions, runbooks), in any prose form. Use " +
         "understory_memory_update when the concept already exists. Not available once this Session has read untrusted content.",
@@ -165,7 +142,6 @@ export function memoriaExtension(opts: MemoriaOptions, tools: readonly string[] 
     },
     {
       name: "understory_memory_update",
-      label: "Memoria: corregir",
       description:
         "Change existing knowledge in the Instance's Memoria (correct a fact, deprecate a concept, restructure), " +
         "described in natural language. Not available once this Session has read untrusted content.",
@@ -180,7 +156,7 @@ export function memoriaExtension(opts: MemoriaOptions, tools: readonly string[] 
       if (!tools.includes(t.name)) continue;
       pi.registerTool({
         name: t.name,
-        label: t.label,
+        label: toolLabel(t.name),
         description: t.description,
         parameters: t.parameters,
         execute: async (_toolCallId: string, params: any, signal: AbortSignal | undefined) => textResult(await call(t.tool, t.args(params), signal)),

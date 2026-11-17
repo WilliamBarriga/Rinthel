@@ -3,6 +3,7 @@ import { Type } from 'typebox';
 import { canvasCatalogPrompt } from '@deck/canvas-catalog';
 import type { Canvases } from '../canvases.js';
 import type { CanvasKind } from '../store/port.js';
+import { toolLabel } from './tool-text.js';
 
 /** Decode only complete JSON escape sequences; an unfinished escape stays pending. */
 function stringPrefix(raw: string,start: number): {value:string;end:number;complete:boolean} {
@@ -72,7 +73,18 @@ export class CanvasTools {
   private async interruptNow(){for(const call of [...this.writes.keys()])await this.finish(call,true);this.raw.clear();this.errors.clear();}
   interrupt():Promise<void> {return this.enqueue(()=>this.interruptNow());}
   extension=(pi:ExtensionAPI)=>{
-    const register=(name:string,description:string,parameters:any,execute:(id:string,p:any)=>any)=>pi.registerTool({name,label:name.replaceAll('_',' '),description,parameters,execute:async(id:string,p:any)=>{const result=await this.enqueue(()=>execute(id,p));return {content:[{type:'text',text:JSON.stringify(result)}],details:result}}});
+    // Every Canvas tool runs in this Session's queue and answers its result as JSON text.
+    const register = (name: string, description: string, parameters: any, execute: (id: string, p: any) => any) =>
+      pi.registerTool({
+        name,
+        label: toolLabel(name),
+        description,
+        parameters,
+        execute: async (id: string, p: any) => {
+          const result = await this.enqueue(() => execute(id, p));
+          return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result };
+        },
+      });
     register('canvas_list','List this session’s temporary and stored document canvases.',Type.Object({}),async()=>(await this.canvases.listCanvases(this.session)).map(({content,active_call,...row})=>({...row,characters:content.length})));
     register('canvas_create','Create an empty temporary canvas visible in this session: kind markdown (a document, the default) or ui (an interface built from a closed catalog of components). It is kept in memory until the user chooses Store in the UI. Then use canvas_write to write its content.',Type.Object({title:Type.String(),kind:Type.Optional(Type.Union([Type.Literal('markdown'),Type.Literal('ui')]))}),async(_id,p)=>{const row=await this.canvases.createCanvas(this.session,p.title,p.kind);return row});
     register('canvas_read','Read a document canvas and its current revision, including partial writes retained after interruption. Use the exact canvas ID returned by canvas_list or canvas_create, not its title.',Type.Object({canvas_id:Type.String()}),async(_id,p)=>{return this.canvases.focusCanvas(this.session,p.canvas_id)});

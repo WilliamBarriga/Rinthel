@@ -1,4 +1,5 @@
 import type { SessionTaintRepo } from "../store/port.js";
+import { SUBAGENT_TOOL } from "./admin-tool.js";
 
 /**
  * A Session's taint: whether it has read somebody else's words. One object for live results and for
@@ -13,7 +14,7 @@ import type { SessionTaintRepo } from "../store/port.js";
 const UNTRUSTED_COMMAND = /\b(himalaya|mutt|neomutt|notmuch|offlineimap|mbsync|curl|wget|lynx|w3m)\b/;
 
 /** A subagent's reads happen out of this Session's sight: its answer may carry them. */
-export const SUBAGENT_TOOLS: ReadonlySet<string> = new Set(["subagent", "subagentChain", "subagentSeries", "subagentVariants"]);
+export const SUBAGENT_TOOLS: ReadonlySet<string> = new Set([SUBAGENT_TOOL]);
 
 /** The Guard's envelope, as it stays in a tool result already in the conversation. */
 const ENVELOPE = /<<<\/?untrusted:[0-9a-f]{1,32}>>>/i;

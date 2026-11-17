@@ -1,6 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { ModelAccess } from "../../session-proxy.js";
+import { adminGate, SUBAGENT_TOOL, type AdminToolAccess } from "../admin-tool.js";
+import { textResult, toolLabel } from "../tool-text.js";
 import { discoverAgents } from "./agents.js";
 import { runChild, type ChildResult, type ChildTool } from "./child.js";
 
@@ -20,20 +22,18 @@ import { runChild, type ChildResult, type ChildTool } from "./child.js";
  *   and a tainted Session loses the tool (`TAINT_REVOKED_TOOLS` in `guard.ts`).
  */
 
-export const SUBAGENT_TOOL = "subagent";
+export { SUBAGENT_TOOL };
 
 const MAX_TASKS = 8;
 const OUTPUT_CAP = 50 * 1024;
 
-export interface SubagentOptions {
+export interface SubagentOptions extends AdminToolAccess {
   /** The parent Deck Session. */
   sessionId: string;
   /** Deck's agentDir: its `agents/*.md` join the image's, its `skills/` are found by name. */
   agentDir: string;
   /** The parent's way to its model, shared by every child. */
   modelAccess: ModelAccess;
-  /** Whether the Session's owner is an admin right now: asked before every call. */
-  adminNow: () => Promise<boolean>;
   /** What a child gets beyond pi's built-ins and the agentDir (`ChildTool`). */
   childTools: readonly ChildTool[];
   /** Where the agent types the volume replaces are told. */
@@ -79,15 +79,7 @@ export function subagentExtension(opts: SubagentOptions) {
     return run;
   };
 
-  async function requireAdmin(): Promise<void> {
-    let admin = false;
-    try {
-      admin = await opts.adminNow();
-    } catch {
-      admin = false;
-    }
-    if (!admin) throw new Error("Refused: subagents are for an admin, and the owner of this Session is not one now (or that could not be checked).");
-  }
+  const requireAdmin = adminGate(opts.adminNow, "subagents are");
 
   return async (pi: ExtensionAPI): Promise<void> => {
     // The catalog in the description is read once; each call reads the agents again, quietly.
@@ -95,7 +87,7 @@ export function subagentExtension(opts: SubagentOptions) {
 
     pi.registerTool({
       name: SUBAGENT_TOOL,
-      label: "Subagent",
+      label: toolLabel(SUBAGENT_TOOL),
       description:
         "Delegate work to subagents, each with its own isolated context. They run one at a time (local model). " +
         "Modes: single (agent+task), chain (steps with {previous}), tasks (independent; variants:true for alternatives). " +
@@ -109,7 +101,7 @@ export function subagentExtension(opts: SubagentOptions) {
         const mode: SubagentDetails["mode"] = params.chain?.length ? "chain" : params.tasks?.length ? "tasks" : "single";
         const items: Item[] =
           mode === "chain" ? params.chain : mode === "tasks" ? params.tasks : params.agent && params.task ? [{ agent: params.agent, task: params.task }] : [];
-        const fail = (text: string) => ({ content: [{ type: "text" as const, text }], details: { mode, results: [] } as SubagentDetails, isError: true });
+        const fail = (text: string) => ({ ...textResult(text, { mode, results: [] } satisfies SubagentDetails), isError: true });
 
         if (items.length === 0) return fail(`Missing agent+task, chain or tasks. Agents: ${agents.map((a) => a.name).join(", ")}`);
         if (items.length > MAX_TASKS) return fail(`Too many items (${items.length}); at most ${MAX_TASKS}.`);
@@ -119,7 +111,7 @@ export function subagentExtension(opts: SubagentOptions) {
         const results: ChildResult[] = [];
         // Once a child ran, its words are in the answer even when it failed: never an error result,
         // because the taint does not count a failed call as untrusted.
-        const answer = (text: string) => ({ content: [{ type: "text" as const, text: text || "(no output)" }], details: { mode, results } as SubagentDetails });
+        const answer = (text: string) => textResult(text || "(no output)", { mode, results } satisfies SubagentDetails);
         let previous = "";
         for (const [index, item] of items.entries()) {
           const agent = agents.find((a) => a.name === item.agent)!;

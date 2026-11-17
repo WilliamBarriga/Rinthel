@@ -65,6 +65,9 @@ model {
         modulo pi-sdk "sdk-client" "Talks to pi"
         modulo pi-provider "provider" "pi model provider: goes to the session-proxy"
         modulo pi-guard "guard / session-taint" "Fixed RULES and a persisted Session taint; every decision is a portal_guard event in the Session log"
+        modulo pi-admin "admin tool access" "What the admin-only tools share: their names (the Guard reads them), the owner's live role checked before every call (fails closed), http(s) service URLs and the 401 token mismatch" {
+          source { path "deck/server/src/pi/admin-tool.ts" }
+        }
         modulo pi-hostexec "host-exec tools" "rinthel_host_exec and its history: loaded with a token in admin Sessions only, role checked on every call; lost when the Session is tainted" {
           source { path "deck/server/src/pi/host-exec/host-exec-tools.ts" }
         }

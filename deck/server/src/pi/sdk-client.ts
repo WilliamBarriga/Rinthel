@@ -16,11 +16,12 @@ import type { BrowserDriver } from "../browser-driver.js";
 import type { SessionBrowserState } from "../session-browser.js";
 import { sessionBrowserTools } from "./session-browser-tools.js";
 import { BROWSER_READING_RULE, BROWSER_SCREENSHOT_RULE } from "./browser-snapshot.js";
-import { hostExecExtension, type HostExecOptions } from "./host-exec/host-exec-tools.js";
+import { hostExecExtension, type HostExecAccess } from "./host-exec/host-exec-tools.js";
 import { VoiceFirstTurn, audioMessage, audioSystemRules, voiceFirstSettings, type VoiceFirstSettings } from "./voice-first.js";
 import { subagentExtension } from "./subagents/subagent-tool.js";
 import type { ChildTool } from "./subagents/child.js";
-import { memoriaExtension, MEMORIA_CHILD_TOOLS, type MemoriaOptions } from "./memoria/memoria-tools.js";
+import { memoriaExtension, MEMORIA_CHILD_TOOLS, type MemoriaAccess } from "./memoria/memoria-tools.js";
+import type { AdminToolAccess } from "./admin-tool.js";
 
 /**
  * The Agent's own files: SOUL.md is who it is, PrimaryUser.md and MEMORY.md its owner's notes. Read
@@ -91,14 +92,20 @@ export interface SdkLaunch {
    * tools and the gate read at each call. Ignored for a closed profile.
    */
   browser?: SessionBrowserLaunch;
-  /** hostexecd and the owner's live role: set for an admin's Session when Deck has a token, never for a closed profile. */
-  hostExec?: HostExecOptions;
   /** The `VOICE_*` switches of a voice Turn; the defaults when absent. */
   voice?: VoiceFirstSettings;
-  /** The owner's live role for `subagent`: set for an admin's Session, never for a closed profile. */
-  subagents?: { adminNow: () => Promise<boolean> };
-  /** Understory and the owner's live role: set for an admin's Session when Deck has its token, never for a closed profile. */
-  memoria?: MemoriaOptions;
+  /** What an admin's Session adds: its admin-only tools. Never set for a closed profile (and ignored if it is). */
+  admin?: AdminLaunch;
+}
+
+/**
+ * An admin's Session: the owner's live role, asked before every call of its admin-only tools, and the
+ * services Deck can reach. `subagent` always registers; host exec only with hostexecd's token, Memoria
+ * only with Understory's.
+ */
+export interface AdminLaunch extends AdminToolAccess {
+  hostExec?: HostExecAccess;
+  memoria?: MemoriaAccess;
 }
 
 export interface SessionBrowserLaunch {
@@ -150,10 +157,12 @@ export class SdkPiClient extends EventEmitter implements PiClient {
     const ownBrowserTools = new Set<string>();
     // Tainted until the Guard rebuilds it at session_start, from the stored mark and pi's file.
     const taint = new SessionTaint(opts.sessionId, opts.taintMarks, { browserTools: ownBrowserTools });
-    const factories: { name: string; factory: (pi: any) => void | Promise<void> }[] = [
+    // `required`: a factory that fails to load stops the Session instead of running without it.
+    const factories: { name: string; factory: (pi: any) => void | Promise<void>; required?: true }[] = [
       // Every Session, unconditionally: any Session can read something untrusted.
       {
         name: "guard",
+        required: true,
         factory: guardExtension({
           sessionId: opts.sessionId,
           report: guard.report,
@@ -162,7 +171,7 @@ export class SdkPiClient extends EventEmitter implements PiClient {
           browser: browser ? { owned: ownBrowserTools, now: browser.now } : undefined,
         }),
       },
-      { name: "rinthel-provider", factory: rinthelProviderExtension(opts.modelAccess, (model) => liveSession.setModel(model)) },
+      { name: "rinthel-provider", required: true, factory: rinthelProviderExtension(opts.modelAccess, (model) => liveSession.setModel(model)) },
     ];
     const canvasTools = opts.canvases ? new CanvasTools(opts.sessionId, opts.canvases) : undefined;
     if (canvasTools) factories.push({ name: "canvases", factory: canvasTools.extension });
@@ -179,20 +188,22 @@ export class SdkPiClient extends EventEmitter implements PiClient {
         }),
       });
     }
-    const hostExec = closed ? undefined : opts.hostExec;
-    // Built inside pi's loader, so a registration that throws is a load error of `host-exec`.
-    if (hostExec) factories.push({ name: "host-exec", factory: (api: any) => hostExecExtension(hostExec)(api) });
-    const memoria = closed ? undefined : opts.memoria;
-    if (memoria) factories.push({ name: "memoria", factory: memoriaExtension(memoria) });
-    const subagents = closed ? undefined : opts.subagents;
-    if (subagents) {
+    const admin = closed ? undefined : opts.admin;
+    if (admin) {
+      const { adminNow } = admin;
+      // Built inside pi's loader, so a registration that throws is a load error of `host-exec`.
+      const hostExec = admin.hostExec && { ...admin.hostExec, adminNow };
+      if (hostExec) factories.push({ name: "host-exec", required: true, factory: (api: any) => hostExecExtension(hostExec)(api) });
+      const memoria = admin.memoria && { ...admin.memoria, adminNow };
+      if (memoria) factories.push({ name: "memoria", required: true, factory: memoriaExtension(memoria) });
       // What a subagent's child gets beyond pi's built-ins and the agentDir: Memoria's query, never its writes.
       const childTools: ChildTool[] = memoria
         ? [{ name: "memoria", tools: MEMORIA_CHILD_TOOLS, factory: memoriaExtension(memoria, MEMORIA_CHILD_TOOLS) }]
         : [];
       factories.push({
         name: "subagents",
-        factory: subagentExtension({ sessionId: opts.sessionId, agentDir: pi.getAgentDir(), modelAccess: opts.modelAccess, adminNow: subagents.adminNow, childTools }),
+        required: true,
+        factory: subagentExtension({ sessionId: opts.sessionId, agentDir: pi.getAgentDir(), modelAccess: opts.modelAccess, adminNow, childTools }),
       });
     }
     const context = {
@@ -224,8 +235,10 @@ export class SdkPiClient extends EventEmitter implements PiClient {
     const loadErrors = resourceLoader.getExtensions().errors;
     if (loadErrors.length) {
       // The Guard and the provider are inline: a Session never runs without them. Host exec, given a
-      // token, subagents and Memoria register or the Session does not start.
-      const inline = loadErrors.filter((e: any) => /guard|rinthel-provider|host-exec|subagents|memoria/.test(String(e?.path ?? e?.extensionPath ?? "")));
+      // token, subagents and Memoria register or the Session does not start. pi names an inline
+      // factory's load error `<inline:name>`.
+      const required = new Set(factories.filter((f) => f.required).map((f) => `<inline:${f.name}>`));
+      const inline = loadErrors.filter((e: any) => required.has(String(e?.path ?? e?.extensionPath ?? "")));
       if (closed || inline.length) throw new Error("No se pudieron cargar las extensiones de la Sesión");
       for (const e of loadErrors) console.error(`[pi] extension failed to load: ${String(e?.error ?? e)}`);
     }

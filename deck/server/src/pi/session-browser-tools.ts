@@ -1,5 +1,6 @@
 import type { BrowserDriver } from "../browser-driver.js";
 import type { SessionBrowserState } from "../session-browser.js";
+import { toolLabel } from "./tool-text.js";
 
 /**
  * The driver's tools the Agent never gets, whatever the catalogue offers:
@@ -52,7 +53,7 @@ export function sessionBrowserTools(
       options.owned?.add(spec.name);
       pi.registerTool({
         name: spec.name,
-        label: spec.name.replaceAll("_", " "),
+        label: toolLabel(spec.name),
         description: spec.description ?? spec.name,
         parameters: spec.inputSchema,
         async execute(_id: string, params: Record<string, unknown>) {

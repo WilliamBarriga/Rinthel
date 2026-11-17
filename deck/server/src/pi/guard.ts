@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import type { GuardNotice } from "@deck/contract";
 import { SUBAGENT_TOOLS, type SessionTaint } from "./session-taint.js";
+import { HOST_EXEC_TOOLS, MEMORIA_WRITE_TOOLS } from "./admin-tool.js";
 import type { SessionBrowserState } from "../session-browser.js";
 import { inlineBrowserScreenshot } from "./browser-screenshot.js";
 import { cleanBrowserSnapshot, isBrowserSnapshot } from "./browser-snapshot-format.js";
@@ -136,13 +137,7 @@ const envelope = (id: string) => ({
  * subagent acts out of the Guard's sight, and Memoria is read by every later Session. No pattern in
  * `RULES` could make some form of them safe. Reading Memoria stays.
  */
-export const TAINT_REVOKED_TOOLS: ReadonlySet<string> = new Set([
-  "rinthel_host_exec",
-  "rinthel_host_exec_history",
-  ...SUBAGENT_TOOLS,
-  "understory_memory_add",
-  "understory_memory_update",
-]);
+export const TAINT_REVOKED_TOOLS: ReadonlySet<string> = new Set([...HOST_EXEC_TOOLS, ...SUBAGENT_TOOLS, ...MEMORIA_WRITE_TOOLS]);
 
 /**
  * A prompt whose untrusted blocks ride beside `message`: each in its own envelope, and the Session
