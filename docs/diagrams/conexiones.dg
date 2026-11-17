@@ -29,6 +29,9 @@ model {
   deck.deck-server.srv-daemon -> daemon.api "REST; service credential"
   deck.deck-server.srv-auth -> daemon.api.api-identity "login, session-principal"
   deck.deck-server.srv-routing -> daemon.api.api-models "GET /model-provider/routing"
+  deck.deck-server.srv-api -> daemon.api.api-models "GET /models, POST /models/activate (admin Panel token)"
+  deck.deck-server.srv-routing -> deck.deck-server.srv-slots "holds the slot per request"
+  deck.deck-server.srv-slots -> modelos.llama-server "POST /slots/0?action=restore|save"
   daemon.identity.id-deck-http -> deck.deck-server.srv-api "POST /api/agent/retire-sessions"
 
   // Deck -> models, SQLite, Docker

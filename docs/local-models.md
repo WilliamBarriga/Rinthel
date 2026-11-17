@@ -93,6 +93,14 @@ runnable active model, where Deck talks to it directly:
 The URL is built with `deck.host_address` (`RINTHEL_DECK_HOST_ADDRESS`;
 `127.0.0.1` on Linux, `host.docker.internal` on Windows). Deck never rewrites it.
 
+Deck reads it on every call of a Session and goes straight to `llama-server`
+(ADR 0008). Each Session's slot is restored before a call and saved after it,
+in `data/deck/llama-slots`: `llama-server` starts with that
+`--slot-save-path`, after the Validated profile flags. The admin switches from
+Deck (composer and Ajustes); Deck itself answers 409 `turns_in_flight` while
+one of its Sessions is generating, and a live Session moves to the new model on
+its next call (`wrong_model`).
+
 ## The legacy portal
 
 Until Deck replaces it, the portal chats against the active model through

@@ -140,10 +140,9 @@ noted as **skipped**, not as done.
   Reload batches.
 - [ ] **Outcomes and errors.** *Manual (1): "readable" is a human judgement.*
   A failure shows as a readable error, not a raw trace.
-- [ ] **Local model switch from the TUI.** *Manual (1 and 3): the confirmation
-  and the banner are read, and the model occupies the GPU.* Pick another model
-  in CONFIGURAR; the daemon switches (or rolls back) and the Monitor shows
-  the `llm` line of `models_status` going down and up.
+- [ ] **The Local model line of the Monitor.** *Manual (1): it is read on
+  screen.* While an admin switches the Local model from Deck, the Monitor shows
+  the `llm` line of `models_status` going down and up with the new model.
 
 ### Deck (web)
 
@@ -159,7 +158,15 @@ interface with the real daemon, model and host, and how it looks.
   `--start-llm` occupies the GPU.* A new Session with `admin` and another with
   `miembro`: the bar under the composer shows the model; the answer streams;
   closing the tab mid-turn and reopening restores what was lost without
-  duplicating. Deleting the Session deletes its Slot file.
+  duplicating. Deleting the Session deletes its Slot file. While llama-server
+  reads a long prompt the chat shows its progress, and the window under the
+  composer is the Local model's (`context_window` of the catalog).
+- [ ] **Local model switch from Deck.** *Manual (1 and 3): the message is read,
+  and two models occupy the GPU in turn.* With `admin`, switch from the
+  composer while a member's turn is answering: a 409 says there are turns in
+  course and nothing changes. Switch again once it ends: the member's next
+  message is answered by the new model, and the window under the composer
+  changes. The same switch from Ajustes; `miembro` sees neither.
 - [ ] **Agent browser.** *Manual (2 and 1): it creates real Docker
   containers.* Only `admin` sees Browser; the Agent navigates a page and the
   capture shows.

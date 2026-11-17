@@ -10,7 +10,8 @@ COPY server server
 COPY web web
 RUN npm run build
 
-# The server's runtime dependencies only (better-sqlite3 ships a prebuilt binary for this Node).
+# The server's runtime dependencies only (better-sqlite3 ships a prebuilt binary for this Node),
+# pi's SDK among them: every Session runs pi in this process.
 FROM node:22-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -28,8 +29,9 @@ COPY --from=build /app/web/dist web/dist
 
 # HOME lives on the data volume, so pi's agentDir (~/.pi/agent) and its packages
 # survive image rebuilds. /data/bin is on PATH: a CLI dropped there survives a
-# rebuild, unlike one installed into the image filesystem.
-ENV PATH=/data/bin:$PATH
+# rebuild, unlike one installed into the image filesystem. pi's own CLI comes
+# with its SDK (node_modules/.bin/pi), for installing packages into the agentDir.
+ENV PATH=/data/bin:/app/node_modules/.bin:$PATH
 ENV NODE_ENV=production \
     PORT=4200 \
     DATA_DIR=/data \

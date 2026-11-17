@@ -20,7 +20,7 @@ model {
 
     servicio deck-server "Deck server" "Node + Express; owner of the pi runs and of deck.db" {
       source { path "deck/server/src" }
-      ruta srv-api "api" "Routes /api/*: sessions, agent, canvases, voice, settings, browser, memory" {
+      ruta srv-api "api" "Routes /api/*: sessions, agent, workspaces, models, canvases, voice, settings, browser, memory" {
         source { path "deck/server/src/api" }
       }
       modulo srv-auth "auth / tool-profile" "Login against the daemon; current role of the owner; tool profile by role" {
@@ -30,8 +30,11 @@ model {
         source { path "deck/server/src/session-manager.ts" }
       }
       modulo srv-eventos "live-events" "Session events: SSE and retention"
-      modulo srv-routing "session-proxy / model-routing" "pi points at /s/<token>; the proxy forwards straight to llama-server, with per-Session slots" {
+      modulo srv-routing "session-proxy / model-routing" "pi points at /s/<token>; the proxy reads the route on every call and forwards straight to llama-server; wrong_model when the Local model changed" {
         source { path "deck/server/src/session-proxy.ts" }
+      }
+      modulo srv-slots "session-slots" "Per-Session slot: restore before, save after, one lock per HTTP request, byte budget, LRU" {
+        source { path "deck/server/src/session-slots" }
       }
       modulo srv-daemon "daemon-client" "Client of the daemon: login, session-principal, model route"
       modulo srv-recursos "user-resources" "users/<id>/: agent home, workspaces, files with quota, Instance SOUL"

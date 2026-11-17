@@ -23,3 +23,11 @@ _Avoid_: Backend, servidor a secas.
 **Credencial de servicio**:
 Cómo el daemon habla con `/api` de Deck sin cookie: los encabezados `X-Rinthel-Service-Secret` y `X-Rinthel-User-Id`. Abre una sola ruta, `POST /api/agent/retire-sessions`, que el daemon llama antes de borrar a un Usuario: retira todas sus Sesiones, de los dos tipos, y es idempotente. Actúa como un Miembro con ese id, nunca Admin. Quien lleva el secreto se juzga solo por él (se descartan sus cookies) y todo lo que no despeje es un 401, igual que sin credencial.
 _Avoid_: API key, token de servicio.
+
+**Encuadre de staff**:
+Lo que el Agente lee una sola vez, en el primer prompt de toda Sesión con dueño, sea `task` o `agent`: el nombre y el rol de su dueño, o, si escribe un Admin en una Sesión ajena, que la Sesión actúa por su dueño y el Admin solo supervisa. Informa al Agente; no calibra confianza.
+_Avoid_: Encuadre de Grupo.
+
+**Slot de la Sesión**:
+El estado del Local model que Deck guarda por Sesión en el disco de `llama-server` (`data/deck/llama-slots`): se restaura antes de cada llamada al modelo y se guarda después, así volver a una Sesión no relee todo su historial. Es de un dueño, un Local model y una Sesión; se va con la Sesión y, pasado el tope de bytes, se borra el usado hace más tiempo.
+_Avoid_: Caché de sesión, KV cache a secas.
