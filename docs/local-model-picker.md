@@ -21,7 +21,7 @@ quede libre antes de iniciar su reemplazo. Si el servidor anterior no se
 detiene, rechaza el cambio sin guardar la configuración nueva.
 
 Para seleccionar offline, detén los servicios con TERMINATE y el daemon con
-`./rinthel-boot.sh --stop`, y ejecuta `.venv/bin/python select-model.py <clave>`.
+`rinthel/rinthel-boot.sh --stop`, y ejecuta `rinthel/.venv/bin/python select-model.py <clave>`.
 El script rechaza puertos activos, conserva una copia local del `.env` y
 reutiliza el registro de proveedores y la escritura de configuración.
 

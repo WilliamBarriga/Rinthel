@@ -48,7 +48,7 @@ Consulta primero [`docs/04-windows-installation.md`](docs/04-windows-installatio
 Con Python 3.13+, Rust y Git disponibles:
 
 ```powershell
-.\install.ps1
+.\rinthel\install.ps1
 ```
 
 El bootstrap crea `.venv`, instala el daemon, compila el cliente y abre
@@ -66,11 +66,11 @@ para instalar las dependencias del sistema y CUDA compatible con tu GPU.
 Ubuntu 26.04 incluye Python 3.14; no necesita el PPA deadsnakes.
 
 ```bash
-./install.sh
+rinthel/install.sh
 ```
 
 El bootstrap crea `.venv`, instala el daemon, prepara `.env` y `data/`,
-compila el cliente Rust y abre la TUI. `./install.sh --skip-launch` instala
+compila el cliente Rust y abre la TUI. `rinthel/install.sh --skip-launch` instala
 sin abrir la interfaz. Rust se instala con rustup si no existe Cargo.
 
 El perfil Linux selecciona `docker-compose.ubuntu.yml`: los contenedores
@@ -111,19 +111,19 @@ host: los servicios web se compilan en Docker.
 
 ## Installation
 
-`./install.sh` (see above) does the whole thing. To do it by hand:
+`rinthel/install.sh` (see above) does the whole thing. To do it by hand:
 
 **Daemon** (Python — dev mode, recommended if you're going to touch the code):
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -e .
+python3 -m venv rinthel/.venv
+rinthel/.venv/bin/pip install -e rinthel
 ```
 
 **Client** (Rust):
 
 ```bash
-cd rinthel-client && cargo build --release
+cd rinthel/rinthel-client && cargo build --release
 ```
 
 ## Usage
@@ -132,7 +132,7 @@ From the repo root. Full lifecycle details (phases, diagram, services) in
 [`docs/01-system-overview.md`](docs/01-system-overview.md):
 
 ```bash
-./rinthel-boot.sh
+rinthel/rinthel-boot.sh
 ```
 
 `rinthel-boot.sh` resolves `.venv/bin/python` and `rinthel-client/target/release/rinthel`
@@ -155,7 +155,7 @@ INSTALL     -- Initial setup (CUDA/model/Pithagoras/Understory)
 SALIR       -- Exit (prompts whether to also stop the daemon)
 ```
 
-To stop the daemon without opening the client: `./rinthel-boot.sh --stop`.
+To stop the daemon without opening the client: `rinthel/rinthel-boot.sh --stop`.
 
 ## Configuration
 

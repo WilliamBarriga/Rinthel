@@ -3,7 +3,8 @@
 # infraestructura persistente e independiente del cliente — sobrevive a que
 # cierres la TUI, hasta que corras `--stop` o apagues la máquina.
 #
-# DIR se resuelve relativo al script y se usa como cwd.
+# DIR (este script, rinthel/) es el cwd; ROOT (raíz de la Instance, su padre)
+# guarda .env, logs/ y los pidfiles.
 # Config vía .env, ver README/.env.example.
 #
 # Uso:
@@ -12,21 +13,22 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(dirname "$DIR")"
 cd "$DIR"
 if [[ -f "$HOME/.cargo/env" ]]; then source "$HOME/.cargo/env"; fi
 PYTHON="$DIR/.venv/bin/python"
 CARGO_MANIFEST="$DIR/rinthel-client/Cargo.toml"
 BINARY="$DIR/rinthel-client/target/release/rinthel"
-PIDFILE="$DIR/.rinthel-daemon.pid"
-ENV_FILE="$DIR/.env"
-DAEMON_LOG="$DIR/logs/daemon.log"
+PIDFILE="$ROOT/.rinthel-daemon.pid"
+ENV_FILE="$ROOT/.env"
+DAEMON_LOG="$ROOT/logs/daemon.log"
 # hostexecd: daemon separado que ejecuta comandos de shell en el host real
 # (ver plans/rinthel-host-exec.md) — mismo patrón de pidfile/autostart que
 # el daemon de arriba, en paralelo, sin pisar nada de lo suyo.
-HOSTEXECD_PIDFILE="$DIR/.rinthel-hostexecd.pid"
+HOSTEXECD_PIDFILE="$ROOT/.rinthel-hostexecd.pid"
 # stdout/stderr del proceso — NO logs/hostexecd.log, que es el audit log
 # JSONL de hostexecd/audit.py: mezclarlos llenaba la auditoría de tracebacks.
-HOSTEXECD_LOG="$DIR/logs/hostexecd.out.log"
+HOSTEXECD_LOG="$ROOT/logs/hostexecd.out.log"
 READY_TIMEOUT=10 # segundos de poll tras autostart antes de rendirse
 
 # `cargo build` es incremental — sin cambios desde el último boot, esto es
@@ -40,7 +42,7 @@ build_client() {
             echo "[boot] cargo no está en PATH — sigo con el binario existente sin reconstruir." >&2
             return
         fi
-        echo "error: no se encontró cargo y no hay binario previo en $BINARY — instalá Rust (rustup.rs) o corré ./install.sh." >&2
+        echo "error: no se encontró cargo y no hay binario previo en $BINARY — instalá Rust (rustup.rs) o corré rinthel/install.sh." >&2
         exit 1
     fi
     echo "[boot] compilando cliente Rust (cargo build --release)..."
@@ -59,7 +61,7 @@ build_client() {
 # duplicar la lógica de parseo del .env.
 port_from_env() {
     local var_name="$1" default_value="$2"
-    VAR_NAME="$var_name" DEFAULT_VALUE="$default_value" "$PYTHON" -c 'import os; from dotenv import load_dotenv; load_dotenv(".env"); p=int(os.environ.get(os.environ["VAR_NAME"], os.environ["DEFAULT_VALUE"])); assert 1 <= p <= 65535; print(p)'
+    VAR_NAME="$var_name" DEFAULT_VALUE="$default_value" ENV_FILE="$ENV_FILE" "$PYTHON" -c 'import os; from dotenv import load_dotenv; load_dotenv(os.environ["ENV_FILE"]); p=int(os.environ.get(os.environ["VAR_NAME"], os.environ["DEFAULT_VALUE"])); assert 1 <= p <= 65535; print(p)'
 }
 
 port_in_use() {
@@ -118,13 +120,13 @@ if [[ "${1:-}" == "--stop" ]]; then
 fi
 
 if [[ ! -x "$PYTHON" ]]; then
-    echo "error: no se encontró $PYTHON — corré ./install.sh primero." >&2
+    echo "error: no se encontró $PYTHON — corré rinthel/install.sh primero." >&2
     exit 1
 fi
 build_client
 
 # Provision before either daemon reads .env; reruns preserve existing secrets.
-"$PYTHON" -m rinthel_tui.install.host_exec "$DIR" "$DIR/pithagoras"
+"$PYTHON" -m rinthel_tui.install.host_exec "$ROOT" "$ROOT/pithagoras"
 
 PORT="$(port_from_env RINTHEL_DAEMON_PORT 8765)"
 pid="$(running_pid "$PIDFILE")"

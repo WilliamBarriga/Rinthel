@@ -40,14 +40,14 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from hostexecd import audit, auth, executor
+from rinthel_tui.instance import Instance
 
 # hostexecd/daemon.py -> repo root (mismo criterio que rinthel_tui/daemon.py).
 # Sin esto, RINTHEL_HOSTEXECD_TOKEN nunca llega al proceso: `rinthel-boot.sh`
 # solo pasa el puerto explícito al lanzar `nohup ... hostexecd.daemon`, no el
 # resto de `.env` — sin este load_dotenv, auth.expected_token() da siempre
 # None y toda request devuelve 401, sin importar qué token mande el cliente.
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(_REPO_ROOT / ".env")
+load_dotenv(Instance.discover(Path(__file__).resolve().parent).env_path)
 
 app = FastAPI()
 

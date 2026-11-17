@@ -30,26 +30,12 @@ from typing import Any, Callable
 
 from dotenv import load_dotenv
 
-def _find_repo_root(start: Path) -> Path:
-    """Ancestro más cercano con ``.git`` — no ``parent.parent`` fijo.
-
-    Este mismo archivo vive a distinta profundidad según el monorepo: a un
-    nivel de la raíz acá (Monorepo Rinthel), pero un nivel más adentro en
-    Plataforma Corp (``rinthel/rinthel_tui/``, subtree congelado). Buscar
-    ``.git`` hacia arriba da el resultado correcto en los dos sin bifurcar
-    esta constante — el subtree no trae ``.git`` propio (merge, no nested
-    repo), así que no hay falso positivo a mitad de camino.
-    """
-    for candidate in (start, *start.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    return start.parent.parent  # fallback si se corre fuera de un repo git
-
+from rinthel_tui.instance import Instance
 
 # Raíz del repo — ancla tanto la búsqueda de .env como los defaults de
 # understory.dir/pithagoras.dir más abajo, independiente de con qué cwd se
 # lance el TUI/daemon (y de a qué profundidad viva este archivo).
-REPO_ROOT = _find_repo_root(Path(__file__).resolve().parent)
+REPO_ROOT = Instance.discover(Path(__file__).resolve().parent).root
 
 # find_dotenv()/load_dotenv() sin argumentos busca a partir del cwd del
 # proceso, no de este archivo — si el TUI se lanza desde fuera del repo

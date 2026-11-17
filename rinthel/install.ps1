@@ -9,6 +9,7 @@ if (-not [Environment]::Is64BitProcess) {
     throw 'Rinthel requiere PowerShell de 64 bits. Cierra esta ventana x86 y abre Windows PowerShell sin la etiqueta (x86).'
 }
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$InstanceRoot = Split-Path -Parent $ProjectRoot
 $VenvPython = Join-Path $ProjectRoot '.venv\Scripts\python.exe'
 
 function Add-VisualStudioCMakeToPath {
@@ -67,7 +68,7 @@ try {
     Pop-Location
 }
 
-$EnvFile = Join-Path $ProjectRoot '.env'
+$EnvFile = Join-Path $InstanceRoot '.env'
 if (-not (Test-Path -LiteralPath $EnvFile)) {
     $DataRoot = (Join-Path $env:USERPROFILE 'Rinthel-data').Replace('\', '/')
     $UserRoot = $env:USERPROFILE.Replace('\', '/')

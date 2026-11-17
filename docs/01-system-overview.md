@@ -73,7 +73,7 @@ Settings → Add-ons.
 
 The whole boot/shutdown flow is handled through explicit `async` phases —
 `rinthel_tui/lifecycle/` — but they no longer run in-process with the UI.
-`./rinthel-boot.sh` autostarts the daemon (pidfile-tracked, survives the TUI
+`rinthel/rinthel-boot.sh` autostarts the daemon (pidfile-tracked, survives the TUI
 closing) if it isn't already up, then launches the Rust client. The client
 opens straight on the menu (glitch-reveal title, no separate splash screen)
 and drives everything through the daemon's HTTP/WS API — see

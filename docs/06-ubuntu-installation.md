@@ -93,7 +93,7 @@ Desde la carpeta donde está este README:
 
 ```bash
 git branch --show-current
-./install.sh --skip-launch
+rinthel/install.sh --skip-launch
 ```
 
 La rama debe ser `fix/ubuntu-26-04`. El script instala Rust si falta,
@@ -121,7 +121,7 @@ Comprueba la configuración sin imprimir secretos:
 
 ```bash
 docker compose config --quiet
-./rinthel-boot.sh
+rinthel/rinthel-boot.sh
 ```
 
 En la interfaz:
@@ -148,11 +148,11 @@ carpetas Pi preexistentes en el host.
 ## 4. Uso diario y diagnóstico
 
 ```bash
-./rinthel-boot.sh
+rinthel/rinthel-boot.sh
 ```
 
 Usa **BOOT** para iniciar servicios y **TERMINATE** para detenerlos.
-`./rinthel-boot.sh --stop` detiene únicamente el daemon de control;
+`rinthel/rinthel-boot.sh --stop` detiene únicamente el daemon de control;
 no detiene automáticamente los contenedores ni el modelo.
 
 ```bash
@@ -165,12 +165,12 @@ tail -n 60 logs/llama-server.log
 
 Si Docker muestra permisos denegados, confirma que la sesión tenga el grupo
 `docker`; reiniciar solo la terminal puede no aplicar el cambio. Ejecuta de
-nuevo `./install.sh --skip-launch` después de instalar Docker para registrar
-su GID real. No uses `sudo ./install.sh`, porque los datos quedarían con
+nuevo `rinthel/install.sh --skip-launch` después de instalar Docker para registrar
+su GID real. No uses `sudo rinthel/install.sh`, porque los datos quedarían con
 propietario root.
 
 Si cambias el puerto del modelo o su ruta en CONFIGURAR, ejecuta de nuevo
-`./install.sh --skip-launch`, detén el daemon con `--stop` y vuelve a abrirlo;
+`rinthel/install.sh --skip-launch`, detén el daemon con `--stop` y vuelve a abrirlo;
 así se actualizan `models.json` y las variables que heredan los contenedores.
 
 ## Pruebas reproducibles
@@ -178,7 +178,7 @@ así se actualizan `models.json` y las variables que heredan los contenedores.
 ```bash
 .venv/bin/python -m pip install -e '.[dev]'
 .venv/bin/python -m pytest -q
-bash -n install.sh rinthel-boot.sh
+bash -n rinthel/install.sh rinthel/rinthel-boot.sh
 cargo test --locked --manifest-path rinthel-client/Cargo.toml
 ```
 

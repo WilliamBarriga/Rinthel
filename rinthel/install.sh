@@ -37,7 +37,7 @@ fi
 
 if [[ -z "${PYTHON:-}" ]]; then
     echo "[install] Requiere Python 3.13+. En Ubuntu 26.04: sudo apt install python3 python3-venv" >&2
-    echo "[install] Para otro intérprete: PYBIN=/ruta/python ./install.sh" >&2
+    echo "[install] Para otro intérprete: PYBIN=/ruta/python rinthel/install.sh" >&2
     exit 1
 fi
 

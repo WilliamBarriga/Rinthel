@@ -3,11 +3,11 @@
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+RINTHEL_DIR = Path(__file__).resolve().parents[1]
 
 
 def test_windows_installer_writes_validated_profile():
-    script = (ROOT / "install.ps1").read_text(encoding="utf-8-sig")
+    script = (RINTHEL_DIR / "install.ps1").read_text(encoding="utf-8-sig")
     expected = {
         "RINTHEL_CONTEXT_WINDOW=65536",
         "RINTHEL_N_CPU_MOE=34",
@@ -22,7 +22,7 @@ def test_windows_installer_writes_validated_profile():
 
 
 def test_windows_boot_hides_the_persistent_daemon_window():
-    script = (ROOT / "rinthel-boot.ps1").read_text(encoding="utf-8-sig")
+    script = (RINTHEL_DIR / "rinthel-boot.ps1").read_text(encoding="utf-8-sig")
     assert "-WindowStyle Hidden" in script
     assert "-RedirectStandardError" in script
     assert "-RedirectStandardOutput" in script

@@ -27,7 +27,7 @@ Desde la raíz del repositorio:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-.\install.ps1
+.\rinthel\install.ps1
 ```
 
 El script crea un entorno virtual en `.venv`, instala el daemon, compila
@@ -59,13 +59,13 @@ no detiene la instalación principal.
 ## Uso diario
 
 ```powershell
-.\rinthel-boot.ps1
+.\rinthel\rinthel-boot.ps1
 ```
 
 Para detener únicamente el daemon persistente:
 
 ```powershell
-.\rinthel-boot.ps1 -Stop
+.\rinthel\rinthel-boot.ps1 -Stop
 ```
 
 El daemon queda en segundo plano cuando se cierra la TUI. En el siguiente uso

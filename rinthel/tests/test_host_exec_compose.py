@@ -10,7 +10,7 @@ import pytest
 
 @pytest.mark.skipif(shutil.which("docker") is None, reason="Docker Compose CLI is unavailable")
 def test_compose_merges_subtrees_and_mounts_the_host_exec_extension():
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
         ["docker", "compose", "-f", str(root / "docker-compose.yaml"), "config", "--no-interpolate", "--format", "json"],
         cwd=root, capture_output=True, text=True, check=True,

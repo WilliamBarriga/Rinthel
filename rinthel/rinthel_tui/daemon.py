@@ -56,7 +56,7 @@ from fastapi.responses import JSONResponse
 
 from rinthel_tui import config_routes, phase_bridge
 from rinthel_tui.local_models import create_router as _local_models_router
-from rinthel_tui.config import default_config
+from rinthel_tui.config import REPO_ROOT, default_config
 from rinthel_tui.lifecycle import phases, specs
 from rinthel_tui.lifecycle.managed_service import check_ready
 from rinthel_tui.lifecycle.services import DOCKER_SERVICES, LLAMA_SERVICE, LOCAL_SERVICES
@@ -68,9 +68,8 @@ from rinthel_tui.theme import palette
 cfg = default_config()
 app = FastAPI()
 
-# rinthel_tui/daemon.py -> repo root (mismo criterio que config.py para
-# ubicar el .env de la raíz).
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+# Instance root (same discovery as config.py, which loads the root .env).
+_REPO_ROOT = REPO_ROOT
 _ENV_PATH = _REPO_ROOT / ".env"
 _ENV_EXAMPLE_PATH = _REPO_ROOT / ".env.example"
 

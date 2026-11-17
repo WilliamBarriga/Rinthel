@@ -16,10 +16,10 @@ import time
 from pathlib import Path
 from typing import Any
 
-# hostexecd/audit.py -> repo root (mismo criterio que rinthel_tui/daemon.py
-# usa para ubicar su propio .env desde la raíz del repo).
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-LOG_PATH = _REPO_ROOT / "logs" / "hostexecd.log"
+from rinthel_tui.instance import Instance
+
+# Audit log lives under logs/ at the Instance root.
+LOG_PATH = Instance.discover(Path(__file__).resolve().parent).logs_dir / "hostexecd.log"
 
 
 def record(

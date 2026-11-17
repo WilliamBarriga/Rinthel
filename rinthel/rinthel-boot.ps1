@@ -6,11 +6,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$InstanceRoot = Split-Path -Parent $ProjectRoot
 $Python = Join-Path $ProjectRoot '.venv\Scripts\python.exe'
 $ClientDir = Join-Path $ProjectRoot 'rinthel-client'
 $Client = Join-Path $ClientDir 'target\release\rinthel.exe'
-$PidFile = Join-Path $ProjectRoot '.rinthel-daemon.pid'
-$LogDir = Join-Path $ProjectRoot 'logs'
+$PidFile = Join-Path $InstanceRoot '.rinthel-daemon.pid'
+$LogDir = Join-Path $InstanceRoot 'logs'
 $Port = 8765
 
 function Add-VisualStudioCMakeToPath {
@@ -26,7 +27,7 @@ function Add-VisualStudioCMakeToPath {
 
 Add-VisualStudioCMakeToPath
 
-$EnvFile = Join-Path $ProjectRoot '.env'
+$EnvFile = Join-Path $InstanceRoot '.env'
 if (Test-Path -LiteralPath $EnvFile) {
     $PortLine = Get-Content -LiteralPath $EnvFile | Where-Object { $_ -match '^RINTHEL_DAEMON_PORT=' } | Select-Object -Last 1
     if ($PortLine) { $Port = [int](($PortLine -split '=', 2)[1].Trim()) }
@@ -57,7 +58,7 @@ if ($Stop) {
 }
 
 if (-not (Test-Path -LiteralPath $Python)) {
-    throw 'No existe .venv\Scripts\python.exe. Ejecuta .\install.ps1 primero.'
+    throw 'No existe .venv\Scripts\python.exe. Ejecuta .\rinthel\install.ps1 primero.'
 }
 
 $Cargo = Get-Command cargo -ErrorAction SilentlyContinue
@@ -68,7 +69,7 @@ if ($Cargo) {
         throw 'Falló la compilación del cliente y no existe un binario anterior.'
     }
 } elseif (-not (Test-Path -LiteralPath $Client)) {
-    throw 'Falta cargo y tampoco existe rinthel.exe. Ejecuta .\install.ps1.'
+    throw 'Falta cargo y tampoco existe rinthel.exe. Ejecuta .\rinthel\install.ps1.'
 }
 
 if (-not (Test-LocalPort $Port)) {

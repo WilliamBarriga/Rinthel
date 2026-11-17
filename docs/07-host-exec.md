@@ -28,8 +28,8 @@ El bootstrap Ubuntu detecta ambos módulos y conserva los secretos; los
 checkouts que solo contienen Ubuntu mantienen su Compose independiente.
 
 Al actualizar desde una versión que arrancaba hostexecd sin token, detén
-primero los daemons lanzados por el script con `./rinthel-boot.sh --stop`.
-Después ejecuta `./rinthel-boot.sh` para preparar el secreto y arrancarlos
+primero los daemons lanzados por el script con `rinthel/rinthel-boot.sh --stop`.
+Después ejecuta `rinthel/rinthel-boot.sh` para preparar el secreto y arrancarlos
 con el entorno nuevo. Recrea el portal con
 `docker compose up -d --force-recreate portal`: un simple restart de Docker
 no actualiza las variables de entorno del contenedor.
