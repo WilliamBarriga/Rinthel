@@ -275,6 +275,39 @@ async def test_instance_secrets_raise_when_neither_env_nor_example_exist(host, r
         )
 
 
+# ── INSTANCE SOUL ──────────────────────────────────────────────────
+
+
+async def test_instance_soul_is_seeded_from_the_template_where_deck_reads_it(host, report, cfg):
+    task = install_tasks.instance_soul(cfg)
+
+    await install.phase_install_instance_soul(host, report, task=task)
+
+    assert task.path == cfg.instance.deck_data_dir / "instance" / "SOUL.md"
+    seeded = task.path.read_text()
+    assert seeded.startswith("# SOUL.md")
+    assert "This file is your identity" in seeded
+    assert seeded.endswith("\n")
+
+
+async def test_instance_soul_already_there_is_never_overwritten(host, report, tmp_path):
+    task = install_tasks.InstanceSoulSeed(tmp_path / "instance" / "SOUL.md")
+    task.path.parent.mkdir(parents=True)
+    task.path.write_text("# mine\n")
+
+    await install.phase_install_instance_soul(host, report, task=task)
+
+    assert task.path.read_text() == "# mine\n"
+    assert any("ya existe" in w for w in report.warnings)
+
+
+def test_instance_soul_install_unit_runs_only_while_deck_is_enabled(cfg):
+    unit = next(u for u in install.INSTALL_UNITS if u.label == "DECK")
+
+    assert unit.enabled_of(cfg) is cfg.deck.enabled
+    assert [step.fn for step in unit.steps] == [install.phase_install_instance_soul]
+
+
 # ── IDENTITY ───────────────────────────────────────────────────────
 
 

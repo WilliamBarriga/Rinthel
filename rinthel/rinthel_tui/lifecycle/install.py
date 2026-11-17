@@ -21,6 +21,7 @@ from dotenv import dotenv_values
 
 from rinthel_tui import database
 from rinthel_tui.config import RinthelConfig
+from rinthel_tui.atomic_write import atomic_write
 from rinthel_tui.env_file import update_env_file
 from rinthel_tui.identity.adapters.sqlite import SqliteIdentity
 from rinthel_tui.identity.admin import FIRST_ADMIN, ensure_first_admin
@@ -34,6 +35,7 @@ from rinthel_tui.lifecycle.domain.outcome import PhaseReport, require_ok
 from rinthel_tui.lifecycle.domain.phases.docker import phase_check_docker
 from rinthel_tui.lifecycle.install_tasks import (
     IdentitySetup,
+    InstanceSoulSeed,
     InstanceSecrets,
     LlamaCppInstall,
     ModelCatalogInstall,
@@ -401,6 +403,18 @@ async def phase_install_instance_secrets(host: Host, report: PhaseReport, *, tas
             report.warn(f"{key} ya estaba seteado — omito")
 
 
+async def phase_install_instance_soul(host: Host, report: PhaseReport, *, task: InstanceSoulSeed) -> None:
+    """Seeds the Instance SOUL from the template, once: an empty SOUL leaves a
+    member's Agent without an identity. One that is already there (the admin
+    edited it) is never touched."""
+    if task.path.exists():
+        report.warn(f"{task.path} ya existe — omito")
+        return
+    template = importlib.resources.files("rinthel_tui.install") / "templates" / "instance-soul.md"
+    atomic_write(task.path, template.read_text())
+    report.success(f"SOUL de la Instance sembrada en {task.path}")
+
+
 async def phase_install_identity(host: Host, report: PhaseReport, *, task: IdentitySetup) -> None:
     """Migrates ``rinthel.db`` and, with no active admin, makes ``admin`` one
     with a random password reported once. No prompt, like every INSTALL
@@ -472,6 +486,13 @@ IDENTITY_INSTALL = InstallUnit(
     steps=(InstallStep("IDENTITY — rinthel.db + primer admin", phase_install_identity, install_tasks.identity_setup),),
 )
 
+# What Deck reads from its volume before its first boot.
+DECK_INSTALL = InstallUnit(
+    label="DECK",
+    enabled_of=lambda cfg: cfg.deck.enabled,
+    steps=(InstallStep("DECK — SOUL de la Instance", phase_install_instance_soul, install_tasks.instance_soul),),
+)
+
 PITHAGORAS_INSTALL = InstallUnit(
     label="PITHAGORAS",
     enabled_of=lambda cfg: cfg.pithagoras.enabled,
@@ -487,5 +508,5 @@ UNDERSTORY_INSTALL = InstallUnit(
 )
 
 INSTALL_UNITS: list[InstallUnit] = [
-    LLAMA_INSTALL, SECRETS_INSTALL, IDENTITY_INSTALL, PITHAGORAS_INSTALL, UNDERSTORY_INSTALL,
+    LLAMA_INSTALL, SECRETS_INSTALL, IDENTITY_INSTALL, DECK_INSTALL, PITHAGORAS_INSTALL, UNDERSTORY_INSTALL,
 ]

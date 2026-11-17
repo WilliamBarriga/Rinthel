@@ -81,6 +81,14 @@ class IdentitySetup:
     database_path: Path
 
 
+@dataclass(frozen=True)
+class InstanceSoulSeed:
+    """Where Deck reads the Instance SOUL (the ``SOUL.md`` every member's
+    Sessions load), on Deck's volume."""
+
+    path: Path
+
+
 LLAMACPP_BRANCH = "master"
 PORTAL_BRANCH = "rinthel-pithagoras"
 
@@ -144,6 +152,10 @@ def understory_install(cfg: RinthelConfig) -> UnderstoryInstall:
 
 def instance_secrets(cfg: RinthelConfig) -> InstanceSecrets:
     return InstanceSecrets(cfg.instance)
+
+
+def instance_soul(cfg: RinthelConfig) -> InstanceSoulSeed:
+    return InstanceSoulSeed(cfg.instance.deck_data_dir / "instance" / "SOUL.md")
 
 
 def identity_setup(cfg: RinthelConfig) -> IdentitySetup:

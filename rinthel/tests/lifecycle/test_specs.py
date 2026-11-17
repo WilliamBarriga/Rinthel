@@ -130,6 +130,7 @@ def test_install_plan_preflight_first_then_every_unit_and_stops_on_failure(cfg):
         ]),
         (None, "instance", ["◈ INSTANCE — secretos del .env"]),
         (None, "identity", ["◈ IDENTITY — rinthel.db + primer admin"]),
+        (None, "deck", ["◈ DECK — SOUL de la Instance"]),
         (None, "pithagoras", ["◈ PITHAGORAS — clone + configurar"]),
         (None, "understory", ["◈ UNDERSTORY — scaffold + configurar"]),
     ]
