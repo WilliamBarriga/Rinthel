@@ -74,6 +74,13 @@ class InstanceSecrets:
     instance: Instance
 
 
+@dataclass(frozen=True)
+class IdentitySetup:
+    """Where the daemon's ``rinthel.db`` lives (users and Panel tokens)."""
+
+    database_path: Path
+
+
 LLAMACPP_BRANCH = "master"
 PORTAL_BRANCH = "rinthel-pithagoras"
 
@@ -137,3 +144,7 @@ def understory_install(cfg: RinthelConfig) -> UnderstoryInstall:
 
 def instance_secrets(cfg: RinthelConfig) -> InstanceSecrets:
     return InstanceSecrets(cfg.instance)
+
+
+def identity_setup(cfg: RinthelConfig) -> IdentitySetup:
+    return IdentitySetup(cfg.instance.database_path)

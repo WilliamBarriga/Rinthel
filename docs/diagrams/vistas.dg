@@ -25,7 +25,7 @@ view modelos-locales {
 view ciclo-de-vida {
   type architecture
   theme rinthel
-  include daemon, daemon.api, daemon.api.api-lifecycle, daemon.api.api-ws, daemon.lifecycle, daemon.lifecycle.**, daemon.monitoring, admin, boot, cliente-tui, modelos, docker, rinthel-db
+  include daemon, daemon.api, daemon.api.api-lifecycle, daemon.api.api-ws, daemon.lifecycle, daemon.lifecycle.**, daemon.database, daemon.monitoring, admin, boot, cliente-tui, modelos, docker, rinthel-db
   depth 3
 }
 
@@ -45,7 +45,7 @@ view daemon-modulos {
 view daemon-api {
   type architecture
   theme rinthel
-  include daemon, daemon.api, daemon.api.**, daemon.identity, daemon.models, daemon.lifecycle, daemon.monitoring, daemon.nu-config, daemon.nu-theme, deck.deck-server.srv-daemon, cliente-tui
+  include daemon, daemon.api, daemon.api.**, daemon.identity, daemon.database, daemon.models, daemon.lifecycle, daemon.monitoring, daemon.nu-config, daemon.nu-theme, deck.deck-server.srv-daemon, cliente-tui
   depth 3
 }
 
@@ -81,7 +81,7 @@ view understory-detalle {
 view datos {
   type architecture
   theme rinthel
-  include rinthel-db, deck-db, daemon, daemon.identity, daemon.lifecycle, deck, deck.deck-server, deck.deck-server.srv-store
+  include rinthel-db, deck-db, daemon, daemon.identity, daemon.database, daemon.lifecycle, deck, deck.deck-server, deck.deck-server.srv-store
   depth 2
   link rinthel-db -> er-identidad
   link deck-db -> er-deck

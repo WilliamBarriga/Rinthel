@@ -1,6 +1,6 @@
 """Fases de INSTALL — bootstrap de infra en una máquina nueva: build CUDA de
 llama.cpp, descarga del modelo GGUF, scaffolding del portal y Understory,
-secretos de la Instance.
+secretos de la Instance, ``rinthel.db`` y el primer admin.
 
 Mismo protocolo que el resto de lifecycle/ (``async def phase_*(host, report,
 **kwargs) -> None``, ``PhaseError``): comandos por ``Host.runner``, lo que la
@@ -19,8 +19,11 @@ from typing import Any
 
 from dotenv import dotenv_values
 
+from rinthel_tui import database
 from rinthel_tui.config import RinthelConfig
 from rinthel_tui.env_file import update_env_file
+from rinthel_tui.identity.adapters.sqlite import SqliteIdentity
+from rinthel_tui.identity.admin import FIRST_ADMIN, ensure_first_admin
 from rinthel_tui.install.host_exec import prepare_host_exec
 from rinthel_tui.install.portal_model import PORTAL_MODEL_ID, PORTAL_PROVIDER
 from rinthel_tui.instance import RotatableSecret
@@ -30,6 +33,7 @@ from rinthel_tui.lifecycle.domain.host import Host
 from rinthel_tui.lifecycle.domain.outcome import PhaseReport, require_ok
 from rinthel_tui.lifecycle.domain.phases.docker import phase_check_docker
 from rinthel_tui.lifecycle.install_tasks import (
+    IdentitySetup,
     InstanceSecrets,
     LlamaCppInstall,
     ModelCatalogInstall,
@@ -404,6 +408,26 @@ async def phase_install_instance_secrets(host: Host, report: PhaseReport, *, tas
             report.warn(f"{key} ya estaba seteado — omito")
 
 
+async def phase_install_identity(host: Host, report: PhaseReport, *, task: IdentitySetup) -> None:
+    """Migrates ``rinthel.db`` and, with no active admin, makes ``admin`` one
+    with a random password reported once. No prompt, like every INSTALL
+    phase; ``reset-admin`` is the recovery if the password is lost."""
+    try:
+        database.migrate(task.database_path)
+    except database.DatabaseError as exc:
+        report.error(str(exc))
+        raise PhaseError("rinthel.db unusable") from exc
+    report.success(f"identidad en {task.database_path} lista")
+    password = ensure_first_admin(SqliteIdentity(task.database_path))
+    if password is None:
+        report.warn("ya hay un admin activo — omito el primer admin")
+        return
+    report.success(
+        f"admin creado — usuario: {FIRST_ADMIN}  contraseña: {password}  "
+        "(copiala ahora, no se vuelve a mostrar — cambiala después del primer login)"
+    )
+
+
 # ── unidades instalables — un servicio con enabled=False no aparece en
 # [0] INSTALL (ver specs.install_plan), aunque sigue siendo relevante para
 # BOOT/TERMINATE/RELOAD vía enabled_of ─────────────────────────────────────
@@ -449,6 +473,12 @@ SECRETS_INSTALL = InstallUnit(
     ),
 )
 
+# The daemon's ``rinthel.db`` and the first admin.
+IDENTITY_INSTALL = InstallUnit(
+    label="IDENTITY",
+    steps=(InstallStep("IDENTITY — rinthel.db + primer admin", phase_install_identity, install_tasks.identity_setup),),
+)
+
 PITHAGORAS_INSTALL = InstallUnit(
     label="PITHAGORAS",
     enabled_of=lambda cfg: cfg.pithagoras.enabled,
@@ -463,4 +493,6 @@ UNDERSTORY_INSTALL = InstallUnit(
     ),
 )
 
-INSTALL_UNITS: list[InstallUnit] = [LLAMA_INSTALL, SECRETS_INSTALL, PITHAGORAS_INSTALL, UNDERSTORY_INSTALL]
+INSTALL_UNITS: list[InstallUnit] = [
+    LLAMA_INSTALL, SECRETS_INSTALL, IDENTITY_INSTALL, PITHAGORAS_INSTALL, UNDERSTORY_INSTALL,
+]

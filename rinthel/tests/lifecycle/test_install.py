@@ -11,6 +11,9 @@ from pathlib import Path
 import pytest
 from dotenv import dotenv_values
 
+from rinthel_tui import database
+from rinthel_tui.identity import tokens
+from rinthel_tui.identity.adapters.sqlite import SqliteIdentity
 from rinthel_tui.install.portal_model import PORTAL_MODEL_ID, PORTAL_PROVIDER, PortalModel, phase_publish_portal_model
 from rinthel_tui.instance import Instance
 from rinthel_tui.lifecycle import install, install_tasks
@@ -270,3 +273,38 @@ async def test_instance_secrets_raise_when_neither_env_nor_example_exist(host, r
         await install.phase_install_instance_secrets(
             host, report, task=install_tasks.InstanceSecrets(Instance(tmp_path))
         )
+
+
+# ── IDENTITY ───────────────────────────────────────────────────────
+
+
+async def test_identity_creates_rinthel_db_and_shows_the_first_admin_password_once(host, report, tmp_path):
+    instance = Instance(tmp_path)
+
+    await install.phase_install_identity(host, report, task=install_tasks.IdentitySetup(instance.database_path))
+
+    user = SqliteIdentity(instance.database_path).get_user_by_username("admin")
+    assert user.is_active_admin
+    shown = [w for m in report.successes for w in m.split() if tokens.verify_password(w, user.password_hash)]
+    assert len(shown) == 1
+
+
+async def test_identity_with_an_active_admin_changes_nothing(host, report, tmp_path):
+    task = install_tasks.IdentitySetup(Instance(tmp_path).database_path)
+    await install.phase_install_identity(host, report, task=task)
+    before = SqliteIdentity(task.database_path).list_users()
+
+    await install.phase_install_identity(host, report, task=task)
+
+    assert SqliteIdentity(task.database_path).list_users() == before
+    assert any("admin activo" in w for w in report.warnings)
+
+
+async def test_identity_stops_on_a_newer_schema(host, report, tmp_path):
+    path = Instance(tmp_path).database_path
+    database.migrate(path, migrations=(*database.MIGRATIONS, "SELECT 1;"))
+
+    with pytest.raises(PhaseError):
+        await install.phase_install_identity(host, report, task=install_tasks.IdentitySetup(path))
+
+    assert any("schema version" in e for e in report.errors)

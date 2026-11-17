@@ -78,7 +78,7 @@ with that warning; the other services still start.
   `lifecycle_busy` against BOOT, TERMINATE, RELOAD and INSTALL) and answers 409
   `turns_in_flight` while `llama-server` reports a slot generating.
   `GET /models` lists the catalog with what can be activated. Both are
-  admin-only by decision; until identity lands they take the service secret.
+  admin-only: they take an admin's Panel token (not the service secret).
 
 ## Routing for Deck
 

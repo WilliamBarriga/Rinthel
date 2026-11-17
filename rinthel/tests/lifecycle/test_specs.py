@@ -117,6 +117,7 @@ def test_install_plan_preflight_first_then_every_unit_and_stops_on_failure(cfg):
             "◈ LOCAL MODELS — catálogo inicial",
         ]),
         (None, "instance", ["◈ INSTANCE — secretos del .env"]),
+        (None, "identity", ["◈ IDENTITY — rinthel.db + primer admin"]),
         (None, "pithagoras", ["◈ PITHAGORAS — clone + configurar"]),
         (None, "understory", ["◈ UNDERSTORY — scaffold + configurar"]),
     ]

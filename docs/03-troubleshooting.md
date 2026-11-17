@@ -6,6 +6,21 @@
 > directory. Create the venv at the repo root (see `README.md` →
 > Installation).
 
+> [!WARNING]
+> **Lost the admin password, or the daemon says "sin admin activo: corré
+> reset-admin"** — there is no open mode and no password reset over HTTP.
+> On the host, run
+> `rinthel/.venv/bin/python -m rinthel_tui.identity reset-admin [--username admin]`:
+> it makes that user an active admin with a new random password, printed
+> once, and revokes their refresh tokens. It works with the daemon running
+> or stopped.
+
+> [!WARNING]
+> **The daemon refuses to start: "rinthel.db has schema version N but this
+> daemon knows up to M"** — `data/rinthel.db` was written by a newer
+> version. Update the code; never downgrade the data. "SQLite X is too old"
+> means the Python of the daemon ships an SQLite older than 3.37.
+
 > [!TIP]
 > **Port already in use** — BOOT won't relaunch `llama-server` if
 > something is already listening on `RINTHEL_LLAMA_PORT` (default

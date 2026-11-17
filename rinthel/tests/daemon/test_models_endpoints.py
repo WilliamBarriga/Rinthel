@@ -41,8 +41,15 @@ def _catalog(model_adapters, catalog_entries, daemon_cfg, host):
     host.probe.script_http(READY, True)
 
 
-def _activate(client, service_headers, model_id: str):
-    return client.post("/models/activate", json={"id": model_id}, headers=service_headers)
+@pytest.fixture
+def admin_headers(seed_user, bearer) -> dict:
+    """The Panel token of an admin, as Deck sends it."""
+    seed_user("root", role="admin")
+    return bearer("root")
+
+
+def _activate(client, admin_headers, model_id: str):
+    return client.post("/models/activate", json={"id": model_id}, headers=admin_headers)
 
 
 def _dies_on_start(host, cfg, model: LocalModel) -> None:
@@ -79,8 +86,8 @@ def test_routing_is_for_the_service_only(client):
 # ── GET /models ──────────────────────────────────────────────────────────
 
 
-def test_models_lists_the_catalog_with_what_can_be_activated(client, service_headers):
-    body = client.get("/models", headers=service_headers).json()
+def test_models_lists_the_catalog_with_what_can_be_activated(client, admin_headers):
+    body = client.get("/models", headers=admin_headers).json()
 
     assert body["active"] == {"llm": "test-model", "stt": None, "tts": None}
     by_id = {m["id"]: m for m in body["models"]}
@@ -95,8 +102,10 @@ def test_models_lists_the_catalog_with_what_can_be_activated(client, service_hea
 # ── POST /models/activate ────────────────────────────────────────────────
 
 
-def test_a_switch_kills_spawns_the_new_model_and_makes_it_active(app, client, service_headers, host, model_adapters):
-    response = _activate(client, service_headers, "nuevo")
+def test_a_switch_kills_spawns_the_new_model_and_makes_it_active(
+    app, client, admin_headers, service_headers, host, model_adapters
+):
+    response = _activate(client, admin_headers, "nuevo")
 
     assert response.status_code == 200
     body = response.json()
@@ -109,19 +118,19 @@ def test_a_switch_kills_spawns_the_new_model_and_makes_it_active(app, client, se
     assert app.state.cfg.local_model.id == "nuevo"
 
 
-def test_a_switch_points_the_legacy_portal_at_the_new_model(client, service_headers, daemon_cfg):
-    _activate(client, service_headers, "nuevo")
+def test_a_switch_points_the_legacy_portal_at_the_new_model(client, admin_headers, daemon_cfg):
+    _activate(client, admin_headers, "nuevo")
 
     portal = daemon_cfg.instance.portal_data_dir / "home" / ".pi" / "agent" / "models.json"
     provider = json.loads(portal.read_text())["providers"][PORTAL_PROVIDER]
     assert provider["models"] == [{"id": PORTAL_MODEL_ID, "name": "Nuevo", "contextWindow": 32768}]
 
 
-def test_a_model_that_does_not_come_up_is_rolled_back(app, client, service_headers, host, daemon_cfg, new_model,
+def test_a_model_that_does_not_come_up_is_rolled_back(app, client, admin_headers, host, daemon_cfg, new_model,
                                                       model_adapters):
     _dies_on_start(host, daemon_cfg, new_model)
 
-    body = _activate(client, service_headers, "nuevo").json()
+    body = _activate(client, admin_headers, "nuevo").json()
 
     assert (body["ok"], body["active"], body["rolled_back"]) == (False, "test-model", True)
     assert [s.argv[s.argv.index("-m") + 1] for s in host.processes.spawns] == [
@@ -132,20 +141,20 @@ def test_a_model_that_does_not_come_up_is_rolled_back(app, client, service_heade
     assert app.state.cfg.local_model.id == "test-model"
 
 
-def test_a_failed_rollback_is_reported(client, service_headers, host, daemon_cfg, new_model, model_adapters):
+def test_a_failed_rollback_is_reported(client, admin_headers, host, daemon_cfg, new_model, model_adapters):
     _dies_on_start(host, daemon_cfg, new_model)
     _dies_on_start(host, daemon_cfg, daemon_cfg.local_model)
 
-    body = _activate(client, service_headers, "nuevo").json()
+    body = _activate(client, admin_headers, "nuevo").json()
 
     assert (body["ok"], body["active"], body["rolled_back"]) == (False, "test-model", False)
     assert model_adapters.active.get("llm") == "test-model"
 
 
-def test_switching_with_turns_in_flight_is_409_and_touches_nothing(client, service_headers, host, model_adapters):
+def test_switching_with_turns_in_flight_is_409_and_touches_nothing(client, admin_headers, host, model_adapters):
     model_adapters.turns.busy = True
 
-    response = _activate(client, service_headers, "nuevo")
+    response = _activate(client, admin_headers, "nuevo")
 
     assert (response.status_code, response.json()["detail"]) == (409, "turns_in_flight")
     assert host.processes.spawns == []
@@ -157,16 +166,23 @@ def test_switching_with_turns_in_flight_is_409_and_touches_nothing(client, servi
     ("roto", 422, "not_activable: GGUF no encontrado: /m/roto.gguf"),
     ("voz", 422, "not_activable: la Capability tts todavía no tiene managed service"),
 ])
-def test_what_cannot_be_activated_is_rejected_before_touching_llama(client, service_headers, host, model_id, status,
+def test_what_cannot_be_activated_is_rejected_before_touching_llama(client, admin_headers, host, model_id, status,
                                                                    detail):
-    response = _activate(client, service_headers, model_id)
+    response = _activate(client, admin_headers, model_id)
 
     assert (response.status_code, response.json()["detail"]) == (status, detail)
     assert host.processes.spawns == []
 
 
-def test_activate_is_guarded(client):
-    assert client.post("/models/activate", json={"id": "nuevo"}).status_code == 401
+@pytest.mark.parametrize("method,path", [("GET", "/models"), ("POST", "/models/activate")])
+def test_model_administration_is_for_an_admin_only(client, service_headers, seed_user, bearer, host, method, path):
+    seed_user("ana")
+    body = {"json": {"id": "nuevo"}} if method == "POST" else {}
+
+    assert client.request(method, path, **body).status_code == 401
+    assert client.request(method, path, headers=service_headers, **body).status_code == 401
+    assert client.request(method, path, headers=bearer("ana"), **body).status_code == 403
+    assert host.processes.spawns == []
 
 
 # ── el lock global contra boot, terminate, reload e install ─────────────
@@ -177,9 +193,9 @@ def aclient(app):
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://daemon")
 
 
-async def test_a_switch_while_a_lifecycle_command_runs_is_409(app, aclient, service_headers, host):
+async def test_a_switch_while_a_lifecycle_command_runs_is_409(app, aclient, admin_headers, host):
     async with aclient, app.state.lifecycle_lock.hold():
-        response = await aclient.post("/models/activate", json={"id": "nuevo"}, headers=service_headers)
+        response = await aclient.post("/models/activate", json={"id": "nuevo"}, headers=admin_headers)
 
     assert (response.status_code, response.json()["detail"]) == (409, "lifecycle_busy")
     assert host.processes.spawns == []

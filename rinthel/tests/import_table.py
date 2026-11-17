@@ -85,6 +85,17 @@ RULES: dict[str, list[Rule]] = {
              why="los adapters escriben con atomic_write/instance_toml; el del managed service corre el Lifecycle "
                  "plan de llama con el cfg vivo"),
     ],
+    "identity": [
+        _domain("identity", no_adapters=True, no_system_clock=True,
+                why="users and guards only: SQLite and Deck's HTTP live behind Identity and DeckSessions"),
+        _pkg("identity",
+             only=("rinthel_tui.identity", "rinthel_tui.clock", "rinthel_tui.faults", "rinthel_tui.database"),
+             per_file={"rinthel_tui/identity/__main__.py": (
+                 ("rinthel_tui.config", "rinthel_tui.instance"), "the operator command finds the Instance and its rinthel.db",
+             )},
+             why="the neutral Clock, the shared fault injection of the doubles and the rinthel.db connection; "
+                 "nothing of lifecycle or the HTTP layer"),
+    ],
 }
 
 # Módulos de ``rinthel_tui/`` sin regla de imports, con el motivo. Un módulo nuevo
@@ -98,6 +109,7 @@ UNGUARDED: dict[str, str] = {
     "config": _PLAIN,
     "config_edits": _PLAIN,
     "daemon": "raíz de composición",
+    "database": "rinthel.db connection and migrator: infrastructure shared by the startup gate and the SQLite adapters",
     "env_file": _PLAIN,
     "faults": "la inyección de fallos que comparten los dobles en memoria (ADR 0005), sin dependencias",
     "install": _PLAIN,

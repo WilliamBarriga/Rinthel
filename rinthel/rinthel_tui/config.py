@@ -374,6 +374,21 @@ SECRET_ENVS: dict[str, str] = {
 
 
 @dataclass(frozen=True)
+class IdentityConfig:
+    """Panel token lifetimes. Out of ``_ENTRIES`` like ``Secrets``: they are
+    set in the ``.env``, not from ``[N] CONFIGURAR``."""
+
+    access_ttl_seconds: int = 86_400  # 1 day
+    refresh_ttl_seconds: int = 2_592_000  # 30 days
+
+
+IDENTITY_FIELDS: list[Field] = [
+    Field("access_ttl_seconds", "RINTHEL_IDENTITY_ACCESS_TTL", int, 86_400, positive=True),
+    Field("refresh_ttl_seconds", "RINTHEL_IDENTITY_REFRESH_TTL", int, 2_592_000, positive=True),
+]
+
+
+@dataclass(frozen=True)
 class InstallConfig:
     llamacpp_repo_dir: Path
     llamacpp_repo_url: str
@@ -426,6 +441,7 @@ class RinthelConfig:
     install: InstallConfig
     deck: DeckConfig = DeckConfig("127.0.0.1")
     secrets: Secrets = Secrets("", "")
+    identity: IdentityConfig = IdentityConfig()
     # Las variables legacy presentes al construir el cfg (shell o ``.env``).
     legacy_env: tuple[str, ...] = ()
     platform: Platform = "linux"
@@ -622,6 +638,7 @@ def default_config(instance: Instance | None = None, *, platform: Platform | Non
         install=_load(InstallConfig, INSTALL_FIELDS, env, instance),
         deck=_load(DeckConfig, DECK_FIELDS, env, instance, defaults=_DECK_DEFAULTS[platform]),
         secrets=Secrets(**{attr: _str_env(name, "", env) for attr, name in SECRET_ENVS.items()}),
+        identity=_load(IdentityConfig, IDENTITY_FIELDS, env, instance),
         legacy_env=tuple(name for name in _LEGACY_ENV if name in env),
         platform=platform,
         local_model=active.model,

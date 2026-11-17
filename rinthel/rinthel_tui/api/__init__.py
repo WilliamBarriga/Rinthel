@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from rinthel_tui.api import config, lifecycle, models, openapi, secrets, ws
+from rinthel_tui.api import config, identity, lifecycle, models, openapi, secrets, ws
 from rinthel_tui.api.adapters import Adapters
+from rinthel_tui.api.errors import install_errors
 from rinthel_tui.api.shared import Shared
 from rinthel_tui.api.ws import Broadcaster
 from rinthel_tui.config import RinthelConfig
@@ -52,6 +53,9 @@ def create_app(cfg: RinthelConfig, *, docs: bool = False, adapters: Adapters | N
     # ``compose`` y ``create_app`` solo las encadena.
     ws_area = ws.compose(adapters, shared)
     app.state.monitor = ws_area.monitor
+    identity_area = identity.compose(adapters)
+    app.state.identity = identity_area.identity
+    app.state.deck_sessions = identity_area.deck_sessions
     # Boot, terminate, reload, install y el cambio de Local model se excluyen.
     app.state.lifecycle_lock = LifecycleLock()
 
@@ -60,8 +64,10 @@ def create_app(cfg: RinthelConfig, *, docs: bool = False, adapters: Adapters | N
 
     models_area = models.compose(adapters, cfg_of=live_cfg, set_cfg=set_cfg, broadcast=broadcaster.broadcast)
     app.state.models = models_area
-    for router in (config.router, ws_area.router, lifecycle.router, secrets.router, models_area.router):
+    routers = (config.router, ws_area.router, lifecycle.router, secrets.router, identity_area.router, models_area.router)
+    for router in routers:
         app.include_router(router)
+    install_errors(app, identity_area.errors)
     openapi.install_security_schemes(app)
     openapi.mount_docs(app, public=docs)
     return app

@@ -3,7 +3,7 @@
 - ``GET /model-provider/routing`` (``service``): where Deck sends each
   Capability, straight to the managed service, built with
   ``deck.host_address``. It describes what runs: the live ``cfg``.
-- ``GET /models`` and ``POST /models/activate`` (``model_admin``): the
+- ``GET /models`` and ``POST /models/activate`` (``admin``): the
   catalog and the switch (kill, spawn, ready, rollback) under the global
   lifecycle lock; 409 ``lifecycle_busy`` or ``turns_in_flight``."""
 
@@ -13,7 +13,7 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from rinthel_tui.api.access import service
+from rinthel_tui.api.access import admin, service
 from rinthel_tui.api.deps import state
 from rinthel_tui.api.lifecycle.routes import wire
 from rinthel_tui.api.models.dtos import ActivateRequest, ActivateResult, ModelListing, Routing
@@ -23,12 +23,6 @@ from rinthel_tui.lifecycle.domain.types import UnitOutcome
 from rinthel_tui.models.domain.errors import CatalogUnavailable, NotActivable, TurnsInFlight, UnknownModel
 from rinthel_tui.models.domain.models import route
 from rinthel_tui.models.domain.types import CAPABILITIES
-
-# The policy that guards model administration (listing and switch). The
-# decisions make it admin-only; until the ``admin`` policy exists in
-# ``api/access.py`` the service (the TUI) holds it. Swapping this one name
-# for ``admin`` is the whole change.
-model_admin = service
 
 _cfg = state("cfg")
 _area = state("models")
@@ -45,7 +39,7 @@ def routing(cfg: RinthelConfig = Depends(_cfg)):
     return {"capabilities": capabilities}
 
 
-@router.get("/models", response_model=ModelListing, dependencies=[Depends(model_admin)])
+@router.get("/models", response_model=ModelListing, dependencies=[Depends(admin)])
 def listing(area=Depends(_area)):
     try:
         entries = area.catalog.entries()
@@ -68,7 +62,7 @@ def listing(area=Depends(_area)):
     }
 
 
-@router.post("/models/activate", response_model=ActivateResult, dependencies=[Depends(model_admin)])
+@router.post("/models/activate", response_model=ActivateResult, dependencies=[Depends(admin)])
 async def activate(
     body: ActivateRequest, area=Depends(_area), lock: LifecycleLock = Depends(_lock)
 ):
