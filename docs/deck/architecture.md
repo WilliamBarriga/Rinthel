@@ -91,10 +91,14 @@ these are the seams it hangs from.
   adapter (over a stand-in MCP server) and the double.
 - `BrowserRuntime` (`deck/server/src/instance-browser.ts`) is the browser's own
   lifecycle: status, install, start, stop, remove, forget the profile. Its
-  adapter (`extensions/browser-runtime.ts`) picks external, docker (Docker
-  Engine API over the socket, `extensions/docker.ts`) or a local Chrome
-  (`extensions/browser-local.ts`). Contract: `server/test/contract/browser-runtime.mjs`,
+  adapter (`browser/browser-runtime.ts`) picks external, docker (Docker
+  Engine API over the socket, `browser/docker.ts`) or a local Chrome
+  (`browser/browser-local.ts`). Contract: `server/test/contract/browser-runtime.mjs`,
   run against the adapter over a fake Docker and the in-memory double.
+- `CdpProbe` (`deck/server/src/instance-browser.ts`) reads the fixed CDP
+  endpoint: the browser's version and open pages, `null`/none when nothing
+  answers. One adapter (`browser/cdp.ts`, HTTP) serves both the runtime (to
+  find an external browser) and the `/api/browser` status.
 - `sessionBrowserNow` (`deck/server/src/session-browser.ts`) is the gate the
   Guard and the tools read on every call: the Session's toggle and its owner's
   role now (`ownerIsAdminNow`), shut on any failure. The tools themselves
@@ -102,7 +106,7 @@ these are the seams it hangs from.
   loads only for the general profile; the names they register are the only
   browser tools the Guard lets through, and the source the taint reads.
 - The view (`browser-proxy.ts`) is mounted outside `/api`, before the web UI,
-  and judges its caller itself; the frame keeper (`extensions/frame-keeper.ts`)
+  and judges its caller itself; the frame keeper (`browser/frame-keeper.ts`)
   watches the container's stream only while nobody else does.
 
 ## Voice

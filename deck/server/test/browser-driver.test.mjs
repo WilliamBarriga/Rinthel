@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { browserDriverContract } from "./contract/browser-driver.mjs";
 import { FakeBrowserDriver } from "./helpers/fake-browser-driver.mjs";
-import { McpStdioBrowserDriver } from "../dist/extensions/mcp-stdio-browser-driver.js";
+import { McpStdioBrowserDriver } from "../dist/browser/mcp-stdio-browser-driver.js";
 
 const tools = [
   { name: "echo", description: "Echo", inputSchema: { type: "object", properties: { text: { type: "string" } } } },

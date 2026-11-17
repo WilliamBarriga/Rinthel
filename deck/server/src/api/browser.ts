@@ -5,6 +5,7 @@ import type { PortalStore } from "../store/port.js";
 import type { BrowserSettings } from "../browser-settings.js";
 import type { BrowserRuntime } from "../instance-browser.js";
 import { adminOnly } from "./admin-only.js";
+import { cdpOverHttp } from "../browser/cdp.js";
 
 /** What the Instance browser's refusals name (`adminOnly`, and the `/browser-ui` proxy). */
 export const INSTANCE_BROWSER = "el browser de la Instance";
@@ -27,22 +28,14 @@ export interface BrowserDeps {
  */
 export function browserRouter({ store, settings, runtime, cdpUrl }: BrowserDeps): Router {
   const router = express.Router();
+  const cdp = cdpOverHttp(cdpUrl);
   router.use("/browser", adminOnly(INSTANCE_BROWSER));
   router.use("/sessions/:id/browser", adminOnly(INSTANCE_BROWSER));
 
   router.get("/browser", async (_req, res) => {
-    let version: string | null = null;
-    let pages: { title: string; url: string }[] = [];
-    try {
-      const v = await fetch(`${cdpUrl}/json/version`, { signal: AbortSignal.timeout(4000) });
-      version = ((await v.json()) as { Browser?: string }).Browser ?? null;
-      const l = await fetch(`${cdpUrl}/json/list`, { signal: AbortSignal.timeout(4000) });
-      pages = ((await l.json()) as { type: string; title: string; url: string }[])
-        .filter((t) => t.type === "page")
-        .map((t) => ({ title: t.title, url: t.url }));
-    } catch {
-      // Not running is a normal state, not an error: the browser is optional.
-    }
+    // Not running is a normal state, not an error: the browser is optional.
+    const version = await cdp.version();
+    const pages = version === null ? [] : await cdp.pages();
     const config = await settings.config();
     const sessions = await store.sessions.listBrowserEnabled();
     const body: BrowserStatus = {

@@ -53,7 +53,7 @@ model {
       modulo srv-browser "browser" "Instance browser: docker, local Chrome or external; fixed CDP endpoint shared between Sessions with no lease; per-call gate (toggle + admin role, fails closed); /browser-ui proxy and frame keeper; never stopped for idleness" {
         source { path "deck/server/src/session-browser.ts" }
         source { path "deck/server/src/browser-proxy.ts" }
-        source { path "deck/server/src/extensions" }
+        source { path "deck/server/src/browser" }
       }
       modulo srv-executors "executors" "host executor: pi runs in the server process"
       modulo srv-store "store" "Persistence in deck.db" {

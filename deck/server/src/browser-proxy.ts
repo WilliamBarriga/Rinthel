@@ -3,7 +3,7 @@ import https from "node:https";
 import type { Duplex } from "node:stream";
 import type { Express } from "express";
 import type { BrowserSettings } from "./browser-settings.js";
-import type { BrowserViewers } from "./extensions/browser-frames.js";
+import type { BrowserViewers } from "./browser/browser-frames.js";
 import { claimsOfRequest } from "./identity.js";
 import { adminRefusal } from "./api/admin-only.js";
 import { INSTANCE_BROWSER } from "./api/browser.js";

@@ -33,7 +33,7 @@ import { browserRouter } from "./api/browser.js";
 import { mountBrowserProxy } from "./browser-proxy.js";
 import type { BrowserSettings } from "./browser-settings.js";
 import type { BrowserRuntime } from "./instance-browser.js";
-import type { BrowserViewers } from "./extensions/browser-frames.js";
+import type { BrowserViewers } from "./browser/browser-frames.js";
 
 /** What the HTTP surface asks of the running Sessions (`SessionManager`, built by the composition). */
 export type DeckSessions = Pick<

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { FrameKeeper } from "../dist/extensions/frame-keeper.js";
+import { FrameKeeper } from "../dist/browser/frame-keeper.js";
 
 /**
  * A stand-in for selkies' stream websocket: it accepts the upgrade, decodes the client's (masked,

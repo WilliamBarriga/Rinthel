@@ -1,5 +1,5 @@
 import type { BrowserConfig } from "../browser-settings.js";
-import { EXTERNAL_REFUSAL, PASSWORD_REFUSAL, type BrowserInstall, type BrowserRuntime } from "../instance-browser.js";
+import { EXTERNAL_REFUSAL, PASSWORD_REFUSAL, type BrowserInstall, type BrowserRuntime, type CdpProbe } from "../instance-browser.js";
 import type { DockerApi } from "./docker.js";
 import type { LocalChrome } from "./browser-local.js";
 
@@ -14,8 +14,8 @@ export const CONTAINER = "deck-browser";
 export interface BrowserRuntimeOptions {
   /** `BROWSER_EXTERNAL=true`: a browser started and stopped outside Deck, only found over CDP. */
   external: boolean;
-  /** The Instance browser's CDP endpoint (`BROWSER_CDP_URL`). */
-  cdpUrl: string;
+  /** The Instance browser's CDP endpoint (`BROWSER_CDP_URL`), read: how an external browser is found. */
+  cdp: CdpProbe;
   docker: DockerApi;
   local: LocalChrome;
   /** The profile volume: the logins. */
@@ -100,13 +100,8 @@ export function createBrowserRuntime(opts: BrowserRuntimeOptions): BrowserRuntim
   return {
     async status() {
       if (opts.external) {
-        let running = false;
-        try {
-          const response = await fetch(`${opts.cdpUrl}/json/version`, { signal: AbortSignal.timeout(4000) });
-          running = response.ok && typeof ((await response.json()) as { Browser?: string }).Browser === "string";
-        } catch {
-          // An external browser can be stopped independently: not running is a normal answer.
-        }
+        // An external browser can be stopped independently: not running is a normal answer.
+        const running = (await opts.cdp.version()) !== null;
         return { available: false, mode: "external", image: true, container: running ? "running" : "stopped", pulling };
       }
       if (!docker.available()) {

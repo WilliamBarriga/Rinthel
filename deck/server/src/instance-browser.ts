@@ -37,6 +37,17 @@ export interface BrowserRuntime {
   forgetProfile(): Promise<void>;
 }
 
+/**
+ * Port: what the Instance browser says over its fixed CDP endpoint. Not running is a normal answer,
+ * never a throw: `version` is `null` and `pages` is empty.
+ */
+export interface CdpProbe {
+  /** The browser's product string (`Chrome/…`), or `null` when nothing answers as a browser there. */
+  version(): Promise<string | null>;
+  /** The open pages (tabs), or none when it cannot be read. */
+  pages(): Promise<{ title: string; url: string }[]>;
+}
+
 export const EXTERNAL_REFUSAL = "This browser is managed outside Deck";
 export const PASSWORD_REFUSAL = "Set a password before installing: it guards a browser holding live logins";
 

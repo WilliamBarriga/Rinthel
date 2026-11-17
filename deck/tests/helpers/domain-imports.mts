@@ -31,8 +31,8 @@ export const ADAPTERS = [
   'instance-soul-fs.ts',
   // Voice: HTTP straight to whisper-server and audiocpp-server.
   'voice/direct-voice-speech.ts',
-  // The Instance browser: docker over its socket, a local Chrome, the MCP driver's processes, and its proxied view.
-  'extensions/', 'browser-proxy.ts',
+  // The Instance browser: docker over its socket, a local Chrome, the MCP driver's processes, CDP over HTTP, and its proxied view.
+  'browser/docker.ts', 'browser/browser-local.ts', 'browser/mcp-stdio-browser-driver.ts', 'browser/cdp.ts', 'browser-proxy.ts',
 ];
 
 /** A daemon adapter is named `daemon-*.ts`: the port lives in the file without the prefix. */

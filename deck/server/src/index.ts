@@ -23,11 +23,12 @@ import { DirectVoiceSpeech } from "./voice/direct-voice-speech.js";
 import { voiceFlagsFromEnv } from "./voice/voice-config.js";
 import { browserSettings } from "./browser-settings.js";
 import { attachBrowserUpgrade } from "./browser-proxy.js";
-import { createBrowserRuntime } from "./extensions/browser-runtime.js";
-import { dockerOverSocket } from "./extensions/docker.js";
-import { CHROME_CANDIDATES, LocalChrome } from "./extensions/browser-local.js";
-import { watchBrowserFrames } from "./extensions/browser-frames.js";
-import { McpStdioBrowserDriver } from "./extensions/mcp-stdio-browser-driver.js";
+import { createBrowserRuntime } from "./browser/browser-runtime.js";
+import { cdpOverHttp } from "./browser/cdp.js";
+import { dockerOverSocket } from "./browser/docker.js";
+import { CHROME_CANDIDATES, LocalChrome } from "./browser/browser-local.js";
+import { watchBrowserFrames } from "./browser/browser-frames.js";
+import { McpStdioBrowserDriver } from "./browser/mcp-stdio-browser-driver.js";
 
 /**
  * The server, composed: what the environment says (`config.ts`), the adapters it picks, and the
@@ -58,7 +59,7 @@ const browserConfig = config.browser;
 const browserStore = browserSettings(store.settings, browserConfig.defaults);
 const browserRuntime = createBrowserRuntime({
   external: browserConfig.external,
-  cdpUrl: browserConfig.cdpUrl,
+  cdp: cdpOverHttp(browserConfig.cdpUrl),
   docker: dockerOverSocket(browserConfig.dockerSocket),
   local: new LocalChrome({
     candidates: [...(browserConfig.binary ? [browserConfig.binary] : []), ...CHROME_CANDIDATES],
