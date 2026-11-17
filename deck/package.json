@@ -1,0 +1,21 @@
+{
+  "name": "deck",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm run build -w @deck/server && npm run build -w @deck/web",
+    "test": "npm run build -w @deck/server && npm test -w @deck/server && npm test -w @deck/web && npm run test:guards",
+    "test:guards": "node --import tsx --test tests/*.test.mts",
+    "dev:server": "npm run dev -w @deck/server",
+    "dev:web": "npm run dev -w @deck/web",
+    "start": "node server/dist/index.js"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.3"
+  }
+}

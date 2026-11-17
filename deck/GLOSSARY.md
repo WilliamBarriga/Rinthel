@@ -1,0 +1,25 @@
+# Deck
+
+Deck es el portal web de la Instance: cada Usuario entra con su Panel token y trabaja con el Agente en sus Sesiones, que corren bajo el servidor aunque se cierre el navegador. Usuario, Admin, Miembro, Panel token e Instance están en [`rinthel/GLOSSARY.md`](../rinthel/GLOSSARY.md).
+
+## Language
+
+**Deck**:
+El portal web de la Instance y su servidor: el managed service que aloja al Agente, guarda las Sesiones en `deck.db` y deja a cada Usuario entrar con su Panel token. Los usuarios y sus contraseñas son del daemon; Deck solo pregunta.
+_Avoid_: Portal a secas (lo era el portal heredado), frontend, panel.
+
+**Sesión**:
+La unidad de trabajo de Deck: un directorio de trabajo, una conversación con el Agente y su historial de eventos. Es de uno de dos tipos: **tarea** (`task`, abierta sobre un workspace que elige su dueño) o **agente** (`agent`, el chat en la casa del Agente). Tiene un dueño, el Usuario que la abrió; la corrida la posee el servidor, no la pestaña del navegador.
+_Avoid_: Chat, conversación a secas, Panel token (la sesión de login no es una Sesión).
+
+**Agente**:
+pi corriendo dentro de una Sesión de Deck, con las herramientas que el rol de su dueño le permite.
+_Avoid_: Bot, asistente.
+
+**Host de pi**:
+El proceso Node de Deck, que aloja a pi y sirve el portal. Es dueño de las Sesiones y de `deck.db`; la identidad, el ciclo de vida y la ruta a los modelos son del daemon.
+_Avoid_: Backend, servidor a secas.
+
+**Credencial de servicio**:
+Cómo el daemon habla con `/api` de Deck sin cookie: los encabezados `X-Rinthel-Service-Secret` y `X-Rinthel-User-Id`. Abre una sola ruta, `POST /api/agent/retire-sessions`, que el daemon llama antes de borrar a un Usuario: retira todas sus Sesiones, de los dos tipos, y es idempotente. Actúa como un Miembro con ese id, nunca Admin. Quien lleva el secreto se juzga solo por él (se descartan sus cookies) y todo lo que no despeje es un 401, igual que sin credencial.
+_Avoid_: API key, token de servicio.
