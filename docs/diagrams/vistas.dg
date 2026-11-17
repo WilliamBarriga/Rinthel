@@ -1,0 +1,100 @@
+// Views: one per question, from general to particular. The reading order is in README.md.
+
+// 1. What runs in an Instance ---------------------------------------------------------------
+
+view instancia {
+  type architecture
+  theme rinthel
+  include **
+  exclude huggingface, github, docker-hub, npm, rinthel-db, deck-db
+  depth 1
+  link daemon -> daemon-modulos
+  link deck -> deck-servidor
+  link understory -> understory-detalle
+  link modelos -> modelos-locales
+}
+
+view modelos-locales {
+  type architecture
+  theme rinthel
+  include modelos, daemon, modelos.**, daemon.models, daemon.models.**, daemon.lifecycle, huggingface, github
+  depth 2
+  link daemon.lifecycle -> ciclo-de-vida
+}
+
+view ciclo-de-vida {
+  type architecture
+  theme rinthel
+  include daemon, daemon.api, daemon.api.api-lifecycle, daemon.api.api-ws, daemon.lifecycle, daemon.lifecycle.**, daemon.monitoring, admin, boot, cliente-tui, modelos, docker, rinthel-db
+  depth 3
+}
+
+// 2. The daemon inside ---------------------------------------------------------------------
+
+view daemon-modulos {
+  type architecture
+  theme rinthel
+  include daemon.**
+  exclude daemon.api.**
+  depth 2
+  link daemon.api -> daemon-api
+  link daemon.lifecycle -> ciclo-de-vida
+  link daemon.models -> modelos-locales
+}
+
+view daemon-api {
+  type architecture
+  theme rinthel
+  include daemon, daemon.api, daemon.api.**, daemon.identity, daemon.models, daemon.lifecycle, daemon.monitoring, daemon.nu-config, daemon.nu-theme, deck.deck-server.srv-daemon, cliente-tui
+  depth 3
+}
+
+// 3. Deck and Understory -------------------------------------------------------------------
+
+view deck-servidor {
+  type architecture
+  theme rinthel
+  include deck.deck-server, deck, daemon, daemon.api, deck.deck-server.**, deck.deck-web, understory, deck-db, modelos, docker
+  depth 4
+  collapsed deck.deck-server.srv-store
+  link deck.deck-web -> deck-web
+  link understory -> understory-detalle
+  link deck-db -> er-deck
+}
+
+view deck-web {
+  type architecture
+  theme rinthel
+  include deck.deck-web, deck, deck.deck-server, usuario, admin, deck.deck-web.**, deck.deck-server.srv-api
+  depth 3
+  link deck.deck-server.srv-api -> deck-servidor
+}
+
+view understory-detalle {
+  type architecture
+  theme rinthel
+  include understory, deck, deck.deck-server, deck.deck-server.srv-pi, modelos, understory.**, deck.deck-server.srv-pi.pi-memoria, modelos.llama-server
+}
+
+// 4. Data ----------------------------------------------------------------------------------
+
+view datos {
+  type architecture
+  theme rinthel
+  include rinthel-db, deck-db, daemon, daemon.identity, daemon.lifecycle, deck, deck.deck-server, deck.deck-server.srv-store
+  depth 2
+  link rinthel-db -> er-identidad
+  link deck-db -> er-deck
+}
+
+view er-identidad {
+  type er
+  theme rinthel
+  include rinthel-db.**
+}
+
+view er-deck {
+  type er
+  theme rinthel
+  include deck-db.**, rinthel-db.users
+}

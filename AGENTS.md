@@ -30,6 +30,13 @@ profile unless the change includes a new benchmark on the reference hardware;
 record new measurements in the validation document and keep machine-local
 paths, passwords, tokens, and `.env` files out of Git.
 
+## Architecture diagrams
+
+The architecture map is `docs/diagrams/*.dg` (rinthel-arch). A change that
+touches a module, port, route or table updates its `.dg` in the same change
+and passes `scripts/diagrams.sh validate --strict` by hand before the commit;
+there is no CI or tracked hook. See `docs/diagrams/README.md`.
+
 ## Understory (MCP Memory) — Tool Usage
 
 All memory operations go through the `understory` MCP server. Use atomic

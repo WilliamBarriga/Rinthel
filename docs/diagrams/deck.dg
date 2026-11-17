@@ -1,0 +1,58 @@
+// Rinthel Deck (web portal of the pi agent): Node/Express server + React web, started by the daemon lifecycle as a compose service.
+// Deck owns the pi runs and deck.db; identity and the Local model route are asked of the daemon.
+model {
+  servicio deck "Deck" "User portal; container the daemon lifecycle brings up" {
+    source { path "deck" }
+
+    servicio deck-web "Deck web" "React + Vite; ports/adapters with fakes; UI text in Spanish" {
+      source { path "deck/web/src" }
+      modulo web-home "home / shell" "Home and workspace shell"
+      modulo web-sesiones "sessions / terminal" "Sessions, transcript, terminal"
+      modulo web-chat "chat" "Transcript and prompt box"
+      modulo web-canvas "canvas" "Canvases (markdown and ui)"
+      modulo web-voz "voice" "VAD, STT/TTS, hands-free (opt-in)"
+      modulo web-usuarios "users" "Users screen (admin only)"
+      modulo web-ajustes "settings / appearance" "General, Appearance, Instance SOUL"
+      puerto web-puertos "ports" "Contract towards the server: one port per area"
+      adaptador web-adaptadores "ports/adapters" "HTTP + SSE"
+      adaptador web-fakes "ports/fakes" "Test doubles"
+    }
+
+    servicio deck-server "Deck server" "Node + Express; owner of the pi runs and of deck.db" {
+      source { path "deck/server/src" }
+      ruta srv-api "api" "Routes /api/*: sessions, agent, canvases, voice, settings, browser, memory" {
+        source { path "deck/server/src/api" }
+      }
+      modulo srv-auth "auth / tool-profile" "Login against the daemon; current role of the owner; tool profile by role" {
+        source { path "deck/server/src/tool-profile.ts" }
+      }
+      modulo srv-sesiones "session-manager" "A run belongs to the server, not to the tab: launches pi, marks running/idle" {
+        source { path "deck/server/src/session-manager.ts" }
+      }
+      modulo srv-eventos "live-events" "Session events: SSE and retention"
+      modulo srv-routing "session-proxy / model-routing" "pi points at /s/<token>; the proxy forwards straight to llama-server, with per-Session slots" {
+        source { path "deck/server/src/session-proxy.ts" }
+      }
+      modulo srv-daemon "daemon-client" "Client of the daemon: login, session-principal, model route"
+      modulo srv-recursos "user-resources" "users/<id>/: agent home, workspaces, files with quota, Instance SOUL"
+      modulo srv-voz "voice" "STT/TTS direct to whisper-server and audiocpp-server (DirectVoiceSpeech)"
+      modulo srv-browser "browser" "Instance browser: CDP driver, admin only, shared between Sessions"
+      modulo srv-executors "executors" "host executor: pi runs in the server process"
+      modulo srv-store "store" "Persistence in deck.db" {
+        puerto store-puerto "port" "PortalStore: sessions, events, canvases, notes, settings"
+        adaptador store-sqlite "sqlite" "deck.db (better-sqlite3, WAL)"
+        adaptador store-memoria "memory" "Double"
+      }
+      servicio srv-pi "pi host" "Only what runs inside pi" {
+        modulo pi-sdk "sdk-client" "Talks to pi"
+        modulo pi-provider "provider" "pi model provider: goes to the session-proxy"
+        modulo pi-guard "guard / session-taint" "Fixed RULES and a persisted Session taint; every decision is a portal_guard event in the Session log"
+        modulo pi-hostexec "host-exec tool" "rinthel_host_exec: admin only, Linux only; lost when the Session is tainted"
+        modulo pi-subagent "subagent tool" "Child agent that shares the slot of its parent; lost when tainted"
+        modulo pi-memoria "memory tools" "understory_memory_query / add / update (admin only); a child gets query only"
+        modulo pi-browser "browser tools" "Instance browser tools"
+        modulo pi-canvas "canvas tools"
+      }
+    }
+  }
+}

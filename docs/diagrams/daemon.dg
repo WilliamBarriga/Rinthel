@@ -1,0 +1,107 @@
+// Rinthel Daemon (FastAPI): one hexagonal module per folder of rinthel/rinthel_tui/<module>/{domain,adapters}.
+// The domain owns each port; adapters (sqlite, httpx, filesystem, memory) sit behind it.
+// Composition root: api/__init__.py:create_app builds one compose() per area (api/<area>/compose.py).
+model {
+  extend daemon {
+    ruta api "API" "One package per area (api/<area>/: compose, routes, dtos); the access policy is declared per route" {
+      source { path "rinthel/rinthel_tui/api" }
+      proceso api-compose "create_app" "Single composition root: adapters from the config, shared state and one compose() per area in explicit order" {
+        source { path "rinthel/rinthel_tui/api/__init__.py" }
+      }
+      modulo api-access "access / caller" "Access policies (public, service, service_as_user, user, admin) and caller_of: authenticated user -> Caller" {
+        source { path "rinthel/rinthel_tui/api/access.py" }
+      }
+      ruta api-lifecycle "lifecycle" "/boot, /terminate, /reload, /install (service policy)" {
+        source { path "rinthel/rinthel_tui/api/lifecycle" }
+      }
+      ruta api-secrets "secrets" "/secrets/rotate and write-only secrets" {
+        source { path "rinthel/rinthel_tui/api/secrets" }
+      }
+      ruta api-config "config" "/config and /theme (palette shared with Deck)" {
+        source { path "rinthel/rinthel_tui/api/config" }
+      }
+      ruta api-ws "ws" "/ws/monitor: Telemetry streams and phase progress" {
+        source { path "rinthel/rinthel_tui/api/ws" }
+      }
+      ruta api-identity "identity" "Login, refresh, users, /me/session-principal" {
+        source { path "rinthel/rinthel_tui/api/identity" }
+      }
+      ruta api-models "models" "GET /model-provider/routing (service policy) and the active Local model switch" {
+        source { path "rinthel/rinthel_tui/api/models" }
+      }
+    }
+
+    modulo identity "identity" "Users (admin or miembro), refresh tokens, last-admin guard, Panel token issue and refresh" {
+      source { path "rinthel/rinthel_tui/identity" }
+      puerto id-puertos "ports" "Identity port; transaction() wraps multi-step use cases"
+      adaptador id-sqlite "sqlite" "rinthel.db; connection per request, BEGIN IMMEDIATE on writes"
+      adaptador id-memoria "memory" "Double with a contract suite"
+    }
+
+    modulo models "models" "Local models: catalog file, active model, route and switch" {
+      source { path "rinthel/rinthel_tui/models" }
+      modulo mod-catalogo "catalog" "models.local.json (hand-written, untracked) and the Validated profile of the Platform"
+      proceso mod-cambio "switch" "kill, spawn, ready, rollback on failure, under the global lifecycle lock"
+      modulo mod-ruta "routing" "URL, id, context window and reasoning format of the active model; the active id lives in instance.toml"
+    }
+
+    modulo lifecycle "lifecycle" "Lifecycle plans of the managed services" {
+      source { path "rinthel/rinthel_tui/lifecycle" }
+      proceso lc-planes "Lifecycle" "boot, terminate, reload, install: plans run as units of phases under a global lock" {
+        source { path "rinthel/rinthel_tui/lifecycle/runner.py" }
+      }
+      modulo lc-specs "specs / runner" "Plans as units of phases; the runner executes them and broadcasts progress" {
+        source { path "rinthel/rinthel_tui/lifecycle/specs.py" }
+      }
+      modulo lc-fases "phases / services" "Phases and the catalog of managed services (local process or compose)" {
+        source { path "rinthel/rinthel_tui/lifecycle/services.py" }
+      }
+      modulo lc-install "install" "Install: pinned models, compose services, first admin user" {
+        source { path "rinthel/rinthel_tui/lifecycle/install.py" }
+      }
+      modulo lc-db-setup "migrations" "Migrates rinthel.db by user_version at startup; fails if the file is newer"
+      puerto host "Host" "Eight ports: Runner, Processes, Compose, Probe, Clock, HostInfo, PackageRegistry, DataDirs"
+      adaptador host-procesos "processes" "Per Platform (POSIX, Windows)"
+      adaptador host-compose "docker_compose"
+      adaptador host-sondeo "probe / host_info / npm_registry"
+    }
+
+    modulo session-host "session_host" "Reduced to one method: on user delete the daemon calls Deck POST /api/agent/retire-sessions first, then deletes in its own transaction" {
+      source { path "rinthel/rinthel_tui/session_host" }
+    }
+
+    modulo monitoring "monitoring" "Telemetry streams: host resources, managed services and the active model status" {
+      source { path "rinthel/rinthel_tui/monitoring" }
+      adaptador mon-host "psutil_host / nvidia_smi"
+    }
+
+    modulo nu-config "config / instance" "Configuration, .env and instance.toml; Instance root discovery; deck.host_address builds every URL given to Deck" {
+      source { path "rinthel/rinthel_tui/config.py" }
+    }
+    modulo nu-theme "theme" "Palette shared with the TUI and Deck" {
+      source { path "rinthel/rinthel_tui/theme" }
+    }
+  }
+
+  // Edges inside the daemon
+  daemon.api.api-compose -> daemon.api.api-access
+  daemon.api.api-lifecycle -> daemon.lifecycle.lc-planes
+  daemon.api.api-ws -> daemon.monitoring
+  daemon.api.api-identity -> daemon.identity
+  daemon.api.api-models -> daemon.models
+  daemon.api.api-config -> daemon.nu-config
+  daemon.api.api-config -> daemon.nu-theme
+  daemon.models.mod-cambio -> daemon.lifecycle.lc-planes "restarts llama-server"
+  daemon.models.mod-catalogo -> daemon.nu-config "active id from instance.toml"
+  daemon.lifecycle.lc-planes -> daemon.lifecycle.lc-specs
+  daemon.lifecycle.lc-specs -> daemon.lifecycle.lc-fases
+  daemon.lifecycle.lc-install -> daemon.identity "first admin"
+  daemon.lifecycle.lc-db-setup -> daemon.identity.id-sqlite "user_version migrations"
+  daemon.lifecycle.lc-fases -> daemon.lifecycle.host
+  daemon.lifecycle.host-procesos -> daemon.lifecycle.host
+  daemon.lifecycle.host-compose -> daemon.lifecycle.host
+  daemon.lifecycle.host-sondeo -> daemon.lifecycle.host
+  daemon.identity.id-sqlite -> daemon.identity.id-puertos
+  daemon.identity.id-memoria -> daemon.identity.id-puertos
+  daemon.identity -> daemon.session-host "delete user"
+}

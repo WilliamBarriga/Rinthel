@@ -1,0 +1,24 @@
+// Node types and Theme of the architecture map (describes the target state of the Instance).
+specification {
+  node actor     { description "Person who uses the platform"             icon user      color purple }
+  node cliente   { description "Application that talks to the daemon"     icon box       color blue }
+  node servicio  { description "Running process or container"             icon server    color blue }
+  node modelo    { description "Managed service that serves a Capability" icon server    color amber }
+  node modulo    { description "Module of the daemon or of Deck"          icon box       color gray }
+  node puerto    { description "Interface that the domain requires"       icon box       color green }
+  node adaptador { description "Implementation of a port"                 icon box       color gray }
+  node ruta      { description "HTTP/WS route or group of routes"         icon box       color blue }
+  node base      { description "SQLite file owned by one process"         icon database  color green }
+  node tabla     { description "SQLite table"                             icon database  color green }
+  node externo   { description "System outside the Instance"              icon cloud     color red }
+  node proceso   { description "Plan or sequence of work"                 icon box       color amber }
+}
+
+theme rinthel extends neutral {
+  fonts { body "DejaVu Sans"  mono "DejaVu Sans Mono"  fallback "sans-serif" }
+  palette {
+    gray "#94a3b8"  blue "#60a5fa"  green "#34d399"  amber "#f59e0b"  red "#f87171"  purple "#8b5cf6"
+    fondo "#0f172a"  papel "#1e293b"  tinta "#e2e8f0"  marco "#94a3b8"  linea "#64748b"  sombra "#000000"
+  }
+  tokens { background "#0f172a"  foreground "#e2e8f0"  border "#94a3b8" }
+}
