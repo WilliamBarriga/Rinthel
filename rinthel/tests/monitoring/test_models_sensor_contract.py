@@ -14,7 +14,11 @@ from tests.lifecycle.fakes import FakeProbe
 
 class ManagedHarness:
     def __init__(self, cfg) -> None:
-        self.cfg = dataclasses.replace(cfg, deck=dataclasses.replace(cfg.deck, enabled=False))
+        self.cfg = dataclasses.replace(
+            cfg,
+            deck=dataclasses.replace(cfg.deck, enabled=False),
+            hostexecd=dataclasses.replace(cfg.hostexecd, enabled=False),
+        )
         self.probe = FakeProbe()
         self.sensor = ManagedServicesSensor(lambda: self.cfg, lambda c: ("qwen", None) if c == "llm" else (None, None),
                                             self.probe.http_ok)

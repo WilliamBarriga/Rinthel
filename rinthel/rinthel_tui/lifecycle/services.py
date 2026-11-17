@@ -3,6 +3,8 @@
 Understory y el portal vía docker compose) sin tocar ``managed_service.py``.
 """
 
+import sys
+
 from rinthel_tui.config import RinthelConfig
 from rinthel_tui.lifecycle.managed_service import DockerComposeService, LocalProcessService
 
@@ -92,6 +94,41 @@ LLAMA_SERVICE = LocalProcessService(
     on_timeout_hint="Levanta el modelo local antes de usar understory.",
 )
 
+# hostexecd: runs an admin's commands on the host for Deck (Linux only). It
+# reads its port, token and Instance root from the environment the daemon
+# hands it, and binds the host loopback.
+HOSTEXECD_SERVICE = LocalProcessService(
+    display_name="hostexecd",
+    menu_label="HOSTEXECD  --  HOST EXEC",
+    wait_label="HOSTEXECD",
+    kill_label="HOSTEXECD  --  HOST EXEC",
+    build_argv=lambda cfg: [sys.executable, "-m", "hostexecd.daemon"],
+    port_of=lambda cfg: cfg.hostexecd.port,
+    log_of=lambda cfg: cfg.instance.logs_dir / "hostexecd.log",
+    env_of=lambda cfg: {
+        "RINTHEL_HOSTEXECD_PORT": str(cfg.hostexecd.port),
+        "RINTHEL_HOSTEXECD_TOKEN": cfg.hostexecd.token,
+        "RINTHEL_INSTANCE_ROOT": str(cfg.instance.root),
+    },
+    enabled_of=lambda cfg: cfg.platform == "linux" and cfg.hostexecd.enabled,
+    ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.hostexecd.port}/health",
+    default_ready_timeout=20,
+    ready_poll_interval=0.5,
+)
+
+def _deck_host_exec_env(cfg: RinthelConfig) -> dict[str, str]:
+    """How Deck reaches hostexecd: its URL, built with ``deck.host_address``,
+    and the token. Both empty where hostexecd does not run (Windows, or
+    disabled): set in the environment of ``docker compose``, they win over the
+    root ``.env``, so Deck loads no host exec tools."""
+    if not HOSTEXECD_SERVICE.enabled_of(cfg):
+        return {"RINTHEL_HOSTEXECD_URL": "", "RINTHEL_HOSTEXECD_TOKEN": ""}
+    return {
+        "RINTHEL_HOSTEXECD_URL": f"http://{cfg.deck.host_address}:{cfg.hostexecd.port}",
+        "RINTHEL_HOSTEXECD_TOKEN": cfg.hostexecd.token,
+    }
+
+
 # ── DockerComposeService ──────────────────────────────────────────────
 #
 # Comparten un único docker-compose.yaml en la raíz de la Instance
@@ -122,12 +159,12 @@ DECK_SERVICE = DockerComposeService(
     port_of=lambda cfg: cfg.deck.port,
     enabled_of=lambda cfg: cfg.deck.enabled,
     compose_service_name="deck",
-    extra_env_of=lambda cfg: {"RINTHEL_DECK_PORT": str(cfg.deck.port)},
+    extra_env_of=lambda cfg: {"RINTHEL_DECK_PORT": str(cfg.deck.port), **_deck_host_exec_env(cfg)},
     build_args=("build", "deck"),
     ready_url_of=lambda cfg: f"http://127.0.0.1:{cfg.deck.port}/api/auth/status",
 )
 
 # Orden de aparición en BOOT/TERMINATE/RELOAD — agregar o sacar un servicio de
 # estas listas alcanza para que los planes lo reflejen.
-LOCAL_SERVICES: list[LocalProcessService] = [LLAMA_SERVICE]
+LOCAL_SERVICES: list[LocalProcessService] = [LLAMA_SERVICE, HOSTEXECD_SERVICE]
 DOCKER_SERVICES: list[DockerComposeService] = [UNDERSTORY_SERVICE, DECK_SERVICE]

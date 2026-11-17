@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { JournalMode } from "./store/sqlite/index.js";
+import type { HostExecAccess } from "./pi/host-exec/host-exec-tools.js";
 
 /** What the server reads from its environment, resolved once at boot. */
 export interface DeckConfig {
@@ -25,6 +26,11 @@ export interface DeckConfig {
   slotsDir: string;
   /** What the saved slots may hold in all (`DECK_SLOTS_MAX_GB`, 20 by default). */
   slotsMaxBytes: number;
+  /**
+   * hostexecd, as the daemon hands it (`RINTHEL_HOSTEXECD_URL`, `RINTHEL_HOSTEXECD_TOKEN`): set only
+   * with a token. Without one, no Session has the host exec tools; the URL is checked when they register.
+   */
+  hostExec: HostExecAccess | undefined;
 }
 
 export function deckConfigFromEnv(env: NodeJS.ProcessEnv): DeckConfig {
@@ -35,6 +41,7 @@ export function deckConfigFromEnv(env: NodeJS.ProcessEnv): DeckConfig {
   if (!panelSecret) {
     throw new Error("RINTHEL_PANEL_SECRET is not set: Deck cannot validate Panel tokens. Run INSTALL on the daemon, which generates it in the root .env.");
   }
+  const hostExecToken = (env.RINTHEL_HOSTEXECD_TOKEN || "").trim();
   const slotsGb = Number(env.DECK_SLOTS_MAX_GB || 20);
   if (!Number.isFinite(slotsGb) || slotsGb <= 0) throw new Error(`DECK_SLOTS_MAX_GB must be a positive number, got "${env.DECK_SLOTS_MAX_GB}"`);
   return {
@@ -50,5 +57,6 @@ export function deckConfigFromEnv(env: NodeJS.ProcessEnv): DeckConfig {
     workspaceRoot: path.resolve(env.WORKSPACE_ROOT || path.join(dataDir, "workspaces")),
     slotsDir: path.resolve(env.DECK_SLOTS_DIR || path.join(dataDir, "llama-slots")),
     slotsMaxBytes: Math.floor(slotsGb * 1024 ** 3),
+    hostExec: hostExecToken ? { url: (env.RINTHEL_HOSTEXECD_URL || "").trim(), token: hostExecToken } : undefined,
   };
 }

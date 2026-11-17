@@ -46,6 +46,19 @@ export function generalAgentFor(role: "admin" | "miembro" | null): boolean {
   return role === "admin";
 }
 
+/**
+ * Whether the owner is an admin right now, for a tool that asks before every call. An owner that is
+ * gone, or an identity that does not answer, is a no: it fails closed and never throws.
+ */
+export async function ownerIsAdminNow(ownerUserId: number, identity: SessionIdentity): Promise<boolean> {
+  try {
+    const owner = await identity.current(ownerUserId);
+    return owner !== null && owner.userId === ownerUserId && generalAgentFor(owner.role);
+  } catch {
+    return false;
+  }
+}
+
 export async function toolProfileFor(ownerUserId: number, identity: SessionIdentity): Promise<ToolProfile> {
   let owner;
   try {

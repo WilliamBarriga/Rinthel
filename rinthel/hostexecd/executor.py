@@ -1,8 +1,7 @@
-"""subprocess.run con timeout, sin elevar privilegios — hereda el usuario
-del proceso del daemon (tarkark, uid 1000, sin sudo). Ver
-plans/rinthel-host-exec.md, decisión de diseño 2: cualquier comando que
-necesite root falla solo, a nivel de sistema operativo — no hay allowlist
-ni blocklist de comandos acá, ni en ningún otro módulo de este paquete."""
+"""``subprocess.run`` with a timeout and no privilege escalation: a command runs
+as the user that started ``hostexecd`` (the daemon's), without sudo. There is
+no allowlist or blocklist of commands here or anywhere in this package:
+anything that needs root fails on its own, at the operating system."""
 
 from __future__ import annotations
 
@@ -12,19 +11,16 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-# Default razonable para comandos interactivos/chequeos puntuales (el caso
-# de uso real: reiniciar el daemon/stack de Rinthel, chequeos de GPU/estado,
-# tweaks de entorno). Este daemon no administra procesos de fondo (ver
-# "Fuera de alcance" del plan) — un comando que necesita correr más que
-# esto no es lo que /exec está pensado para cubrir. Overrideable por
-# request (campo "timeout" del body).
+# For one-off checks and tweaks (GPU state, restarting a service, environment
+# changes). Background process management is out of scope: a command that
+# needs longer is not what ``/exec`` is for. A request may override it.
 DEFAULT_TIMEOUT = 60
-# Techo del override por request: sin él, la LLM podía pedir un timeout
-# arbitrario y dejar /exec colgado — este daemon es de un solo worker.
+# Ceiling of the override: without it the model could ask for any timeout and
+# keep this single-worker process busy.
 MAX_TIMEOUT = 600
-# Tope por stream (stdout y stderr por separado): la salida vuelve entera al
-# contexto del modelo, y un `cat` de un log grande se lo comería. Se queda
-# con el principio y avisa cuánto había en total.
+# Per stream (stdout and stderr apart): the output goes back whole into the
+# model's context, and a ``cat`` of a large log would fill it. The head is kept
+# and the total is said.
 MAX_OUTPUT_BYTES = 50_000
 
 HOME = str(Path.home())
@@ -37,46 +33,32 @@ class ExecResult:
     stderr: str
     duration_ms: int
     timed_out: bool
-    # Tamaño real de cada stream antes de truncar — lo que va al audit log.
+    # Size of each stream before truncation: what the audit records.
     stdout_bytes: int
     stderr_bytes: int
 
 
 def _read_capped(f) -> tuple[str, int]:
-    """Lee hasta MAX_OUTPUT_BYTES de ``f`` (ya escrito, en cualquier
-    posición) y devuelve ``(texto, bytes_totales)``, con un aviso al final
-    si hubo que cortar."""
+    """Up to ``MAX_OUTPUT_BYTES`` of ``f`` and its total size, with a notice
+    at the end when it was cut."""
     total = f.seek(0, 2)
     f.seek(0)
     text = f.read(MAX_OUTPUT_BYTES).decode(errors="replace")
     if total > MAX_OUTPUT_BYTES:
-        text += f"\n[hostexecd: salida truncada a {MAX_OUTPUT_BYTES} de {total} bytes]\n"
+        text += f"\n[hostexecd: output truncated to {MAX_OUTPUT_BYTES} of {total} bytes]\n"
     return text, total
 
 
 def run_command(command: str, cwd: str | None, timeout: int | None) -> ExecResult:
-    """Corre ``command`` con ``shell=True``, ``cwd=cwd or HOME``, capturando
-    stdout/stderr como texto. Nunca eleva privilegios: mismo usuario que
-    corre el daemon, sin ``sudo``/``su`` en ningún punto.
+    """Run ``command`` with ``shell=True`` in ``cwd`` (``$HOME`` by default).
 
-    Un timeout no garantiza matar toda la jerarquía de procesos —
-    ``shell=True`` interpone ``/bin/sh``, así que un hijo que ignora
-    SIGTERM (o sus propios hijos) puede sobrevivir al timeout del padre.
-    Límite ya documentado de ``subprocess.run(shell=True, timeout=...)``,
-    no algo que este módulo intente resolver (este daemon es de alcance
-    bloqueante-sin-gestión-de-procesos-de-fondo por diseño, ver el plan).
+    A timeout does not promise to kill the whole process tree: ``/bin/sh``
+    sits in between, so a child that ignores SIGTERM can outlive it.
 
-    stdout/stderr se capturan a archivos temporales, NO con
-    ``capture_output=True`` (pipes). Un comando que backgroundea algo
-    (``spotify &``, con o sin redirección propia — ``shell=True`` usa
-    ``/bin/sh``, no bash, así que `&>` de la LLM no siempre hace lo que
-    parece) deja a ese proceso de fondo con los mismos file descriptors de
-    stdout/stderr que el shell padre. Con pipes, ``communicate()`` no
-    vuelve hasta que TODO lo que heredó el pipe cierre su extremo de
-    escritura — es decir, hasta que el proceso de fondo termine, no cuando
-    el shell que lo lanzó ya volvió. Con archivos, no hay ese problema: se
-    lee lo que se haya escrito hasta que el shell (el único proceso que
-    ``Popen``/``wait()`` realmente espera) termina.
+    Output is captured to temporary files, not pipes: a command that leaves
+    something in the background (``app &``) hands it the shell's stdout and
+    stderr, and with pipes the read would wait until that background process
+    ends. With files, what was written is read as soon as the shell returns.
     """
     effective_timeout = timeout or DEFAULT_TIMEOUT
     start = time.monotonic()

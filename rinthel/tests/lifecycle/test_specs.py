@@ -49,13 +49,14 @@ def _shape(plan: specs.Plan) -> list[tuple[str | None, str, list[str]]]:
     ]
 
 
-def test_boot_plan_checks_docker_then_spawns_llama_then_ups_each_docker_service(cfg):
+def test_boot_plan_checks_docker_then_spawns_the_local_services_then_ups_each_docker_service(cfg):
     plan = specs.boot_plan(cfg)
 
     assert plan.on_failure == "stop"
     assert _shape(plan) == [
         (None, "docker", ["◈ DOCKER"]),
         (None, "llama-server", ["◈ LLAMA-SERVER", "◈ ESPERANDO LLAMA-SERVER"]),
+        (None, "hostexecd", ["◈ HOSTEXECD  --  HOST EXEC", "◈ ESPERANDO HOSTEXECD"]),
         (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER", "◈ ESPERANDO UNDERSTORY"]),
         (None, "deck", [
             "◈ DATOS DE DECK  --  DUEÑO DEL DIRECTORIO",
@@ -77,6 +78,7 @@ def test_terminate_plan_stops_every_service_and_continues_on_failure(cfg):
     assert plan.on_failure == "continue"
     assert _shape(plan) == [
         (None, "llama-server", ["◈ LLAMA-SERVER  --  LOCAL MODEL"]),
+        (None, "hostexecd", ["◈ HOSTEXECD  --  HOST EXEC"]),
         (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER"]),
         (None, "deck", ["◈ DECK  --  WEB PORTAL"]),
     ]
@@ -88,11 +90,13 @@ def test_reload_plan_shuts_down_then_boots_local_then_rebuilds_docker(cfg):
     assert plan.on_failure == "stop"
     assert _shape(plan) == [
         (None, "llama-server", ["◈ LLAMA-SERVER  --  LOCAL MODEL"]),
+        (None, "hostexecd", ["◈ HOSTEXECD  --  HOST EXEC"]),
         (None, "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER"]),
         (None, "deck", ["◈ DECK  --  WEB PORTAL"]),
         (None, "llama-server", ["◈ PUERTO LLAMA-SERVER LIBRE"]),
         ("boot", "docker", ["◈ DOCKER"]),
         ("boot", "llama-server", ["◈ LLAMA-SERVER", "◈ ESPERANDO LLAMA-SERVER"]),
+        ("boot", "hostexecd", ["◈ HOSTEXECD  --  HOST EXEC", "◈ ESPERANDO HOSTEXECD"]),
         ("rebuild", "understory", ["◈ UNDERSTORY  --  MCP MEMORY LAYER", "◈ ESPERANDO UNDERSTORY"]),
         ("rebuild", "deck", [
             "◈ DATOS DE DECK  --  DUEÑO DEL DIRECTORIO",

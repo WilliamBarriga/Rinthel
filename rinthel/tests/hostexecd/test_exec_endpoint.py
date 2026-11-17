@@ -66,3 +66,27 @@ def test_history_returns_the_most_recent_first():
     for word in ("uno", "dos", "tres"):
         run({"command": f"echo {word}"})
     assert [e["command"] for e in history(2)] == ["echo tres", "echo dos"]
+
+
+def test_health_answers_without_a_token_and_says_nothing_else():
+    assert json.loads(daemon.health().body) == {"ok": True}
+
+
+def test_the_app_publishes_no_schema_or_docs():
+    paths = {route.path for route in daemon.app.routes}
+    assert paths == {"/exec", "/history", "/health"}
+
+
+def test_a_wrong_token_is_a_401_and_runs_nothing(tmp_path):
+    with pytest.raises(HTTPException) as err:
+        daemon.exec_command({"command": f"touch {tmp_path / 'ran'}"}, x_rinthel_token="wrong")
+    assert err.value.status_code == 401
+    assert not (tmp_path / "ran").exists()
+
+
+def test_the_audit_is_jsonl_under_the_instance_data(tmp_path):
+    run({"command": "echo uno"})
+
+    (line,) = (tmp_path / "data" / "hostexecd" / "audit.jsonl").read_text().splitlines()
+    assert json.loads(line)["command"] == "echo uno"
+    assert not (tmp_path / "logs" / "hostexecd.log").exists()

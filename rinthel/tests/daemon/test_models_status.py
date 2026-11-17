@@ -42,8 +42,12 @@ def _models_status(cfg, adapters, host, service_headers) -> dict:
 
 
 def _without_portal(cfg):
-    """Only Understory among the managed services, as in the shared fixture: Deck off."""
-    return dataclasses.replace(cfg, deck=dataclasses.replace(cfg.deck, enabled=False))
+    """Only Understory among the managed services, as in the shared fixture: Deck and hostexecd off."""
+    return dataclasses.replace(
+        cfg,
+        deck=dataclasses.replace(cfg.deck, enabled=False),
+        hostexecd=dataclasses.replace(cfg.hostexecd, enabled=False),
+    )
 
 
 def test_the_active_llm_model_that_answers_is_ready(daemon_cfg, adapters, host, catalog, service_headers):
@@ -117,9 +121,21 @@ def test_each_enabled_managed_service_is_a_row_with_its_state(daemon_cfg, adapte
 def test_deck_is_a_row_when_enabled(daemon_cfg, adapters, host, catalog, service_headers):
     host.probe.script_http(f"http://127.0.0.1:{daemon_cfg.understory.port}/", True)
     host.probe.script_http(f"http://127.0.0.1:{daemon_cfg.deck.port}/api/auth/status", True)
-    services = _models_status(daemon_cfg, adapters, host, service_headers)["services"]
+    cfg = dataclasses.replace(daemon_cfg, hostexecd=dataclasses.replace(daemon_cfg.hostexecd, enabled=False))
+    services = _models_status(cfg, adapters, host, service_headers)["services"]
 
     assert services == [{"name": "Understory", "state": "ready"}, {"name": "Deck", "state": "ready"}]
+
+
+def test_hostexecd_is_a_row_on_linux_and_never_on_windows(daemon_cfg, adapters, host, catalog, service_headers):
+    host.probe.script_http("http://127.0.0.1:8766/health", True)
+    cfg = dataclasses.replace(daemon_cfg, deck=dataclasses.replace(daemon_cfg.deck, enabled=False))
+
+    linux = _models_status(cfg, adapters, host, service_headers)["services"]
+    windows = _models_status(dataclasses.replace(cfg, platform="windows"), adapters, host, service_headers)["services"]
+
+    assert {"name": "hostexecd", "state": "ready"} in linux
+    assert [s["name"] for s in windows] == ["Understory"]
 
 
 def test_a_service_that_does_not_answer_is_down(daemon_cfg, adapters, host, catalog, service_headers):

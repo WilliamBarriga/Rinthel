@@ -102,7 +102,7 @@ def test_an_explicit_env_value_still_wins_over_the_profile(tmp_path, monkeypatch
 def _spawned(cfg) -> list[str]:
     return [
         phase.label for unit in specs.boot_plan(cfg).batches[0].units for phase in unit.phases
-        if phase.fn.__name__ == "phase_spawn"
+        if unit.service == "llama-server" and phase.fn.__name__ == "phase_spawn"
     ]
 
 

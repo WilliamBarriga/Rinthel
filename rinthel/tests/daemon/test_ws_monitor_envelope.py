@@ -52,8 +52,12 @@ def test_every_telemetry_message_keeps_the_envelope_the_clients_read(
     host.probe.script_http(f"http://127.0.0.1:{daemon_cfg.understory.port}/", True)
     adapters.models.catalog.set_entries([CatalogEntry(daemon_cfg.local_model.id, daemon_cfg.local_model)])
     adapters.models.active.set("llm", daemon_cfg.local_model.id)
-    # Only Understory among the managed services, as in the shared fixture: Deck off.
-    cfg = dataclasses.replace(daemon_cfg, deck=dataclasses.replace(daemon_cfg.deck, enabled=False))
+    # Only Understory among the managed services, as in the shared fixture: Deck and hostexecd off.
+    cfg = dataclasses.replace(
+        daemon_cfg,
+        deck=dataclasses.replace(daemon_cfg.deck, enabled=False),
+        hostexecd=dataclasses.replace(daemon_cfg.hostexecd, enabled=False),
+    )
     telemetry = real_telemetry(lambda: app.state.cfg, host, adapters.models)
     app = create_app(cfg, adapters=dataclasses.replace(adapters, telemetry=telemetry))
     token = service_headers["x-rinthel-service-secret"]

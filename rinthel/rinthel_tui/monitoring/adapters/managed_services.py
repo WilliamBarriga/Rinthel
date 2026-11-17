@@ -3,7 +3,8 @@ to each service's readiness URL (the same ``ready_url`` that boot waits on).
 
 What gets reported depends on the Platform: ``llm`` always; ``stt``/``tts``
 only with an active model and never on Windows (voice is Linux only); a
-managed service only while it is enabled. The client groups and orders what
+managed service only while it is enabled (``hostexecd`` never on Windows,
+where it is never enabled). The client groups and orders what
 arrives and never adds a row of its own."""
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 from rinthel_tui.config import RinthelConfig
-from rinthel_tui.lifecycle.services import DOCKER_SERVICES, LLAMA_SERVICE
+from rinthel_tui.lifecycle.services import DOCKER_SERVICES, HOSTEXECD_SERVICE, LLAMA_SERVICE
 from rinthel_tui.monitoring.domain.types import CapabilityStatus, ModelsStatus, ServiceState, ServiceStatus
 
 # Capability -> (active id or ``None``, why it cannot run or ``None``).
@@ -35,7 +36,7 @@ class ManagedServicesSensor:
 
     async def read(self) -> ModelsStatus:
         cfg = self._cfg_of()
-        services = [s for s in DOCKER_SERVICES if s.enabled_of(cfg)]
+        services = [s for s in (*DOCKER_SERVICES, HOSTEXECD_SERVICE) if s.enabled_of(cfg)]
         llm, *rows = await asyncio.gather(
             self._llm(cfg), *(self._state(s.ready_url_of(cfg) if s.ready_url_of else None) for s in services)
         )
