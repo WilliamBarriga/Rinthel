@@ -36,5 +36,21 @@ Respuesta limitada a fuentes del knowledge workspace que separa hechos confirmad
 _Avoid_: Respuesta creativa, conocimiento general.
 
 **Validated profile**:
-Combinación versionada de modelo y parámetros que conserva estabilidad y rendimiento medidos en una clase concreta de hardware.
+Combinación versionada de modelo y parámetros que conserva estabilidad y rendimiento medidos en una clase concreta de hardware. Hay a lo sumo uno por Platform.
 _Avoid_: Valor por defecto, configuración universal.
+
+**Platform**:
+El sistema anfitrión en el que corre la Instance: Linux o Windows. Decide qué managed services se pueden habilitar y qué Validated profile aplica.
+_Avoid_: Perfil (es Validated profile), entorno, OS.
+
+**Capability**:
+Tipo de trabajo que la Instance sirve con un modelo: generar texto, transcribir voz o sintetizar voz. Cada Capability tiene a lo sumo un modelo activo a la vez.
+_Avoid_: Tarea, rol, proveedor.
+
+**Local model**:
+Modelo declarado en el catálogo de la Instance que puede servir una Capability. El admin elige cuál está activo, y ese modelo lo comparten todas las Sesiones.
+_Avoid_: Perfil (es Validated profile), proveedor.
+
+**Instance browser**:
+El único browser que maneja el Agente. Hay uno por Instance, lo administra el Admin y solo lo usan las Sesiones de un Admin, compartido entre ellas.
+_Avoid_: Browser personal, browser del agente.

@@ -276,9 +276,14 @@ export class SdkPiClient extends EventEmitter implements PiClient {
       if (
         hostExtensions.length &&
         // A broken subagents mount must not take host exec's protections down with it.
+        // The same extension is also reachable through the user's pi settings (host pi
+        // shares them), so its duplicate-tool conflict can be reported under that path.
         resourceLoader
           .getExtensions()
-          .errors.some((e: { path: string }) => !subagentExtensionPaths().includes(e.path))
+          .errors.some(
+            (e: { path: string }) =>
+              !subagentExtensionPaths().includes(e.path) && !/[\\/]rinthel-subagents[\\/]/.test(e.path),
+          )
       ) {
         throw new Error("No se pudo cargar la extensión host exec con sus protecciones");
       }
